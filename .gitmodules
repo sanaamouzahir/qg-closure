@@ -1,4 +1,4 @@
 [submodule "external/qg-simple"]
 	path = external/qg-simple
 	url = https://github.com/sanaamouzahir/qg-simple.git
-	branch = package-stable
+	branch = closure
