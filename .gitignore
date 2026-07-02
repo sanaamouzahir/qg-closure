@@ -1,0 +1,109 @@
+# ============ Python ============
+__pycache__/
+*.py[cod]
+*.egg-info/
+quasigeostrophic_flow.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.ipynb
+.ipynb_checkpoints/
+*.bak
+*.py.bak
+
+# Environments (never commit qg-env or any venv/conda env)
+.venv/
+venv/
+qg-env/
+env/
+envs/
+conda-env*/
+*.conda
+uv.lock
+
+# ============ Experiment tracking / run outputs ============
+wandb/
+lightning_logs/
+runs/
+outputs/            # Hydra run dirs (incl. Step_size_resolution_closure_ensemble/)
+multirun/
+auto/
+.sw/
+logs/
+*.log
+*.o[0-9]*           # SGE stdout
+*.e[0-9]*           # SGE stderr
+*.po[0-9]*
+*.pe[0-9]*
+walltime.json       # benchmark output (regenerable)
+
+# ============ Model checkpoints ============
+*.pt
+*.pth
+*.ckpt
+model_best*
+model_last*
+training_runs/
+
+# ============ Datasets & large arrays (per-sample .npz + packed mmap pipeline) ============
+data/
+datasets/
+ensemble_N5/
+*.npy
+*.npz
+*.nc
+*.h5
+*.hdf5
+*.mat
+DNS_FR*
+inputs.npy
+targets.npy
+deriv_anal_f64.npy
+delta_*_f64.npy
+forcing.npy
+restart_ics/
+decaying_turbulence_dT_*/
+sweep_dT_*/
+
+# ============ Media outputs (figures, videos, renders) ============
+*.mp4
+*.gif
+*.avi
+*.mov
+*.png
+*.jpg
+*.jpeg
+*.svg
+# Exception: small figures deliberately committed to docs
+!docs/figures/*.png
+
+# ============ LaTeX build artifacts ============
+paper/*.pdf
+*.aux
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.out
+*.toc
+
+# ============ MATLAB (if applicable) ============
+*.asv
+*.mex*
+slprj/
+
+# ============ OpenFOAM (if applicable) ============
+processor*/
+postProcessing/
+dynamicCode/
+*.foam
+
+# ============ OS / editor ============
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

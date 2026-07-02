@@ -1,0 +1,22 @@
+# @package _global_
+# Decaying turbulence scenario (no forcing, no obstacles)
+
+qg:
+  grid:
+    Nx: 256
+    Ny: 256
+  
+  time:
+    dt: 0.001
+    T: 60
+    save_rate: 100
+  
+  pde:
+    nu: 1.025e-5  # Viscosity
+  
+  ic:
+    n_batch: 20
+  
+  forcing: null  # No forcing
+  mask: null     # No obstacles
+

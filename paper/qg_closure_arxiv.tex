@@ -1,0 +1,625 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{empheq}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage[T1]{fontenc}
+\usepackage{titlesec}
+\usepackage{authblk}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=blue!45!black, citecolor=blue!45!black,
+            urlcolor=blue!45!black}
+
+% ---- SIAM-style run-in section headings ---- %
+\titleformat{\section}[runin]{\normalfont\bfseries}{\thesection.}{0.5em}{}[.\quad]
+\titleformat{\subsection}[runin]{\normalfont\bfseries}{\thesubsection.}{0.5em}{}[.\quad]
+\titleformat{\subsubsection}[runin]{\normalfont\itshape}{\thesubsubsection.}{0.5em}{}[.\quad]
+\titlespacing*{\section}{0pt}{1.4em}{0.4em}
+\titlespacing*{\subsection}{0pt}{1.0em}{0.4em}
+\titlespacing*{\subsubsection}{0pt}{0.7em}{0.4em}
+
+\theoremstyle{plain}
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
+\theoremstyle{definition}
+\newtheorem{remark}{Remark}
+
+\newcommand{\TODO}[1]{\textcolor{red}{\textbf{[TODO: #1]}}}
+\newcommand{\figph}[2]{%
+  \begin{center}\setlength{\fboxsep}{10pt}%
+  \fcolorbox{gray!60}{gray!8}{\parbox[c][#1][c]{0.82\linewidth}{%
+  \centering\itshape\color{gray!50!black} #2}}\end{center}}
+
+\newcommand{\Lop}{\mathcal{L}}
+\newcommand{\Jop}{\mathcal{J}}
+\newcommand{\Rop}{\mathcal{R}}
+\newcommand{\Ndot}{\dot{N}}
+\newcommand{\Nddot}{\ddot{N}}
+\newcommand{\Ndddot}{\dddot{N}}
+\newcommand{\bO}{\mathcal{O}}
+\newcommand{\DT}{\Delta T}
+\newcommand{\hf}{h_{\mathrm{f}}}
+
+\title{\bfseries Learning the Truncation Error:\\ A Step-Size Resolution Closure
+for Spectral AB2--CN2\\ Integration of Two-Dimensional Quasi-Geostrophic Flows}
+
+\author[1]{Sanaa Mouzahir}
+\author[1]{\TODO{co-authors / advisor}}
+\affil[1]{\small Department of Mechanical Engineering and Center for
+Computational Science and Engineering,\\ Massachusetts Institute of Technology,
+Cambridge, MA 02139}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+We develop a learned closure that removes the \emph{time-discretization} error
+of the spectral Adams--Bashforth-2 / Crank--Nicolson (AB2--CN2) IMEX
+integrator applied to the two-dimensional quasi-geostrophic (QG) vorticity
+equation. In contrast to sub-grid (spatial) closures, the scheme and its order
+are left unchanged; instead, each coarse step of size $\DT$ is corrected so
+that it reproduces the accuracy of the same scheme run at a fine step
+$\hf=\DT/K$, or, in the limit, of the exact flow. A modified-equation analysis
+gives the local truncation error in closed form to $\bO(\DT^6)$,
+$\tau=-\sum_{p=3}^{6}(\DT^p/D_p)\,R_p+\bO(\DT^7)$ with
+$D_p=\{12,24,240,1440\}$; all coefficients are verified symbolically and by a
+vs-exact-flow convergence study. Each operator $R_p$ splits into an
+\emph{analytical} part (powers of the linear operator on $\omega$ and $N$,
+diagonal in Fourier space and free at inference) and an \emph{expensive} part
+built from time derivatives of the advective Jacobian. A compact,
+numerics-informed convolutional network---bilinear (gated) to represent the
+Jacobian, with circular padding and a seven-point receptive field---learns only
+the expensive part, as a $\DT$-independent target. An empirical magnitude audit
+shows that the higher-order operators are governed by the norms of higher time
+derivatives of $N$, which grow $\sim\!50\times$ per order in a turbulent
+cascade; this gives the modified-equation series a finite radius of convergence
+$\DT_\star\!\sim\!2\times10^{-2}$ that bounds the closure's usable step size
+independently of correction order. We evaluate on decaying
+($\mathrm{Re}\!\sim\!10^5$, $\beta=0$) and forced $\beta$-plane
+($\mathrm{Re}\!\sim\!10^4$, $\beta=1$) turbulence.
+\TODO{headline result sentence once rollouts are final.}
+
+\smallskip
+\noindent\textbf{Key words.} time-integration error, modified equation,
+closure modeling, IMEX schemes, pseudo-spectral methods, quasi-geostrophic
+turbulence, scientific machine learning
+\end{abstract}
+
+% ===================================================================== %
+\section{Introduction}
+\label{sec:intro}
+Numerical simulations of geophysical turbulence are routinely limited by the
+time step. In stiff pseudo-spectral solvers the cost is dominated by the
+nonlinear (advective) term, evaluated once or twice per step, and the total
+cost scales as $T/\Delta t$ to integrate to a horizon $T$. For an integrator
+whose accuracy---not linear stability---sets $\Delta t$, halving the usable
+step doubles the cost. Reducing this time-discretization cost without changing
+the discretization itself is the problem we address.
+
+Data-driven closures are by now standard for representing unresolved
+\emph{spatial} scales on a coarse grid, in both engineering large-eddy
+simulation and geophysical modeling \citep{gupta2021,guan2022,srinivasan2024}.
+The analogous problem for unresolved \emph{temporal} scales---the error
+incurred by taking a large time step---has received far less attention. Here we
+treat the time-discretization error of a fixed scheme as a closure problem: we
+derive the scheme's local truncation error (LTE) in closed form, identify the
+single piece that is expensive to evaluate, and learn only that piece.
+
+The construction is a \emph{step-size resolution} closure. The scheme and its
+formal order are unchanged; a learned correction makes one coarse step of size
+$\DT$ behave as if the same scheme had been run at a finer step $\hf=\DT/K$,
+recovering $\hf$-accuracy at $\DT$-cost. Because a fine-step Runge--Kutta
+trajectory is the exact flow to machine precision, the $K\!\to\!\infty$ limit
+targets the exact flow, and the closure then removes the scheme's full
+time-truncation error.
+
+This places the method between three classical ideas while remaining distinct
+from each. Modified-equation analysis \citep{warming1974} supplies the
+truncation machinery but is normally used to characterize or add order, not to
+emulate a finer-step version of the \emph{same} scheme. Defect correction
+\citep{stetter1978} iteratively matches a higher-order scheme at the same step;
+we instead match the same scheme at a smaller step, a target with no
+defect-correction analogue (the gain is set by $K$ at training time, not by a
+reference order). Parareal \citep{lions2001} attains fine-propagator accuracy
+at coarse cost by iterating in time; our closure is an \emph{amortized}
+parareal in which the fine propagator is paid for once during training and
+reused at inference without iteration. High-order time integration that pays
+once for the curvature of a constrained problem has been developed for
+dynamical low-rank systems in the same group \citep{charous2023}.
+
+\paragraph{Notation.}
+Table~\ref{tab:notation} collects the notation used throughout.
+\begin{table}[h]
+\centering\small
+\caption{Key notation.}
+\label{tab:notation}
+\begin{tabular}{ll}
+\toprule
+symbol & meaning \\
+\midrule
+$\omega,\ \psi$        & vorticity and streamfunction, $\psi=\Delta^{-1}\omega$ \\
+$\Lop$                 & stiff linear operator $\nu\Delta-\mu-\beta\partial_x\Delta^{-1}$ (Fourier-diagonal) \\
+$N(\omega)$            & nonlinear term $-\Jop(\psi,\omega)+F$, $F$ time-independent \\
+$\Jop(\psi,\omega)$    & advective Jacobian $\psi_x\omega_y-\psi_y\omega_x$ \\
+$Q^{(k)},\ \dot Q$     & $k$-th total time derivative of $Q$ along the trajectory \\
+$\DT,\ \hf,\ K$        & coarse step, fine step, ratio $K=\DT/\hf$ \\
+$\tau$                 & per-step local truncation error \\
+$R_p$                  & order-$p$ truncation operator (Prop.~\ref{prop:lte}) \\
+$\Rop$                 & leading closure operator $R_3$ \\
+$f_{\rm NN}$           & learned (expensive) part of the closure \\
+$D_p$                  & denominators $\{12,24,240,1440\}$ for $p=3,\dots,6$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Outline.}
+Section~\ref{sec:lte} introduces the spectral AB2--CN2 integrator and derives
+its local truncation error to $\bO(\DT^6)$, with a vs-exact-flow convergence
+study confirming every operator. Section~\ref{sec:closure} defines the
+truncation-error closure, splits each operator into analytical and learned
+parts, analyses the magnitude of each part (and the resulting radius of
+convergence), and reports the measured magnitudes. Section~\ref{sec:arch}
+designs the network that learns the expensive part and documents the
+architecture progression that led to it. Section~\ref{sec:scheme} states the
+closed AB2--CN2 scheme and its cost. Section~\ref{sec:experiments} reports
+numerical experiments on decaying and forced turbulence, and
+Section~\ref{sec:conclusion} concludes.
+
+% ===================================================================== %
+\section{Local truncation error of spectral AB2--CN2}
+\label{sec:lte}
+
+\subsection{The spectral AB2--CN2 integrator}
+\label{sec:integrator}
+We consider the 2D QG vorticity equation on a doubly-periodic domain,
+\begin{equation}
+\partial_t\omega = \Lop\,\omega + N(\omega),\qquad
+N(\omega)=-\Jop(\psi,\omega)+F,\quad \psi=\Delta^{-1}\omega,
+\label{eq:qg}
+\end{equation}
+with $\Lop=\nu\Delta-\mu-\beta\partial_x\Delta^{-1}$ collecting viscosity,
+linear drag, and the $\beta$-plane term. Crank--Nicolson treats the stiff
+linear term implicitly and Adams--Bashforth-2 treats the nonlinearity
+explicitly:
+\begin{equation}
+\omega^{n+1}=r(h)\,\omega^n+s(h)\Big(\tfrac32 N^n-\tfrac12 N^{n-1}\Big),\quad
+r=\frac{1+\tfrac h2\Lop}{1-\tfrac h2\Lop},\ \ s=\frac{h}{1-\tfrac h2\Lop}.
+\label{eq:ab2cn2}
+\end{equation}
+All linear operators are diagonal in Fourier space, so the implicit solve is an
+elementwise division; the only nonlinearity is the Jacobian, evaluated
+pseudo-spectrally at five FFTs per call, with $2/3$ dealiasing of the products.
+The scheme is second-order accurate in time. Sweeping $\Delta t$ against a fine
+reference, started from a common developed-flow snapshot, recovers the expected
+$\Delta t^2$ slope (Sec.~\ref{sec:integrator-illus}).
+
+\subsection{Derivation}
+\label{sec:lte-derivation}
+Along the true trajectory, repeated differentiation of \eqref{eq:qg} gives
+$\omega^{(k)}=\Lop^k\omega+\sum_{j=0}^{k-1}\Lop^{k-1-j}N^{(j)}$, and, since
+$N=-\Jop(\psi,\omega)+F$ with $F$ static and $\psi^{(k)}=\Delta^{-1}
+\omega^{(k)}$, bilinearity of $\Jop$ and the Leibniz rule give the
+time-derivatives of $N$,
+\begin{equation}
+N^{(m)}=-\sum_{j=0}^m\binom{m}{j}\Jop\!\big(\psi^{(m-j)},\omega^{(j)}\big),
+\label{eq:leibniz}
+\end{equation}
+e.g.\ $\Ndot=-\Jop(\dot\psi,\omega)-\Jop(\psi,\dot\omega)$. Equations
+\eqref{eq:leibniz} and the $\omega^{(k)}$ recursion are mutually recursive and
+are evaluated in interleaved order; each additional time-derivative of $N$
+costs another layer of nested Jacobians.
+
+Expanding the exact flow $\omega(t_n+h)=\sum_k\frac{h^k}{k!}\omega^{(k)}$
+(equivalently, the Duhamel integral in $\varphi$-functions) and the update
+\eqref{eq:ab2cn2} (via the geometric expansions of $r,s$ and the AB2 bracket
+$\tfrac32N^n-\tfrac12N^{n-1}$), then matching term by term, gives the LTE.
+
+\begin{proposition}[Local truncation error of AB2--CN2]
+\label{prop:lte}
+The per-step local truncation error of \eqref{eq:ab2cn2} against the exact flow
+of \eqref{eq:qg} is
+\begin{equation}
+\tau=\omega(t_n+h)-\omega^{n+1}_{\rm AB2CN2}
+=-\frac{h^3}{12}R_3-\frac{h^4}{24}R_4-\frac{h^5}{240}R_5
+ -\frac{h^6}{1440}R_6+\bO(h^7),
+\label{eq:tau}
+\end{equation}
+with
+\begin{align}
+R_3 &= \Lop^3\omega+\Lop^2N+\Lop\Ndot-5\Nddot,\label{eq:R3}\\
+R_4 &= 2\Lop^4\omega+2\Lop^3N+2\Lop^2\Ndot-4\Lop\Nddot+\Ndddot,\\
+R_5 &= 13\Lop^5\omega+13\Lop^4N+13\Lop^3\Ndot-17\Lop^2\Nddot+8\Lop\Ndddot-7N^{(4)},\\
+R_6 &= 43\Lop^6\omega+43\Lop^5N+43\Lop^4\Ndot-47\Lop^3\Nddot+28\Lop^2\Ndddot
+        -17\Lop N^{(4)}+4N^{(5)}.
+\end{align}
+The orders $h^0,h^1,h^2$ cancel identically (second-order accuracy).
+\end{proposition}
+
+\begin{remark}
+The $\Lop^p\omega$ coefficients $\{-\tfrac1{12},-\tfrac1{12},-\tfrac{13}{240},
+-\tfrac{43}{1440}\}$ are exactly the error coefficients of the $(1,1)$-Pad\'e
+approximant $r(h)$ to $e^{h\Lop}$ (the pure Crank--Nicolson truncation), an
+internal consistency check. All coefficients in Prop.~\ref{prop:lte} were
+verified symbolically.
+\end{remark}
+
+\begin{remark}[$K$-fine reference]
+If one targets $K$ fine steps of the same scheme at $\hf=\DT/K$ rather than the
+exact flow, every term acquires a factor $(1-1/K^p)$; for the leading term this
+is $(1-1/K^2)$, and for $K\gtrsim100$ all such factors are $\approx1$. A
+fine-$\hf$ RK4 trajectory equals the exact flow to $\sim10^{-23}$ at
+$\DT=10^{-3}$, so the exact-flow operators are what one deploys.
+\end{remark}
+
+\subsection{Illustration}
+\label{sec:integrator-illus}
+We verify Prop.~\ref{prop:lte} numerically by a convergence study against the
+exact flow. For a snapshot $\omega^n$ we form the exact history
+$\omega^{n-1}=\omega(t_n-h)$ and the exact future $\omega(t_n+h)$ by fine RK4,
+take one AB2--CN2 step of size $h$, and measure
+$\tau_{\rm emp}=\omega(t_n+h)-\omega^{n+1}$ and the residuals
+$\|\tau_{\rm emp}-\tau_{\rm pred}^{(P)}\|$ after subtracting the analytical
+prediction kept through order $P$. Keeping $R_3,\dots,R_P$ leaves a residual
+$\bO(h^{P+1})$; the measured log--log slopes are $4,5,6$ for $P=3,4,5$,
+confirming $R_3,R_4,R_5$ (the slope-7 line for $R_6$ lies at the float64
+roundoff floor and is confirmed symbolically instead).
+\figph{4.2cm}{Figure placeholder: vs-exact-flow convergence. $\|\tau_{\rm
+emp}\|$ (slope 3) and the residuals after subtracting $R_3$, $R_3{+}R_4$,
+$R_3{+}R_4{+}R_5$ (slopes 4, 5, 6) vs $h$, with reference-slope guides. Also:
+the bare-scheme $\Delta t^2$ convergence of Sec.~\ref{sec:integrator}. Source:
+\texttt{validate\_ab2cn2\_vs\_truth.py}.}
+
+% ===================================================================== %
+\section{The truncation-error closure}
+\label{sec:closure}
+
+\subsection{Derivation}
+\label{sec:closure-derivation}
+Since $\omega^{n+1}_{\rm AB2CN2}+\tau=\omega(t_n+h)$ exactly, the correction to
+\emph{add} to each bare step is $\delta=\tau$. Removing the full truncation
+error through $\bO(h^6)$ leaves residual $\bO(h^7)$:
+\begin{equation}
+\omega^{n+1}_{\rm closed}=\omega^{n+1}_{\rm AB2CN2}
+-\frac{\DT^3}{12}R_3-\frac{\DT^4}{24}R_4-\frac{\DT^5}{240}R_5
+-\frac{\DT^6}{1440}R_6 .
+\label{eq:closed}
+\end{equation}
+Each operator separates into two qualitatively different parts:
+\begin{equation}
+R_p=\underbrace{R_p^{\rm anal}}_{\text{powers of }\Lop\text{ on }\omega,N}
+   +\underbrace{R_p^{\rm NN}}_{\text{time-derivatives of }N},
+\end{equation}
+with, for the leading term, $R_3^{\rm anal}=\Lop^3\omega+\Lop^2N$ and
+$R_3^{\rm NN}=\Lop\Ndot-5\Nddot$ (Table~\ref{tab:split}). The analytical parts
+are diagonal in Fourier space (or use the single Jacobian already needed for
+$N$) and are free at inference. The learned parts contain nested time
+derivatives of the Jacobian and are the only expensive pieces.
+\begin{table}[h]
+\centering\small
+\caption{Analytical vs.\ learned parts of each operator.}
+\label{tab:split}
+\begin{tabular}{cll}
+\toprule
+$p$ & analytical $R_p^{\rm anal}$ & learned $R_p^{\rm NN}$ \\
+\midrule
+3 & $\Lop^3\omega+\Lop^2N$       & $\Lop\Ndot-5\Nddot$\\
+4 & $2\Lop^4\omega+2\Lop^3N$     & $2\Lop^2\Ndot-4\Lop\Nddot+\Ndddot$\\
+5 & $13\Lop^5\omega+13\Lop^4N$   & $13\Lop^3\Ndot-17\Lop^2\Nddot+8\Lop\Ndddot-7N^{(4)}$\\
+6 & $43\Lop^6\omega+43\Lop^5N$   & $43\Lop^4\Ndot-47\Lop^3\Nddot+28\Lop^2\Ndddot-17\Lop N^{(4)}+4N^{(5)}$\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Learning target.}
+A network learns the leading expensive part as the $\DT$-independent quantity
+\begin{equation}
+f_{\rm NN}(\omega)=\tfrac{1}{12}\big[\Lop\Ndot-5\Nddot\big],
+\label{eq:target}
+\end{equation}
+which is $\bO(1)$ for QG (no $\DT^3$ cancellation, no tiny labels) and is
+reusable across $(\DT,K)$ by analytical rescaling. The deployed correction at
+leading order is then
+$\delta=-\DT^3(1-1/K^2)\,[\,\tfrac1{12}(\Lop^3\omega+\Lop^2N)+f_{\rm NN}\,]$.
+
+\subsection{Analysis: which orders matter}
+\label{sec:analysis}
+Whether the higher-order operators contribute depends on the norms
+$\|\Ndot\|,\dots,\|N^{(5)}\|$, which are \emph{not} known a priori: each is a
+nested Jacobian of an advection field, and in a turbulent cascade the higher
+derivatives probe ever finer scales. The per-order LTE contribution is
+$\frac{h^p}{D_p}\|R_p\|$. Writing the ratio of consecutive contributions as
+$\rho_p(h)=\frac{h^{p+1}/D_{p+1}\,\|R_{p+1}\|}{h^{p}/D_{p}\,\|R_{p}\|}$, the
+series converges only while $\rho_p<1$. Because $\rho_p\propto h$, there is a
+finite radius of convergence $\DT_\star$ above which consecutive terms stop
+shrinking and the modified-equation expansion ceases to represent the error.
+
+\begin{corollary}[Bounded usable step]
+\label{cor:radius}
+If $\|N^{(p+1)}\|/\|N^{(p)}\|\to g$ (the per-order growth of the nonlinear time
+derivatives), then $\DT_\star\sim D_{p+1}/(D_p\,g)\sim 1/g$. The closure's
+usable step size is bounded by $\DT_\star$ \emph{regardless of how many
+correction orders are carried}; past $\DT_\star$ no finite-order closure
+improves accuracy.
+\end{corollary}
+\noindent The complementary structural bound is the explicit-stability ceiling
+of AB2 on the nonlinear term, which limits $\DT$ independently.
+
+\subsection{Illustration}
+\label{sec:closure-illus}
+We measure the operators directly on developed snapshots, validating the
+chain-rule derivatives against RK4 finite differences (to $\le0.7\%$, and
+$\le0.6\%$ even for $N^{(5)}$). For forced turbulence
+(Table~\ref{tab:mono}), within each $R_p$ the highest time-derivative of $N$
+dominates by orders of magnitude; the analytical pieces are negligible. The
+pure ($\Lop^0$) norms grow $\sim\!30$--$75\times$ per order
+($\|\Nddot\|\!\sim\!7.6\!\times\!10^2$ to
+$\|N^{(5)}\|\!\sim\!1.7\!\times\!10^8$), giving $g\!\sim\!50$ and, via
+Cor.~\ref{cor:radius}, $\DT_\star\!\sim\!2\!\times\!10^{-2}$
+(Table~\ref{tab:lte}).
+\begin{table}[h]
+\centering\small
+\caption{Measured RMS of representative monomials and the assembled
+$\|R_p\|$ (mean over snapshots, forced turbulence).}
+\label{tab:mono}
+\begin{tabular}{lr lr}
+\toprule
+$R_3$ & RMS & $R_5$ & RMS \\
+\midrule
+$\Lop^3\omega$ & $1.17\!\times\!10^{-1}$ & $\Lop\Ndddot$ & $3.74\!\times\!10^{4}$\\
+$\Lop^2 N$     & $4.59\!\times\!10^{-1}$ & $N^{(4)}$     & $2.27\!\times\!10^{6}$\\
+$\Lop\Ndot$    & $1.50\!\times\!10^{1}$  & $\|R_5\|$     & $1.59\!\times\!10^{7}$\\
+$\Nddot$       & $7.57\!\times\!10^{2}$  &              & \\
+$\|R_3\|$      & $3.78\!\times\!10^{3}$  & $R_6$ & RMS\\
+\cmidrule(l){1-2}\cmidrule(l){3-4}
+$R_4$ & RMS & $\Lop N^{(4)}$ & $2.59\!\times\!10^{6}$\\
+\cmidrule(l){1-2}
+$\Lop\Nddot$ & $6.58\!\times\!10^{2}$ & $N^{(5)}$ & $1.70\!\times\!10^{8}$\\
+$\Ndddot$    & $3.64\!\times\!10^{4}$ & $\|R_6\|$ & $6.79\!\times\!10^{8}$\\
+$\|R_4\|$    & $3.64\!\times\!10^{4}$ &           & \\
+\bottomrule
+\end{tabular}
+\end{table}
+\begin{table}[h]
+\centering\small
+\caption{Measured per-order LTE contribution $\frac{h^p}{D_p}\|R_p\|$ (forced
+turbulence). At $\DT=10^{-1}$ the $h^5$ term exceeds the $h^3$ term: the
+expansion has diverged.}
+\label{tab:lte}
+\begin{tabular}{lcccc}
+\toprule
+$\DT$ & $\tfrac{h^3}{12}\|R_3\|$ & $\tfrac{h^4}{24}\|R_4\|$
+      & $\tfrac{h^5}{240}\|R_5\|$ & $\tfrac{h^6}{1440}\|R_6\|$\\
+\midrule
+$10^{-3}$ & $3.15\!\times\!10^{-7}$ & $1.52\!\times\!10^{-9}$ & $6.63\!\times\!10^{-11}$ & $4.71\!\times\!10^{-13}$\\
+$10^{-2}$ & $3.15\!\times\!10^{-4}$ & $1.52\!\times\!10^{-5}$ & $6.63\!\times\!10^{-6}$ & $4.71\!\times\!10^{-7}$\\
+$10^{-1}$ & $3.15\!\times\!10^{-1}$ & $1.52\!\times\!10^{-1}$ & $6.63\!\times\!10^{-1}$ & $4.71\!\times\!10^{-1}$\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The practical reading: for $\DT\le10^{-3}$, $R_3$ dominates ($R_4$ is
+$0.5\%$) and removing $R_3$ alone eliminates the truncation error to the
+$\bO(\DT^4)$ floor; near $\DT=10^{-2}$, $R_4$ contributes $\sim5\%$; beyond
+$\DT_\star$ the expansion diverges and the closure cannot help. This overturns
+the naive expectation that higher-order corrections extend the usable step.
+\TODO{add decaying-turbulence column; expect larger $\DT_\star$.}
+
+% ===================================================================== %
+\section{Network architecture for the learned operator}
+\label{sec:arch}
+
+\subsection{Design}
+\label{sec:arch-design}
+The target \eqref{eq:target} is dictated by structure, and the architecture is
+built to match it.
+
+\subsubsection{Building blocks and locality}
+After spatial gradients, $\Jop$ and its $\Lop$-images are \emph{local} (they
+are pointwise products of gradient fields, representable by $3\times3$ stencils
+and a multiplicative nonlinearity). The only nonlocal operation is
+$\Delta^{-1}$, which recovers $\psi$ from $\omega$. To keep the receptive field
+small we therefore supply $\psi$ directly rather than asking the network to
+invert the Laplacian.
+
+\subsubsection{Minimal input set}
+Through the chain rule \eqref{eq:leibniz}, $f_{\rm NN}$ depends on $\omega,\psi$
+and their first two time derivatives. Supplying three consecutive time levels
+makes those derivatives available by finite differences, giving the minimal,
+non-redundant input set
+$\big(\omega^n,\omega^{n-1},\omega^{n-2},\psi^n,\psi^{n-1},\psi^{n-2}\big)$
+(six channels). The network (\emph{BilinearClosureNet}) then mirrors the
+operator: a $1\times1$ stem and time-difference block, a $3\times3$ block with
+gated-linear-unit (GLU) activation that represents the bilinear Jacobian, a
+residual refinement, a block applying $\Lop$, and a $1\times1$ output
+(Table~\ref{tab:arch}). Circular padding throughout matches the periodic
+boundary; the receptive field is seven points and the model has
+$\approx\!374$k parameters.
+\begin{table}[h]
+\centering\small
+\caption{BilinearClosureNet. $\mathrm{GLU}(x)=a\odot\sigma(b)$ with
+$(a,b)=\mathrm{split}(x)$ supplies the bilinear gating that represents $\Jop$;
+$\mathrm{GeLU}$ is a smooth nonlinearity.}
+\label{tab:arch}
+\begin{tabular}{llccc}
+\toprule
+Block & Operation & Kernel & Activation & Receptive field \\
+\midrule
+Stem   & channel mix on the 6 inputs           & $1\times1$ & ---  & 1 \\
+A      & time finite differences (channel mix) & $1\times1$ & ---  & 1 \\
+B      & spatial gradients + bilinear products & $3\times3$ & GLU  & 3 \\
+C      & residual refinement                   & $3\times3$ & GeLU & 5 \\
+D      & apply $\Lop$ (for the $\Lop\Ndot$ piece)& $3\times3$& ---  & 7 \\
+Output & final linear combination              & $1\times1$ & ---  & 7 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Illustration: architecture progression}
+\label{sec:arch-illus}
+The minimal design was reached by elimination, each stage isolating one
+bottleneck (validation relative-$L^2$ on $f_{\rm NN}$):
+\begin{itemize}[leftmargin=1.4em,nosep,topsep=2pt]
+\item \textbf{Stage 0 (U-Net, $(\omega_0,\psi_0)$):} $\approx45\%$---no
+temporal information, and downsampling washes out the high-$k$ structure where
+$\Nddot$ lives.
+\item \textbf{Stage 1 (U-Net, gradients $+\omega_{-1}$):} $\approx30\%$.
+\item \textbf{Stage 2 (expose analytical $N,\Ndot$):} $\approx28\%$---handing
+the network the exact building blocks barely helps, so the bottleneck is
+regression, not features.
+\item \textbf{Stage 3 (decouple target to $\tfrac1{12}[\Lop\Ndot-5\Nddot]$):}
+$\approx25\%$---cleaner target, but the U-Net inductive bias is wrong for a
+pointwise bilinear operator.
+\item \textbf{Stage 4 (BilinearClosureNet, current best):} add
+$\omega_{-2},\psi_{-2}$ and match the architecture to the operator.
+\TODO{state final dealiased val.\ rel-$L^2$ ($\approx0.24$) and parameter count.}
+\end{itemize}
+\figph{3.8cm}{Figure placeholder: architecture-progression loss curves
+(Stages 0--4), val.\ rel-$L^2$ vs epoch.}
+
+% ===================================================================== %
+\section{The closed AB2--CN2 scheme}
+\label{sec:scheme}
+At inference, one closed coarse step evaluates the bare update
+\eqref{eq:ab2cn2}, the analytical part of $R_3$ (Fourier-diagonal multiplies
+plus the cached Jacobian), and one network forward pass, then applies
+\eqref{eq:closed} truncated at the order warranted by $\DT$ (Sec.~\ref{sec:analysis}):
+\begin{equation}
+\omega^{n+1}_{\rm closed}=\omega^{n+1}_{\rm AB2CN2}
+-\DT^3\big(1-\tfrac1{K^2}\big)
+\Big[\tfrac1{12}\big(\Lop^3\omega^n+\Lop^2N^n\big)+f_{\rm NN}(\omega^n)\Big].
+\end{equation}
+The network is applied \emph{online}: it is evaluated on the closure
+trajectory's own evolving state and its correction feeds the next step, so
+errors compound autoregressively and the network never sees truth.
+Table~\ref{tab:cost} gives the per-step cost: the closure adds roughly one
+batched FFT and one network pass, while requiring $T/\DT$ steps instead of
+$T/\hf$---a net $\sim\!K$-fold speedup at $\hf$-accuracy.
+\begin{table}[h]
+\centering\small
+\caption{Per coarse step, in FFT-equivalent units.}
+\label{tab:cost}
+\begin{tabular}{lcc}
+\toprule
+ & without closure & with closure \\
+\midrule
+Jacobians per step            & 1 (+1 cached) & 1 (+1 cached) \\
+FFTs for $\Lop^k$ scaffolding & 0 & 0 (spectral multiplies) \\
+FFTs for NN inputs            & 0 & $\sim$6 (batchable $\to\!\approx$1) \\
+NN forward pass               & 0 & 1 \\
+Step for matched accuracy     & $\hf=\DT/K$ & $\DT$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ===================================================================== %
+\section{Numerical experiments}
+\label{sec:experiments}
+We evaluate on two doubly-periodic configurations spanning the isotropic and
+$\beta$-dominated regimes (Table~\ref{tab:cases}). For each, the truth is a
+fine ($\hf=10^{-5}$) trajectory; the closure runs at $\DT=10^{-3}$ ($K=100$).
+All computations use float64, required because the leading target is
+$\bO(\DT^3)\!\approx\!10^{-9}$ before rescaling---below the float32
+machine-epsilon floor.
+\begin{table}[h]
+\centering\small
+\caption{Experimental configurations (from the run YAMLs).}
+\label{tab:cases}
+\begin{tabular}{lll}
+\toprule
+ & Decaying turbulence & Forced $\beta$-plane turbulence \\
+\midrule
+Grid                 & $256\times256$       & $512\times512$ \\
+Domain               & $2\pi\times2\pi$     & $4\pi\times4\pi$ \\
+$\nu$                & $1.025\times10^{-5}$ & $1.025\times10^{-4}$ \\
+$\mu$                & $0$                  & $0.02$ \\
+$\beta$              & $0$                  & $1.0$ \\
+Forcing $F$          & none                 & $-0.1\cos(2x)+0.1\cos(2y)$ \\
+$\mathrm{Re}$ (approx.)& $\sim\!10^5$       & $\sim\!10^4$ \\
+IC                   & Gaussian, peak $k\in[10,32]$ & Gaussian, peak $k\in[3,5]$ \\
+Horizon $T$          & $60$                 & $100$ \\
+$\DT$ / $K$          & $10^{-3}$ / $100$    & $10^{-3}$ / $100$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Decaying turbulence (\texorpdfstring{$\mathrm{Re}\sim10^5$}{Re~1e5})}
+\label{sec:exp-decay}
+\TODO{report: single-step closure recovery (predicted vs achieved
+rel$_{\rm clos}$/rel$_{\rm bare}$, deviation-cosine); autoregressive rollout
+error growth vs the bare coarse run; enstrophy/energy spectra; net speedup.}
+\figph{4.6cm}{Figure placeholder: decaying-turbulence rollout. Vorticity fields
+(truth / bare / closure) and differences at several times; relative-$L^2$
+error growth; enstrophy drift; spectra. Source:
+\texttt{rollout\_load\_truth\_compare.py}.}
+
+\subsection{Forced \texorpdfstring{$\beta$}{beta}-plane turbulence (\texorpdfstring{$\mathrm{Re}\sim10^4$}{Re~1e4})}
+\label{sec:exp-forced}
+\TODO{report the same diagnostics for the forced $\beta$-plane case; relate the
+achievable horizon to $\DT_\star$ measured in Sec.~\ref{sec:analysis}.}
+\figph{4.6cm}{Figure placeholder: forced-turbulence rollout (same panels).}
+
+% ===================================================================== %
+\section{Conclusion}
+\label{sec:conclusion}
+We have treated the time-discretization error of the spectral AB2--CN2
+integrator as a closure problem and removed it with a learned correction
+derived from modified-equation analysis. The local truncation error is known
+in closed form to $\bO(\DT^6)$ (Prop.~\ref{prop:lte}), every operator verified
+symbolically and by a vs-exact-flow convergence study; each operator splits
+into a free analytical part and an expensive part built from time derivatives
+of the Jacobian, the latter learned by a compact, structure-matched network.
+An empirical magnitude audit shows that the expensive parts are governed by the
+rapidly growing norms of higher time derivatives of $N$, which gives the
+modified-equation series a finite radius of convergence $\DT_\star$ that
+bounds the closure's usable step independently of correction order
+(Cor.~\ref{cor:radius})---so in practice $R_3$ is the operative closure and
+removing it eliminates the truncation error up to the $\bO(\DT^4)$ floor for
+$\DT\le\DT_\star$.
+
+\paragraph{Future directions.}
+\TODO{itemize briefly: out-of-distribution time-step / horizon tests; learning
+additional $N$-derivative orders only where the audit warrants; extension to
+$\beta$ as an explicit feature for cross-regime transfer; obstacle flows.}
+
+\section*{Reproducibility}
+The spectral QG solver follows \citet{sureshbabu2025}. Truncation operators are
+verified by \texttt{validate\_ab2cn2\_vs\_truth.py}; magnitudes by
+\texttt{measure\_truncation\_magnitudes.py}; rollouts by
+\texttt{rollout\_load\_truth\_compare.py}. \TODO{code/data availability + repo.}
+
+\bibliographystyle{plainnat}
+\begin{thebibliography}{99}
+\bibitem[Suresh Babu et~al.(2025)]{sureshbabu2025}
+A.~N. Suresh Babu, A.~Sadam, and P.~F.~J. Lermusiaux. \TODO{title}. 2025.
+\bibitem[Charous \& Lermusiaux(2023)]{charous2023}
+A.~Charous and P.~F.~J. Lermusiaux. Stable rank-adaptive dynamically orthogonal
+Runge--Kutta schemes. \emph{SIAM J.\ Sci.\ Comput.}, 2023.
+\bibitem[Gupta \& Lermusiaux(2021)]{gupta2021}
+A.~Gupta and P.~F.~J. Lermusiaux. Neural closure models for dynamical systems.
+\emph{Proc.\ R.\ Soc.\ A}, 477:20201004, 2021.
+\bibitem[Guan et~al.(2022)]{guan2022}
+Y.~Guan, A.~Chattopadhyay, A.~Subel, and P.~Hassanzadeh. Stable a posteriori
+LES of 2D turbulence using convolutional neural networks. \emph{J.\ Comput.\
+Phys.}, 458:111090, 2022.
+\bibitem[Srinivasan et~al.(2024)]{srinivasan2024}
+K.~Srinivasan, M.~D. Chekroun, and J.~C. McWilliams. \TODO{title}. 2024.
+\bibitem[Warming \& Hyett(1974)]{warming1974}
+R.~F. Warming and B.~J. Hyett. The modified equation approach to the stability
+and accuracy analysis of finite-difference methods. \emph{J.\ Comput.\ Phys.},
+14:159--179, 1974.
+\bibitem[Stetter(1978)]{stetter1978}
+H.~J. Stetter. The defect correction principle and discretization methods.
+\emph{Numer.\ Math.}, 29:425--443, 1978.
+\bibitem[Lions et~al.(2001)]{lions2001}
+J.-L. Lions, Y.~Maday, and G.~Turinici. R\'esolution d'EDP par un sch\'ema en
+temps ``parar\'eel''. \emph{C.\ R.\ Acad.\ Sci.\ Paris}, 332:661--668, 2001.
+\TODO{add: Kraichnan/Leith 2D turbulence; Crank--Nicolson; Adams--Bashforth.}
+\end{thebibliography}
+
+\end{document}

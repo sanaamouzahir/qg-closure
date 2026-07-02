@@ -1,0 +1,50 @@
+# @package _global_
+# Flow past cape scenario, paper Sect IV.B.
+
+qg:
+  grid:
+    Nx: 1024
+    Ny: 1024
+    Lx: 25.132741228718345  # 8 pi
+    Ly: 25.132741228718345  # 8 pi
+
+  time:
+    dt: 1.0e-4
+    T: 100
+    save_rate: 500
+
+  pde:
+    nu: 5.0e-3   # Re = U * L_cape / nu = 2 * 1 / 5e-3 = 400; paper uses Re = 200 with nu = 1e-2 effective
+    # Paper Sect IV.B: Re = 200, U = 2, L_cape = 1 -> nu = U*L_cape/Re = 0.01
+    # We use 5e-3 to match the qg-simple cylinder default (Re=200 there too with their length scale).
+    # Override on command line if you want exact-paper.
+    mu: 0.0
+    B: 0.0          # set to 0.1 or 1.0 for the beta-plane sweep
+    nv: 1.0
+    penalty: 1.025  # eta = 1.025 * dt (paper)
+
+  ic:
+    function: randn
+    energy: 0.0     # paper starts from rest
+    wavenumbers: [10.0, 32.0]
+    seed: 86
+    n_batch: 1
+
+  bc:
+    function: const-outlet-vorticity-rtd  # right + top + bottom sponges
+    inlet_velocity: 2.0
+    width: 0.1                             # sponge ramp width (fraction)
+    _min: 0.0
+    _max: 1.0
+    sponge: 1.025                          # sponge_eta = 1.025 * dt (paper)
+
+  forcing: null
+
+  mask:
+    function: cape
+    x_center: 0.2     # cape center at 0.2 * Lx (paper)
+    y_base: 0.0       # cape sits on the bottom of the domain
+    x_scale: 1.0      # L_cape (paper)
+    y_scale: 4.0      # W_cape (paper)
+    x_support: 2.0    # cape has compact support in x: zero outside [x_c - 2, x_c + 2]
+    tolerance: 1.0e-3

@@ -1,0 +1,39 @@
+# @package _global_
+# Flow past cylinder scenario with sponge boundaries and obstacle
+
+qg:
+  grid:
+    Nx: 512
+    Ny: 512
+    Lx: 25.132741228718345  # 8*pi
+    Ly: 25.132741228718345  # 8*pi
+  
+  time:
+    dt: 0.001
+    T: 100
+    save_rate: 500
+  
+  pde:
+    nu: 5e-3  # RE 200
+    penalty: 1.25  # 1.25 * dt (Brinkman penalty for cylinder)
+  
+  ic:
+    function: randn  # Use random IC
+    energy: 0
+  
+  bc:
+    function: const-outlet-vorticity-rtd  # Flow past cylinder BC with diffuse sponge
+    inlet_velocity: 2.0  # Inflow velocity
+    width: 0.025  # Sponge width (x_left=0.025, x_right=1-0.025=0.975)
+    _min: 0.0
+    _max: 1.0
+    sponge: 1.25  # 1.25 * dt (boundary sponging)
+  
+  mask:
+    function: circular
+    r: 0.628318530717959  # pi/5
+    x_center: 0.25  # Position cylinder at 1/4 domain
+    y_center: 0.5
+    tol: 1e-3
+  
+  forcing: null  # No forcing

@@ -1,0 +1,81 @@
+defaults:
+  - _self_
+  - scenario: decaying_turbulence
+
+# QG solver configuration (structured)
+qg:
+  seed: 42
+  grid:
+    Nx: 512
+    Ny: 512
+    Lx: 6.283185307179586  # 2*pi
+    Ly: 6.283185307179586
+    precision: float32
+    # device: cuda
+  
+  time:
+    dt: 0.001
+    T: 200
+    save_rate: 1000
+  
+  pde:
+    mu: 0.0
+    nu: 1.025e-04
+    B: 0.0
+    nv: 1.0
+    penalty: 0.0
+    closure_function: null
+    closure: 0.0
+    friction: null
+  
+  ic:
+    function: randn
+    energy: 0.01
+    wavenumbers: [10.0, 32.0]
+    seed: 86  # Will be overridden by qg.seed
+    n_batch: 1
+  
+  bc:
+    function: periodic
+    inlet_velocity: 0.0
+    width: 0.05
+    _min: 0.0
+    _max: 1.0
+    sponge: 0.0
+  
+  forcing: null
+  
+  mask: null
+  
+  fps: 20
+  profile: false
+
+paths:
+  data_root: ${oc.env:DATA_ROOT,./data}
+  output_root: ./runs
+
+# WandB configuration
+wandb:
+  project: datasets-qg
+  entity: null
+  mode: online  # online, offline, disabled
+  tags: []
+
+# Git tracking
+git:
+  sha: ${gitinfo:sha}
+  dirty: ${gitinfo:dirty}
+  short_msg: ${gitinfo:short_msg}
+
+# Hydra output configuration
+hydra:
+  run:
+    dir: ${paths.output_root}/qg/${now:%Y-%m-%d_%H-%M-%S}_${git.short_msg}
+  job:
+    config:
+      override_dirname:
+        kv_sep: '='
+        item_sep: '_'
+
+# Visualization
+clamp: 0.3

@@ -1,0 +1,32 @@
+# @package _global_
+# Decaying turbulence -- RESTART from t=60 snapshot.
+# Continue running to drive vortex merger.
+#
+# Uses the existing extract_restart_ic.py output (single-batch, shape (Ny,Nx)).
+# ic.py's `from_file` will broadcast it to n_batch=20 -- all 20 batches start
+# identical and decorrelate via chaotic dynamics.
+#
+# Storage budget at dt=1e-5, save_rate=10000:
+#   1 save per 0.1 time units * T=100 * 20 batches * 256*256 * 8 bytes
+#   = 1000 * 20 * 524288 = 10 GB total.
+
+qg:
+  grid:
+    Nx: 256
+    Ny: 256
+
+  time:
+    dt: 1.0e-5
+    T:  100.0
+    save_rate: 10000   # save every 10k steps = every 0.1 time units
+
+  pde:
+    nu: 1.025e-5
+
+  ic:
+    function: from_file
+    path: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/outputs/decaying_turb_dt_sweep_float64/dt_2em5/restart_ics/decay_t60/restart_omega.npy
+    n_batch: 20
+
+  forcing: null
+  mask: null
