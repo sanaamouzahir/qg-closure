@@ -278,11 +278,20 @@ class CheapDerivClosureNet(nn.Module):
         self.out_orders = out_orders
 
         self.time_fd = TimeFD(n_time, dt, learnable=learnable_stencils)
-        # spatial grads applied to (n_time omega-orders + n_time psi-orders)
-        self.grad = SpatialGrad(2 * n_time, dx, dy, width=grad_kernel,
+        # ORDER CLIP: only orders 0..out_orders are ever used by the outputs
+        # (N^(m) needs omega^(k), k<=m<=out_orders). The higher rows of the
+        # 7-node stencil (orders 4..6, scaled 1/dt^4..6 ~ 1e10-1e13) are noise;
+        # if their Jacobian features exist, ONE Adam step puts lr-sized weights
+        # on ~1e18-magnitude features and the output explodes by ~1e14 (seen at
+        # S=7). Clipping keeps ALL n_time snapshots in each emitted row (the
+        # order-3 row of a 7-node stencil is 4th-order accurate -- the reason
+        # for the deep stencil) and drops only the unused noisy orders.
+        self.n_ord = min(out_orders + 1, n_time)   # orders 0..out_orders
+        # spatial grads applied to (n_ord omega-orders + n_ord psi-orders)
+        self.grad = SpatialGrad(2 * self.n_ord, dx, dy, width=grad_kernel,
                                 learnable=learnable_stencils)
 
-        self.n_jac = n_time * n_time  # J(psi^i, omega^j), i,j in 0..n_time-1
+        self.n_jac = self.n_ord * self.n_ord  # J(psi^i, omega^j), i,j in 0..n_ord-1
 
         self.refine = None
         if refine_channels > 0:
@@ -308,7 +317,7 @@ class CheapDerivClosureNet(nn.Module):
         # conv re-derives any spatial structure it needs. Off when hidden==0.
         self.corrector = None
         if hidden_channels > 0 and depth >= 1:
-            self.corrector = _Corrector(self.n_jac + 2 * n_time, out_orders,
+            self.corrector = _Corrector(self.n_jac + 2 * self.n_ord, out_orders,
                                         hidden_channels, depth, kernel)
 
     def _physics_init_mix(self):
@@ -316,19 +325,19 @@ class CheapDerivClosureNet(nn.Module):
 
         Output o predicts N^(m), m = o+1, and
             N^(m) = -sum_{j=0}^m C(m,j) J(psi^(m-j), omega^(j)).
-        The feature J(psi^i, omega^j) lives at index i*n_time + j and exists only
-        if i < n_time and j < n_time; terms needing an unavailable order are
-        dropped (so the highest order is approximate, the rest exact).
+        The feature J(psi^i, omega^j) lives at index i*n_ord + j on the CLIPPED
+        order grid (orders 0..out_orders). Every binomial term for m <= out_orders
+        has i = m-j <= out_orders <= n_ord-1, so nothing is dropped.
         """
-        nt = self.n_time
+        no = self.n_ord
         w = self.mix.weight.data
         w.zero_()
         for o in range(self.out_orders):
             m = o + 1
             for j in range(0, m + 1):
                 i = m - j
-                if i < nt and j < nt:
-                    w[o, i * nt + j, 0, 0] = -float(math.comb(m, j))
+                if i < no and j < no:
+                    w[o, i * no + j, 0, 0] = -float(math.comb(m, j))
 
     def forward(self, x: torch.Tensor, dt: torch.Tensor = None,
                 dx: torch.Tensor = None, dy: torch.Tensor = None) -> torch.Tensor:
@@ -336,8 +345,14 @@ class CheapDerivClosureNet(nn.Module):
         omega_stack = x[:, :nt]          # [omega_0, omega_m1, ...]
         psi_stack   = x[:, nt:2 * nt]    # [psi_0,   psi_m1,   ...]
 
-        omega_ord = self.time_fd(omega_stack, dt)   # (B, nt, H, W) [w, wdot, wddot]
-        psi_ord   = self.time_fd(psi_stack, dt)      # (B, nt, H, W) [p, pdot, pddot]
+        omega_ord = self.time_fd(omega_stack, dt)   # (B, nt, H, W) orders 0..nt-1
+        psi_ord   = self.time_fd(psi_stack, dt)      # (B, nt, H, W)
+        # ORDER CLIP: keep only orders 0..out_orders. The full nt-node stencil was
+        # used for these rows (deep-stencil accuracy); the noisy 1/dt^4.. rows are
+        # discarded BEFORE any parameterized layer sees them.
+        no = self.n_ord
+        omega_ord = omega_ord[:, :no]
+        psi_ord   = psi_ord[:, :no]
 
         # Mixed precision: the TimeFD differencing above runs at the INPUT dtype. At
         # inference we feed float64 so the high-order differences (omega_3dot ~ dt^-3,
@@ -350,15 +365,15 @@ class CheapDerivClosureNet(nn.Module):
             omega_ord = omega_ord.to(cdtype)
             psi_ord   = psi_ord.to(cdtype)
 
-        allf = torch.cat([omega_ord, psi_ord], dim=1)   # (B, 2*nt, H, W)
+        allf = torch.cat([omega_ord, psi_ord], dim=1)   # (B, 2*n_ord, H, W)
         dxg, dyg = self.grad(allf, dx=dx, dy=dy)
-        wx, px = dxg[:, :nt], dxg[:, nt:]   # omega-x grads, psi-x grads
-        wy, py = dyg[:, :nt], dyg[:, nt:]
+        wx, px = dxg[:, :no], dxg[:, no:]   # omega-x grads, psi-x grads
+        wy, py = dyg[:, :no], dyg[:, no:]
 
         # J(psi^i, omega^j) = (d_x psi^i)(d_y omega^j) - (d_y psi^i)(d_x omega^j)
         jac = []
-        for i in range(nt):              # psi order
-            for j in range(nt):          # omega order
+        for i in range(no):              # psi order
+            for j in range(no):          # omega order
                 jac.append(px[:, i:i + 1] * wy[:, j:j + 1]
                            - py[:, i:i + 1] * wx[:, j:j + 1])
         jac = torch.cat(jac, dim=1)      # (B, n_jac, H, W)
