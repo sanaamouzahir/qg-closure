@@ -2,7 +2,7 @@
 
 ## What this project is
 
-ML-based closure modeling for coarse-grid 2D quasi-geostrophic (QG) turbulence (MIT MSEAS, Lermusiaux group). Pseudo-spectral GPU solver (PyTorch) with AB2CN2 IMEX time stepping. Two closure tracks:
+ML-based closure modeling for coarse-grid 2D quasi-geostrophic (QG) turbulence. Pseudo-spectral GPU solver (PyTorch) with AB2CN2 IMEX time stepping. Two closure tracks:
 
 1. **Temporal closure (δR)** — primary. A cheap physics-structured network (learned discretization, Bar-Sinai/Kochkov lineage — NOT an FNO/DeepONet operator learner) supplies the N-time-derivatives that assemble the AB2CN2↔fine-step closure. Multi-objective: cost (memory + walltime), stability region, order/accuracy. Being generalized to match any generic Linear Multistep Method to its better-resolved self.
 2. **Spatial closure (Π)** — CNN+SVGP sub-grid-scale forcing; multi-β generalization via `Pi_spatial × β_NN(features)` factorization with β as explicit input.
