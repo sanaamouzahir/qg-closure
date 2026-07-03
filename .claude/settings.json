@@ -1,0 +1,29 @@
+{
+  "$schema_note": "Verify field names against `claude` docs if your Claude Code version differs; schema has shifted across releases.",
+  "permissions": {
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git reset --hard:*)"
+    ],
+    "ask": [
+      "Bash(qsub:*)",
+      "Bash(git push:*)",
+      "Bash(rm -rf:*)"
+    ],
+    "allow": [
+      "Read",
+      "Grep",
+      "Glob"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/guard_bash.sh" }
+        ]
+      }
+    ]
+  }
+}
