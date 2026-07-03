@@ -43,7 +43,7 @@ Forcing is load-bearing for N̈/N⃛ (enters via ω̇̄) even though Ḟ=0 — a
 ```
 δR = (ΔT²/12)·[L³ω̄ + L²N + L·Ṅ − 5·N̈]
 ```
-The "−5" is AB2's structural blind spot to N̈ — the NN piece is structurally necessary, not optional. Runtime: ~3× base AB2 step + NN forward.
+The "−5" is AB2's structural blind spot to N̈ — the NN piece is structurally necessary, not optional. Runtime: ~1.6× base AB2 step + NN forward ~O(4/k) speedup k=[1e-2,1e-3, 5e-2]
 
 Truncation operators (validated in `analysis/validate_ab2cn2_vs_truth.py`; assembled scheme-specifically in `training/closure_operators.py`):
 ```
