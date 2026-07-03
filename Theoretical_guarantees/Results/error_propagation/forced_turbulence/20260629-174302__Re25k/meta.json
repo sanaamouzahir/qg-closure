@@ -1,0 +1,26 @@
+{
+  "diagnostic": "error_propagation",
+  "case": "forced_turbulence",
+  "tag": "Re25k",
+  "timestamp": "20260629-174302",
+  "command": [
+    "python",
+    "closure_error_propagation.py",
+    "../data/ensemble_N5/FRC-Re25k/forced_turbulence_dT_5em3",
+    "--scheme",
+    "ab2cn2",
+    "--orders",
+    "3",
+    "4",
+    "--n-samples",
+    "32",
+    "--device",
+    "cuda"
+  ],
+  "return_code": 0,
+  "duration_sec": 44.0,
+  "host": "ibgpu-compute-0-0.local",
+  "cwd": "/gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/training/Theoretical_guarantees",
+  "git_sha": "unknown",
+  "python": "3.11.5"
+}

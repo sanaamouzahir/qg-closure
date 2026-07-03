@@ -1,0 +1,106 @@
+# fd_floor -- forced_turbulence -- Re25k-combo-kf4
+
+*20260629-173142*  |  host `ibgpu-compute-0-0.local`  |  git `unknown`  |  rc 0  |  75.1s
+
+## Command
+```
+python temporal_fd_floor_deep.py --sources ../data/ensemble_N5/FRC-Re25k/forced_turbulence_dT_5em3 ../data/ensemble_N5/FRC-combo/forced_turbulence_dT_5em3 ../data/ensemble_N5/FRC-kf4/forced_turbulence_dT_5em3 --target-dts 5e-3 1e-2 1.5e-2 --n-list 3 4 5 6 7 --n-samples 48 --device cuda --dtype float64
+```
+
+## Note
+per-order temporal-FD floor, n_time sweep
+
+## How to read this
+Temporal-FD floor with NO model in the loop (perfect spatial ops).
+- floor(n=4) ~ the trained val % -> the 4-snapshot TIME stencil is the wall;
+  the corrector cannot beat it -> build the 7-snapshot set.
+- floor(n=4) << trained val % -> temporal stencil has headroom; the plateau
+  is model capacity / spatial path -> the corrector is the right lever.
+- The n=4 -> n=7 drop is the predicted payoff of rebuilding.
+
+## Output
+```
+/gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-env/lib/python3.11/site-packages/torch/cuda/__init__.py:58: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+
+=== FRC-Re25k ===  nu=4.00e-05 mu=2.00e-02 beta=1  Re~2.5e+04  M=28 marks  dt_fine=5.000e-03  dealias=True
+  dt=0.005 (j=1)   per-order temporal-FD floor (median relL2):
+    n_time |       Ndot |      Nddot |      N3dot
+    ----------------------------------------------
+         3 |     3.399% |    35.896% |         --
+         4 |     1.212% |    14.855% |    64.545%
+         5 |     0.475% |     6.593% |    37.817%
+         6 |     0.212% |     3.365% |    22.804%
+         7 |     0.119% |     1.951% |    13.597%
+  dt=0.01 (j=2)   per-order temporal-FD floor (median relL2):
+    n_time |       Ndot |      Nddot |      N3dot
+    ----------------------------------------------
+         3 |    13.123% |    68.886% |         --
+         4 |     7.843% |    49.973% |   110.893%
+         5 |     5.421% |    41.068% |   122.818%
+         6 |     4.201% |    40.504% |   134.355%
+         7 |     3.707% |    41.137% |   150.977%
+  dt=0.015 (j=3)   per-order temporal-FD floor (median relL2):
+    n_time |       Ndot |      Nddot |      N3dot
+    ----------------------------------------------
+         3 |    27.875% |    96.567% |         --
+         4 |    23.578% |    98.702% |   142.227%
+         5 |    22.774% |   107.736% |   194.984%
+         6 |    24.036% |   124.380% |   271.076%
+         7 |    27.293% |   151.002% |   382.755%
+
+=== FRC-combo ===  nu=4.00e-05 mu=2.00e-02 beta=0.5  Re~2.5e+04  M=28 marks  dt_fine=5.000e-03  dealias=True
+  dt=0.005 (j=1)   per-order temporal-FD floor (median relL2):
+    n_time |       Ndot |      Nddot |      N3dot
+    ----------------------------------------------
+         3 |     0.720% |    16.991% |         --
+         4 |     0.113% |     3.346% |    31.730%
+         5 |     0.023% |     0.750% |     9.017%
+         6 |     0.006% |     0.208% |     2.821%
+         7 |     0.004% |     0.132% |     1.721%
+  dt=0.01 (j=2)   per-order temporal-FD floor (median relL2):
+    n_time |       Ndot |      Nddot |      N3dot
+    ----------------------------------------------
+         3 |     2.855% |    33.661% |         --
+         4 |     0.858% |    12.566% |    60.342%
+         5 |     0.325% |     5.521% |    33.466%
+         6 |     0.144% |     2.694% |    19.001%
+         7 |     0.072% |     1.414% |    11.349%
+  dt=0.015 (j=3)   per-order temporal-FD floor (median relL2):
+    n_time |       Ndot |      Nddot |      N3dot
+    ----------------------------------------------
+         3 |     6.330% |    49.684% |         --
+         4 |     2.811% |    27.299% |    86.275%
+         5 |     1.557% |    16.922% |    69.559%
+         6 |     0.984% |    12.149% |    57.360%
+         7 |     0.676% |     9.195% |    48.827%
+
+=== FRC-kf4 ===  nu=1.02e-04 mu=2.00e-02 beta=1  Re~9.76e+03  M=28 marks  dt_fine=5.000e-03  dealias=True
+  dt=0.005 (j=1)   per-order temporal-FD floor (median relL2):
+    n_time |       Ndot |      Nddot |      N3dot
+    ----------------------------------------------
+         3 |     0.436% |    13.831% |         --
+         4 |     0.058% |     2.147% |    25.238%
+         5 |     0.009% |     0.382% |     5.669%
+         6 |     0.005% |     0.169% |     2.224%
+         7 |     0.007% |     0.282% |     4.340%
+  dt=0.01 (j=2)   per-order temporal-FD floor (median relL2):
+    n_time |       Ndot |      Nddot |      N3dot
+    ----------------------------------------------
+         3 |     1.720% |    26.903% |         --
+         4 |     0.444% |     8.396% |    49.616%
+         5 |     0.136% |     2.904% |    21.835%
+         6 |     0.047% |     1.083% |     9.555%
+         7 |     0.018% |     0.441% |     4.624%
+  dt=0.015 (j=3)   per-order temporal-FD floor (median relL2):
+    n_time |       Ndot |      Nddot |      N3dot
+    ----------------------------------------------
+         3 |     3.836% |    39.974% |         --
+         4 |     1.391% |    18.332% |    72.319%
+         5 |     0.644% |     9.324% |    47.026%
+         6 |     0.334% |     5.194% |    30.553%
+         7 |     0.183% |     3.075% |    20.063%
+
+Read: each extra lag drives the per-order floor down; the n=4 row ~ the trained
+plateau, and the n=4 -> n=7 drop is the predicted payoff of rebuilding at 7 lags.
+```

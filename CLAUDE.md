@@ -2,7 +2,7 @@
 
 ## What this project is
 
-ML-based closure modeling for coarse-grid 2D quasi-geostrophic (QG) turbulence. Pseudo-spectral GPU solver (PyTorch) with AB2CN2 IMEX time stepping. Two closure tracks:
+ML-based closure modeling for coarse-grid 2D quasi-geostrophic (QG) turbulence (MIT MSEAS, Lermusiaux group). Pseudo-spectral GPU solver (PyTorch) with AB2CN2 IMEX time stepping. Two closure tracks:
 
 1. **Temporal closure (δR)** — primary. A cheap physics-structured network (learned discretization, Bar-Sinai/Kochkov lineage — NOT an FNO/DeepONet operator learner) supplies the N-time-derivatives that assemble the AB2CN2↔fine-step closure. Multi-objective: cost (memory + walltime), stability region, order/accuracy. Being generalized to match any generic Linear Multistep Method to its better-resolved self.
 2. **Spatial closure (Π)** — CNN+SVGP sub-grid-scale forcing; multi-β generalization via `Pi_spatial × β_NN(features)` factorization with β as explicit input.
@@ -18,6 +18,9 @@ external/qg-simple/  QG solver — SUBMODULE (fork of akhilsadam/qg-simple, `clo
 solver_patches/      0.2.1-era local solver modifications awaiting port onto the fork
                      (PORTING.md). Not imported. Deleted once ported.
 training/            v2 derivative-loss pipeline — ACTIVE, now MULTIGRID (see lineage).
+diagnostics/         Debugging probes + RESULTS_*.md session logs. The 2026-07-03 log
+                     documents the quiescent-window investigation end to end — read it
+                     before re-debugging anything that smells like "huge val error".
 analysis/            Convergence / truncation / stability / rollout / error-prop figures.
 spatial_closure/     Π_FF pipeline.
 scripts/sge/         Cluster submission (submit_X.sh → X_job.sh).
@@ -43,7 +46,7 @@ Forcing is load-bearing for N̈/N⃛ (enters via ω̇̄) even though Ḟ=0 — a
 ```
 δR = (ΔT²/12)·[L³ω̄ + L²N + L·Ṅ − 5·N̈]
 ```
-The "−5" is AB2's structural blind spot to N̈ — the NN piece is structurally necessary, not optional. Runtime: ~1.6× base AB2 step + NN forward ~O(4/k) speedup k=[1e-2,1e-3, 5e-2]
+The "−5" is AB2's structural blind spot to N̈ — the NN piece is structurally necessary, not optional. Runtime: ~3× base AB2 step + NN forward.
 
 Truncation operators (validated in `analysis/validate_ab2cn2_vs_truth.py`; assembled scheme-specifically in `training/closure_operators.py`):
 ```
@@ -86,8 +89,10 @@ fixD (bilinear, predicts f_NN_target)             model_fixD.py + train_v2_annea
           (per-sample dx,dy rescale; per-shape dealias; order-clip fix; by-window splits)
  parallel: δ-pivot (empirical delta + corrector)  legacy/snapshots/..._fixedGrid_v1, train_delta.py
 ```
-- **Current active = multigrid S=7 run `deriv7_equalw_R3R4`:** 18 roots (FRC members incl. FRC-256), shapes {256², 512²}, dT sweep {5e-3, 1e-2, 1.5e-2}, grad_kernel 15, lr 2e-4, f64, equal-weight loss, 3,700 params. cheap_deriv predicts LOCAL [Ṅ, N̈, N⃛]; L^k weightings (incl. the nonlocal β term) applied **analytically at inference, never learned**. Pipeline: TimeFD → spatial grads → Jacobian features → 1×1 mix (physics-init to chain-rule binomials). Corrector OFF (hidden=0).
-- **Planned next (in order):** (1) let current run finish; (2) `eval_deriv_by_root.py` per-(member × dt × order) breakdown — prediction: 5e-3 tier ≈ old numbers, 1.5e-2 Re25k blown; (3) retrain WITHOUT Re25k's 1e-2/1.5e-2 sweeps (keep its 5e-3 — inside the wall, good signal); (4) build the physics-conditioned model per the Wiener theory above.
+- **Current status (2026-07-03):** the first multigrid S=7 run (`deriv7_equalw_R3R4`, lr 2e-4) was **poisoned by quiescent spin-up windows** (see diagnostics/RESULTS_2026-07-03.md): ~9–33% of each member's windows are quasi-zonal early flow with J(ψ,ω)≈0, so their N-derivative targets are ~1e4–1e5× smaller than developed-flow windows; the per-sample relative loss explodes on them and the optimizer's cheapest move is shrinking all predictions toward zero (destroyed mix, N3dot≈0.99, trained medians WORSE than init). Fix: `filter_quiescent_windows.py` (drops whole windows by target-norm + stack-roughness thresholds; splits backed up to `split_prefilter.npz`), then retrain **from physics init** at lr 5e-5 with ALL members (Re25k's apparent catastrophe was this same artifact — do not cut it). Healthy-window init medians: Ndot≈0.19, Nddot≈0.26, N3dot≈0.33 (= width-15 spatial gap; the [spec] probe puts the pure time-FD floor at 0.0003/0.008/0.10 at 5e-3).
+- **Active run to launch/monitor:** `deriv7_filtered_lr5e-5` — 18 roots, filtered splits, S=7, grad_kernel 15, lr 5e-5, equal weights, f64. Expect ep0 val ≈ 0.2–0.4 and val_N3dot < 1 and falling; watch val_Nddot (rollout ceiling).
+- **Model (unchanged):** cheap_deriv, ~3,700 params, predicts LOCAL [Ṅ, N̈, N⃛]; L^k weightings (incl. the nonlocal β term) applied **analytically at inference, never learned**. Pipeline: TimeFD → spatial grads → Jacobian features → 1×1 mix (physics-init to chain-rule binomials). Corrector OFF (hidden=0). Shapes {256², 512²}, dT sweep {5e-3, 1e-2, 1.5e-2}.
+- **After the filtered retrain:** per-root eval + trained-vs-init medians (diagnostics/), then the physics-conditioned model per the Wiener theory above.
 - **δ-pivot track:** target `δ = Φ_ref − Φ_AB2CN2`, references `exact` / `rk4` / `both` (1-bit FiLM); `δ_exact − δ_rk4 = τ_RK4`. Follow-ons per `legacy/snapshots/Shallow_NN_enssemble_fixedGrid_v1/README_SNAPSHOT_v1.txt`.
 - The snapshot READMEs are the authoritative lineage docs. Never edit files inside `legacy/snapshots/` — they are locks.
 
@@ -127,13 +132,15 @@ fixD (bilinear, predicts f_NN_target)             model_fixD.py + train_v2_annea
 12. Resolution: 512² is under-resolved for cylinder at Re ≥ 600 — use 1024².
 13. Numerics context: AB2CN2 stability from CN-treated viscosity; imaginary-axis eigenvalues favor AB3/AB4, off-axis favor AB2.
 14. **Never emit unused time-orders** (see ORDER CLIP). Never let the mix or stencils receive gradients through 1/dt^k-scaled features that no output needs.
-15. Communication: short sentences. No long walls of prose. Terse, math-forward, corrective.
+15. **Spin-up is β-dependent — never use one t-start for all members.** The zonal/quiescent phase (J(ψ,ω)≈0, tiny N-derivative targets) lasts longer at higher β (observed: combo 9% of windows still zonal at t-start=15, FRC-256 16%, b2 27%, b25 33%). For NEW deep builds (incl. the upcoming decaying-turbulence members): set t-start per member — either from a developed-flow criterion (e.g. start when the window-median ‖N⃛‖ reaches ~its long-run median, equivalently when stack roughness ‖Δ²ω‖/‖ω‖ ≳ 1e-4) or conservatively t-start ∝ (1+β)·t₀. Regardless, ALWAYS run `filter_quiescent_windows.py` after slicing — it is the safety net (drops windows with target-norm < 1e-2× member median or frozen stacks), and it must precede any training.
+16. **Never train or report on unfiltered per-sample relative metrics.** Relative errors explode on near-zero-denominator (quiescent) samples and poison the optimizer (prediction-shrinking collapse: destroyed physics-init mix, trained medians worse than init). Report MEDIANS alongside means; if trained-worse-than-init appears, suspect the pool, not the model, and run `diagnostics/diagnose_error_distribution.py` first.
+17. Communication: short sentences. No long walls of prose. Terse, math-forward, corrective.
 
 ## Main pipelines
 
 **A. Simulation:** `python run_qg.py +scenario=<name> qg.grid.Nx=... hydra.run.dir=outputs/<name>`; cluster `./submit_qg.sh <job> [--gpu] -- <args>`. Postprocess: `prepare_npz_for_mmap.py`; restart ICs via `extract_restart_ic.py`.
 
-**B. Ensemble dataset (current S=7):** deep 28-mark builds via `build_training_data_mmap.py` (`--Delta-T 5.0e-3 --n-marks 28`, argparse last-wins passthrough in `scripts/sge/build_ensemble_mmap.sh`) → slice `slice_deriv_from_deep.py --n-snapshots 7 --target-dts 5e-3 1e-2 1.5e-2 --max-anchors 3` (targets computed once per window, dt-independent, per-member forcing from manifest) → **`resplit_by_window.py`** (mandatory — see rule 7). Per-shape dealias masks are member-grid-derived (256² and 512² differ even at equal L).
+**B. Ensemble dataset (current S=7):** deep 28-mark builds via `build_training_data_mmap.py` (`--Delta-T 5.0e-3 --n-marks 28`, argparse last-wins passthrough in `scripts/sge/build_ensemble_mmap.sh`; **t-start per member, β-scaled — rule 15**) → slice `slice_deriv_from_deep.py --n-snapshots 7 --target-dts 5e-3 1e-2 1.5e-2 --max-anchors 3` (targets computed once per window, dt-independent, per-member forcing from manifest) → **`resplit_by_window.py`** (mandatory — rule 7) → **`filter_quiescent_windows.py`** (mandatory — rule 15). Per-shape dealias masks are member-grid-derived (256² and 512² differ even at equal L).
 
 **C. Train — derivative-loss (current production, multigrid S=7):**
 ```bash
@@ -148,7 +155,7 @@ Startup checks: `params=3,700` (not 1,571 — else old un-clipped model), `MULTI
 
 **D. Train — δ-pivot:** `train_delta.py --reference both ...` via `train_delta_job.sh`.
 
-**E. Evaluate:** `eval_deriv_by_root.py` (per-member × dt × order rel-L2 of a ckpt — the breakdown the pooled val hides; writes CSV next to ckpt) → `rollout_perfect_closure.py` (analytic ceiling) → `rollout_timed_pareto.py` → `rollout_multistep_comparison.py`; error budget `closure_error_propagation.py` + `run_error_prop_3dt.sh` (two-pass: eps=1 geometry first, real eps after training; rebuild forcing per member via `build_forcing_npy.py`); FD floor `temporal_fd_floor_deep.py`.
+**E. Evaluate:** `eval_deriv_by_root.py` (per-member × dt × order rel-L2 of a ckpt — the breakdown the pooled val hides; writes CSV next to ckpt) → `rollout_perfect_closure.py` (analytic ceiling) → `rollout_timed_pareto.py` → `rollout_multistep_comparison.py`; error budget `closure_error_propagation.py` + `run_error_prop_3dt.sh` (two-pass: eps=1 geometry first, real eps after training; rebuild forcing per member via `build_forcing_npy.py`); FD floor `temporal_fd_floor_deep.py`. **When a run looks wrong**, the debug ladder that works (diagnostics/): per-root eval → init-ckpt eval → `diagnose_mark_noise.py` (deep smoothness) → `diagnose_sliced_inputs.py` (byte-compare) → `diagnose_one_sample.py` (stage audit: spectral-floor / fdgrad / model on one sample) → `diagnose_error_distribution.py` (median vs mean + worst offenders).
 
 **F. Numerics validation:** step1–3, `validate_ab2cn2_vs_truth.py` (R₃–R₆), `measure_truncation_magnitudes.py` (ΔT★).
 
@@ -156,7 +163,8 @@ Startup checks: `params=3,700` (not 1,571 — else old un-clipped model), `MULTI
 
 ## Known open items
 
-- **Current run `deriv7_equalw_R3R4` in flight** (multigrid S=7, lr 2e-4). On completion: per-root eval → retrain minus Re25k's {1e-2, 1.5e-2} sweeps (keep 5e-3) → physics-conditioned model.
+- **Launch `deriv7_filtered_lr5e-5`** (filtered splits, physics init, lr 5e-5, all 18 roots). Then: trained-vs-init medians per root → physics-conditioned model.
+- **Upcoming ensemble extension:** decaying-turbulence members to be deep-built — apply rule 15 (per-member t-start; DEC members have no forcing so the zonal-trap differs, but the developed-flow criterion still applies) + the filter.
 - **Wiener filter theory** — iPad derivation in progress (see Error theory section). Formalize before building the conditioned model. Open sub-items: explicit C_k from the 7-node Vandermonde remainder; the diagonal-vs-cascade split of ω^(S) that bounds what conditioning can recover.
 - **Weight-tied recursion cell** (order-p generalization: one cell unrolled p times gives any N^(p); the recursion is the exact ∂_t — no inner wall, but needs D⁻¹ per order): parked as the next amazing step after conditioning. Decision pending: exact-FFT D⁻¹ (~3 transforms/order) vs learned-local.
 - **Flux-vs-advective Jacobian form** in the model: deferred to the conditioned/recursion model design (it is the same decision as the FFT/D⁻¹ question).

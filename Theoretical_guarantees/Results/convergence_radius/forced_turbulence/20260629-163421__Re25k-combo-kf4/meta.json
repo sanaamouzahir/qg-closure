@@ -1,0 +1,30 @@
+{
+  "diagnostic": "convergence_radius",
+  "case": "forced_turbulence",
+  "tag": "Re25k-combo-kf4",
+  "timestamp": "20260629-163421",
+  "command": [
+    "python",
+    "convergence_radius.py",
+    "--sources",
+    "../data/ensemble_N5/FRC-Re25k/forced_turbulence_dT_5em3",
+    "../data/ensemble_N5/FRC-combo/forced_turbulence_dT_5em3",
+    "../data/ensemble_N5/FRC-kf4/forced_turbulence_dT_5em3",
+    "--max-order",
+    "5",
+    "--n-samples",
+    "32",
+    "--wall-k",
+    "7",
+    "--device",
+    "cuda",
+    "--dtype",
+    "float64"
+  ],
+  "return_code": 1,
+  "duration_sec": 33.6,
+  "host": "mseas.mit.edu",
+  "cwd": "/gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/training/Theoretical_guarantees",
+  "git_sha": "unknown",
+  "python": "3.11.5"
+}
