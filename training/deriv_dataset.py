@@ -13,8 +13,9 @@ add_deriv_targets.py) packs:
 
 Thin sibling of delta_dataset.py: same ConcatDataset + GridHomogeneousBatchSampler
 machinery, but serves the 3-channel derivative target instead of delta. Always
-returns the per-sample regime vector [Delta_T, beta, nu, mu] (Delta_T is a model
-input via the FD time-scaling).
+returns the per-sample regime vector [Delta_T, beta, nu, mu, dx, dy] -- Delta_T is
+a model input via the FD time-scaling, and dx,dy drive the MULTIGRID per-sample
+spatial rescale in cheap_deriv.SpatialGrad.
 
 Usage:
     from deriv_dataset import make_deriv_loaders
@@ -59,13 +60,26 @@ class DerivMemberDataset(Dataset):
         self.Ny, self.Nx = int(self.man['Ny']), int(self.man['Nx'])
         self.cdtype = torch.float64 if compute_dtype == 'float64' else torch.float32
         self.input_fields = snapshot_input_fields(self.n)
-        # regime: [Delta_T, beta, nu, mu, dx, dy]. dt drives TimeFD; dx,dy drive the
-        # factored SpatialGrad (1/dx, 1/dy applied per-sample). dx=Lx/Nx, dy=Ly/Ny.
-        _dx = float(self.man['Lx']) / self.Nx
-        _dy = float(self.man['Ly']) / self.Ny
+        # Per-channel MEDIAN target norms (member-level), for the norm-floored
+        # relative loss: denominator = max(||t_c||, rel_floor * median_c).
+        # Rationale: Ndot crosses zero at ||N(t)|| extrema (physical, developed
+        # flow), so per-sample relative errors/gradients explode there even
+        # after quiescent-window filtering. The floor caps their leverage
+        # without dropping the samples. Estimated from <=128 sampled rows.
+        tgt_mm = np.load(self.root / 'packed' / 'deriv_anal_f64.npy', mmap_mode='r')
+        _pick = np.linspace(0, tgt_mm.shape[0] - 1,
+                            min(128, tgt_mm.shape[0]), dtype=int)
+        _norms = np.array([[np.linalg.norm(tgt_mm[i, c]) for c in range(3)]
+                           for i in _pick])                      # (P, 3)
+        self.tnorm_median = np.median(_norms, axis=0)            # (3,)
+        # regime: [dT, beta, nu, mu, dx, dy, med_N1, med_N2, med_N3]
         self.regime_vec = torch.tensor(
             [float(self.man['Delta_T']), float(self.man['beta']),
-             float(self.man['nu']), float(self.man['mu']), _dx, _dy],
+             float(self.man['nu']), float(self.man['mu']),
+             float(self.man['Lx']) / int(self.man['Nx']),   # MULTIGRID: dx
+             float(self.man['Ly']) / int(self.man['Ny']),   # MULTIGRID: dy
+             float(self.tnorm_median[0]), float(self.tnorm_median[1]),
+             float(self.tnorm_median[2])],
             dtype=torch.float32)
 
     def __len__(self):

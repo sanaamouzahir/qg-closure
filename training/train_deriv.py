@@ -53,25 +53,32 @@ from model_deriv_closure import build_model
 ORDER_NAMES = ['Ndot', 'Nddot', 'N3dot', 'N4dot']
 
 
-def relative_l2_perchannel(pred, target):
-    """EXACT pre-6.1.2 training loss: per-SAMPLE, per-CHANNEL relative L2, averaged
-    over channels and batch (each N-derivative order, spanning orders of magnitude,
-    is normalized independently so the largest does not dominate). This is the
-    `rel_l2` + multi-target criterion from the original train.py."""
+def relative_l2_perchannel(pred, target, floor=None):
+    """Per-SAMPLE, per-CHANNEL relative L2, averaged over channels and batch.
+
+    floor: optional (B,C) tensor of per-sample denominator floors
+    (= rel_floor * member-median ||t_c||, carried in regime[:,6:9]).
+    Denominator = max(||t_c||, floor). Caps the leverage of near-zero-target
+    samples (e.g. Ndot zero-crossings at ||N(t)|| extrema) without dropping
+    them. floor=None == exact pre-6.1.2 loss."""
     p = pred.flatten(start_dim=2)
     t = target.flatten(start_dim=2)
     num = torch.norm(p - t, dim=2)
     den = torch.norm(t, dim=2).clamp_min(1e-30)
+    if floor is not None:
+        den = torch.maximum(den, floor.to(den.dtype))
     return (num / den).mean()
 
 
-def relative_l2_perchannel_vec(pred, target):
+def relative_l2_perchannel_vec(pred, target, floor=None):
     """(C,) per-operator relative L2, averaged over batch (diagnostic): tracks each
     of Ndot, Nddot, N3dot separately. mean() of this == relative_l2_perchannel."""
     p = pred.flatten(start_dim=2)
     t = target.flatten(start_dim=2)
     num = torch.norm(p - t, dim=2)
     den = torch.norm(t, dim=2).clamp_min(1e-30)
+    if floor is not None:
+        den = torch.maximum(den, floor.to(den.dtype))
     return (num / den).mean(dim=0)
 
 
@@ -119,6 +126,12 @@ def main():
                         'solver/builder) before the loss. The analytic targets are '
                         'dealiased by the Jacobian, so the prediction must be too '
                         '(matches the pre-6.1.2 run). --no-dealias-pred to disable.')
+    p.add_argument('--rel-floor', type=float, default=0.1,
+                   help='loss denominator floor = rel_floor * member-median '
+                        '||t_c|| per channel (from regime[:,6:9]). Caps the '
+                        'leverage of near-zero-target samples (Ndot zero-'
+                        'crossings at ||N(t)|| extrema). 0 disables (exact '
+                        'pre-6.1.2 relative loss).')
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--device', type=str, default='cuda')
     p.add_argument('--print-every', type=int, default=5)
@@ -149,6 +162,22 @@ def main():
     shapes = sorted({(k[0], k[1]) for k in ident})
     print(f"[deriv-train] MULTIGRID  roots={len(roots)}  full-grids={len(ident)}  "
           f"shapes={shapes}  reference(Ny,Nx,Lx,Ly)={ref}")
+
+    # GUARD: the per-SHAPE dealias projection below is valid ONLY for isotropic
+    # (Lx==Ly) domains -- then the 2/3 mask is mode-index based (L cancels) so all
+    # members of a shape share one mask. A rectangular (Lx!=Ly) member has an
+    # aspect-ratio-dependent mask; per-shape projection would silently mis-dealias
+    # it. All current scenarios are isotropic (4pi, 8pi squares); refuse loudly if
+    # that ever changes rather than corrupt the loss.
+    aniso = [(Ny, Nx, Lx, Ly) for (Ny, Nx, Lx, Ly) in ident
+             if abs(Lx - Ly) > 1e-9 or Ny != Nx]
+    if aniso:
+        raise SystemExit(
+            "[deriv-train] ANISOTROPIC domain(s) detected (Lx!=Ly or Ny!=Nx): "
+            f"{aniso}. The per-shape dealias projection is INVALID for these (the "
+            "2/3 mask depends on the aspect ratio). Key the projection AND the "
+            "batch sampler by (Ny,Nx,Lx/Ly) before running -- ask for the "
+            "aspect-aware variant.")
 
     # ---- data ----
     tl, vl, te, train_ds, val_ds, test_ds = make_deriv_loaders(
@@ -183,6 +212,13 @@ def main():
     else:
         for s in train_ds.subsets:
             project_by_shape[(int(s.man['Ny']), int(s.man['Nx']))] = lambda p: p
+
+    if args.rel_floor > 0:
+        print(f"[deriv-train] norm-floored loss: denominator = "
+              f"max(||t||, {args.rel_floor} * member-median ||t_c||)")
+    else:
+        print("[deriv-train] RAW relative loss (no floor) -- near-zero-target "
+              "samples have unbounded leverage")
 
     # ---- model (corrector OFF; built at the REFERENCE grid spacing) ----
     in_ch = 2 * args.n_snapshots
@@ -225,17 +261,21 @@ def main():
                 dT = regime[:, 0].to(x.dtype)
                 dxb = regime[:, 4].to(x.dtype)             # MULTIGRID: per-sample dx
                 dyb = regime[:, 5].to(x.dtype)             # MULTIGRID: per-sample dy
+                # norm floor: rel_floor * member-median ||t_c|| (regime[:,6:9]).
+                # Caps leverage of near-zero-target samples (Ndot zero-crossings).
+                floor = (args.rel_floor * regime[:, 6:6 + args.out_orders]
+                         if args.rel_floor > 0 else None)
                 nd = model(x, dt=dT, dx=dxb, dy=dyb)        # (B, out_orders, H, W)
                 project = project_by_shape[(x.shape[-2], x.shape[-1])]  # by batch shape
                 nd = project(nd)
-                loss = relative_l2_perchannel(nd, y)        # per-sample, per-channel mean
+                loss = relative_l2_perchannel(nd, y, floor)
                 if train:
                     optim.zero_grad(); loss.backward(); optim.step()
                 tot += loss.item()
-                per += relative_l2_perchannel_vec(nd, y).detach().cpu().numpy()
+                per += relative_l2_perchannel_vec(nd, y, floor).detach().cpu().numpy()
                 nb += 1
         nb = max(nb, 1)
-        # headline = mean per-order rel-L2 (== the per-channel criterion); per = per-order
+        # headline = mean per-order FLOORED rel-L2; raw medians via diagnostics/
         return tot / nb, per / nb
 
     best = float('inf'); t0 = time.time()
