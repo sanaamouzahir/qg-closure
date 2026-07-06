@@ -36,6 +36,20 @@ verifies correctness (init-reproduction), and runs/evaluates. Branch supervisors
 breakage (imports, paths, <5 lines) but never author new functionality; if a branch needs code it
 emails `[QG][BLOCKED][<branch>]` to request it from Fable.
 
+**Diagnostics carve-out (2026-07-06):** branch supervisors MAY author new diagnostic scripts —
+analysis-only (reads logs/ckpts/data; no model, trainer, or slicer changes) — in their branch's
+`diagnostics/`. Promotion to main's `diagnostics/`: branch proposes with justification → Fable
+reviews → Fable emails `[QG][FLAG][GLOBAL]` to Sanaa → merge only on her OK.
+
+**qlogin rule (hard, 2026-07-06):** diagnostics and any compute never run on the login node —
+qlogin or an SGE job first, always. The guard hook blocks `python .*diagnostics/` on the head node.
+
+**Training monitor (2026-07-06):** sge-runner ALWAYS chains `diagnostics/monitor_training.py`
+(via `scripts/sge/monitor_training_job.sh`, concurrent `all.q` job) after any training submission.
+It emails `[QG][FLAG][<branch>]` with offending log lines on EXPLODE / OSCILLATE / IMBALANCE /
+STALL / LR-sanity; healthy completion stays silent (`[QG][LANDED]` comes from the usual chain).
+Flag handling follows the decision tree in every branch brief.
+
 **Email convention enforcement:** malformed subjects (not `[QG][<CATEGORY>][<BRANCH>] …` with a
 verbatim category code) are flagged in the next weekly `DIGEST` under "Convention violations",
 branch + subject quoted.
@@ -52,7 +66,8 @@ The supervisor decomposes and delegates. You approve the yellow/red actions.
 2. **permissions (`.claude/settings.json`).** `ask` before `qsub`, `git push`, `rm -rf`; `deny`
    force-push and hard-reset. This is where you set "propose vs act."
 3. **hooks (`.claude/hooks/guard_bash.sh`) — HARDCODED, cannot be talked around.** Blocks the
-   forbidden SGE flags (`ibamd.q`, `h_vmem`), any push to `main`, and float32 in closure commands.
+   forbidden SGE flags (`ibamd.q`, `h_vmem`), any push to `main`, float32 in closure commands,
+   and `python .*diagnostics/` on the head node (qlogin rule).
 
 Rule of thumb: **mechanical invariants → hooks** (enforced), **judgment → CLAUDE.md + the brief's
 autonomy dial** (advisory). To loosen a branch you trust, relax its `ask` rules; to tighten, add

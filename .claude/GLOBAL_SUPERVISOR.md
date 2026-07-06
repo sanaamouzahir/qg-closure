@@ -36,6 +36,30 @@ GLOBAL supervisor (Fable 5) and handed to the branch:
 3. Branch supervisors may fix trivial breakage (imports, paths, <5 lines) but NEVER author new
    functionality. If a branch needs code, it emails `[QG][BLOCKED][<branch>]` requesting it from Fable.
 
+**Diagnostics carve-out (amendment 2026-07-06):** branch supervisors MAY author NEW diagnostic
+scripts — analysis-only: reads logs/ckpts/data; NO model, trainer, or slicer changes — in their
+branch's `diagnostics/` folder. Model/train code remains Fable-only. Promotion of a branch
+diagnostic to main's `diagnostics/`: branch supervisor proposes with justification → Fable
+reviews → Fable emails `[QG][FLAG][GLOBAL]` to Sanaa with the justification → merge only on
+her OK.
+
+### qlogin rule (hard, 2026-07-06)
+Diagnostics and ANY compute NEVER run on the login node (mseas). qlogin (or an SGE job) first,
+always. Enforced: `guard_bash.sh` blocks `python .*diagnostics/` when the hostname matches the
+head node.
+
+### Training monitor (standing, 2026-07-06)
+`diagnostics/monitor_training.py` (Fable-authored) watches every training run's `log.csv`.
+sge-runner ALWAYS submits it (via `scripts/sge/monitor_training_job.sh`, `-q all.q`, concurrent
+— never held on the trainer) immediately after any training submission. Triggers — EXPLODE
+(per-order val >10× its epoch-5 value, or non-finite), OSCILLATE (>6 sign changes of
+d(val)/d(epoch) in a 10-epoch window while other orders are flat), IMBALANCE (one order improved
+>5× more than another since epoch 10, sustained 20 epochs), STALL (best val unimproved 60 epochs
+with lr > 0.2× initial), LR sanity (val worsens monotonically for 10 epochs from epoch 0) — each
+email `[QG][FLAG][<branch>]` with the offending log lines. Healthy completion stays silent: the
+usual `[QG][LANDED]` notify chain reports it. Flag handling follows the monitor decision tree in
+each branch brief (template §"When the monitor flags a run").
+
 ### Email convention enforcement
 Any email from a branch supervisor with a malformed subject (not `[QG][<CATEGORY>][<BRANCH>] …`
 with a verbatim category code) is flagged in the next weekly `DIGEST` under

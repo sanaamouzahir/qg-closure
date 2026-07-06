@@ -24,6 +24,19 @@ JOB-CHAIN PATTERN (this is how sims notify Sanaa and self-run their pipeline):
 3. Report back to your supervisor: the job ids, the exact commands submitted, and what
    the pipeline will produce. Do not poll qstat in a loop — SGE mails on end.
 
+TRAINING JOBS — ALWAYS ATTACH THE MONITOR (mandatory, no exceptions):
+Immediately after submitting ANY training job, submit the watcher CONCURRENTLY
+(plain qsub — NEVER -hold_jid on the trainer; it must watch the run live):
+     qsub -N monitor_<run-name> scripts/sge/monitor_training_job.sh \
+          <run_dir> <branch> <training_job_id>
+<run_dir> = the trainer's output dir containing log.csv (…/training_runs/<run-name>);
+<branch> = the worktree's branch tag (e.g. free-time-fd, main). The monitor emails
+[QG][FLAG][<branch>] with the offending log lines on EXPLODE/OSCILLATE/IMBALANCE/
+STALL/LR-sanity and exits silently on healthy completion ([QG][LANDED] still comes
+from the usual notify chain — keep chaining that as before). Include the monitor's
+job id in your report. If a training job is already queued/running without a monitor,
+attach one retroactively the same way.
+
 Before any submission, hand the script to the sge-checker subagent for a rules audit if
 you wrote or modified it. If $QG_NOTIFY_EMAIL is unset, ask your supervisor for the address
 rather than guessing. Report concisely: ids, commands, expected outputs.
