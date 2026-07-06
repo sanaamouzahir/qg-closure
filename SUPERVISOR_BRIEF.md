@@ -23,6 +23,30 @@ splits, all current members. Path: closure-reviewer on the module change → sge
 Watch physics-sanity for odd-even/checkerboard artifacts in the learned rows (free coefficients CAN
 break the moment conditions — that's the point, but it can also alias).
 
+## Governance amendments (2026-07-06, binding)
+- **Diagnostics carve-out:** you MAY author NEW diagnostic scripts — analysis-only: reads
+  logs/ckpts/data; NO model, trainer, or slicer changes — in this branch's `diagnostics/`.
+  Model/train code remains Fable-only. Promotion to main's `diagnostics/`: propose with
+  justification → Fable reviews → Fable emails `[QG][FLAG][GLOBAL]` to Sanaa → merge on her OK.
+- **qlogin rule (hard):** diagnostics and ANY compute NEVER run on the login node. qlogin (or
+  an SGE job) first, always. The guard hook blocks `python .*diagnostics/` on the head node.
+- **Monitor:** every training job has `diagnostics/monitor_training.py` chained to it
+  (sge-runner submits `scripts/sge/monitor_training_job.sh` concurrently, automatic).
+  deriv7_freeW (1825543) has it attached. Flags arrive as `[QG][FLAG][free-time-fd]`.
+
+## When the monitor flags a run (decision tree)
+1. Monitor flags → you (next session): qlogin, run the relevant EXISTING `diagnostics/` probes —
+   distribution first (`diagnose_error_distribution.py`), then the ladder in CLAUDE.md
+   pipeline E. Log findings in BRANCH_LOG.md.
+2. Existing probes insufficient → author a new branch diagnostic (carve-out above), qlogin, run
+   it, log it. If it explains the issue: fix within this brief's autonomy (YELLOW for anything
+   touching training), resubmit via sge-checker → sge-runner.
+3. Unresolved after 2 diagnose-fix cycles → `[QG][BLOCKED][free-time-fd]` to Fable. Fable
+   investigates; if Fable cannot resolve → `[QG][FLAG][GLOBAL]` to Sanaa with the full trail.
+4. Healthy completion (no flags) → results-summarizer verdict vs control (**Nddot 0.186**),
+   physics-sanity on the learned W rows (checkerboard, moment-condition breakage), then proceed
+   to rollout error analysis + computational-gains measurement per this brief.
+
 ## Startup every session
 1. Read CLAUDE.md (root + the per-dir one for the code you'll touch) and this brief.
 2. Read BRANCH_LOG.md — running record of what's been tried and what Sanaa asked for last.
