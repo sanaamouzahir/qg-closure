@@ -16,11 +16,29 @@
 | Agent | Model | You'd invoke it for |
 |---|---|---|
 | sge-runner | Sonnet | "submit the b25 ensemble and chain the post-pipeline + email" |
-| sge-checker | Sonnet | auto-runs before submitting a new/edited script |
+| sge-checker | Opus 4.7 | auto-runs before submitting a new/edited script |
 | pipeline-runner | Sonnet | "rerender the videos and rebuild the pareto figure" |
 | results-summarizer | Sonnet | "give me the verdict on last night's run" |
-| closure-reviewer | Opus | "review the diff I just made in training/" |
-| physics-sanity | Opus | "this val looks too low — is it real?" |
+| closure-reviewer | Opus 4.8 | "review the diff I just made in training/" |
+| physics-sanity | Opus 4.8 | "this val looks too low — is it real?" |
+
+## Governance (permanent — set by the global supervisor)
+**Model hierarchy (fixed, never improvised):** Global supervisor = Fable 5 (`claude-fable-5`), one,
+in main — portfolio + merges + convention enforcement + **code authorship**. Branch supervisors =
+Opus 4.8, one per worktree — run the idea, never write new code. sge-checker = Opus 4.7 (judgment).
+closure-reviewer, physics-sanity = Opus 4.8 (judgment). sge-runner, pipeline-runner,
+results-summarizer = Sonnet (mechanical). The agent `.md` `model:` fields encode this.
+
+**Code authorship rule:** all NEW code (models, trainers, slicer changes, any idea-implementation)
+is written by the GLOBAL supervisor (Fable 5), committed to the experiment branch with a
+`[fable-authored]` message prefix, then handed to the branch supervisor, who runs closure-reviewer,
+verifies correctness (init-reproduction), and runs/evaluates. Branch supervisors may fix trivial
+breakage (imports, paths, <5 lines) but never author new functionality; if a branch needs code it
+emails `[QG][BLOCKED][<branch>]` to request it from Fable.
+
+**Email convention enforcement:** malformed subjects (not `[QG][<CATEGORY>][<BRANCH>] …` with a
+verbatim category code) are flagged in the next weekly `DIGEST` under "Convention violations",
+branch + subject quoted.
 
 ## How to direct a supervisor
 Talk in goals, not commands. Examples:
