@@ -123,7 +123,8 @@ class TimeFD(nn.Module):
     handled at LOAD time by rescaling the loaded stencil, not in the parametrization.)
     """
 
-    def __init__(self, n_time: int, dt: float, learnable: bool = True):
+    def __init__(self, n_time: int, dt: float, learnable: bool = True,
+                 learn_orders: int = 0):
         super().__init__()
         x = np.array([-j * dt for j in range(n_time)], dtype=np.float64)
         A = np.array([[x[j] ** m / math.factorial(m) for j in range(n_time)]
@@ -142,6 +143,18 @@ class TimeFD(nn.Module):
                        for m in range(n_time)], dtype=np.float64)
         self.register_buffer('W_unit', torch.from_numpy(np.linalg.inv(Au).T).to(torch.float32))
         self.n_time = n_time
+        # [free-time-fd] Learnable dimensionless time-FD rows. Rows 1..learn_orders of the
+        # UNIT-spacing stencil become Parameters, initialised EXACTLY to the Vandermonde rows
+        # (so init == control to float64 round-off). Row 0 stays frozen in W_unit
+        # (omega^(0)=omega_0 exact) and rows >learn_orders stay frozen (clipped/unused by the
+        # ORDER CLIP). The analytic 1/dt^k scaling in forward is untouched, so the learned
+        # coefficients are DIMENSIONLESS and dt-portability across the sweep survives.
+        # Hypothesis: the exact Vandermonde row is optimal for NOISELESS truncation but not the
+        # optimal linear estimator on real pooled data (the Wiener-in-time mechanism).
+        self.learn_orders = int(max(0, min(learn_orders, n_time - 1)))
+        if self.learn_orders > 0:
+            self.W_learn = nn.Parameter(
+                self.W_unit[1:1 + self.learn_orders].clone(), requires_grad=True)
 
     def forward(self, stack: torch.Tensor, dt: torch.Tensor = None) -> torch.Tensor:
         # stack: (B, nt, H, W) ordered [t0, t-1, ...]
@@ -151,7 +164,14 @@ class TimeFD(nn.Module):
         nt = self.n_time
         orders = torch.arange(nt, device=stack.device, dtype=stack.dtype)
         scale = dt.reshape(-1, 1).to(stack.dtype) ** (-orders).reshape(1, nt)  # (B, nt)
-        Wb = self.W_unit.to(stack.dtype)[None] * scale[:, :, None]             # (B, nt, nt)
+        # [free-time-fd] overlay the learnable rows 1..learn_orders onto the frozen unit
+        # stencil; row 0 and the clipped high rows stay at Vandermonde. Grad flows through
+        # W_learn only (the surviving orders feed the Jacobians after the ORDER CLIP).
+        Wunit = self.W_unit.to(stack.dtype)
+        if self.learn_orders > 0:
+            lo = self.learn_orders
+            Wunit = torch.cat([Wunit[:1], self.W_learn.to(stack.dtype), Wunit[1 + lo:]], dim=0)
+        Wb = Wunit[None] * scale[:, :, None]                                   # (B, nt, nt)
         return torch.einsum('boi,bihw->bohw', Wb, stack)
 
 
@@ -268,7 +288,8 @@ class CheapDerivClosureNet(nn.Module):
                  grad_kernel: int = 3,
                  dt: float = 1e-3, dx: float = 1.0, dy: float = 1.0,
                  physics_init: bool = True,
-                 hidden_channels: int = 0, depth: int = 0):
+                 hidden_channels: int = 0, depth: int = 0,
+                 learn_time_fd: bool = False):
         super().__init__()
         if in_channels != 2 * n_time:
             raise ValueError(
@@ -277,7 +298,10 @@ class CheapDerivClosureNet(nn.Module):
         self.n_time = n_time
         self.out_orders = out_orders
 
-        self.time_fd = TimeFD(n_time, dt, learnable=learnable_stencils)
+        # [free-time-fd] optionally make the UNIT time-FD rows 1..out_orders learnable
+        # (Vandermonde init, row 0 frozen). Off by default -> identical to the control model.
+        self.time_fd = TimeFD(n_time, dt, learnable=learnable_stencils,
+                              learn_orders=(min(out_orders, n_time - 1) if learn_time_fd else 0))
         # ORDER CLIP: only orders 0..out_orders are ever used by the outputs
         # (N^(m) needs omega^(k), k<=m<=out_orders). The higher rows of the
         # 7-node stencil (orders 4..6, scaled 1/dt^4..6 ~ 1e10-1e13) are noise;
@@ -407,4 +431,5 @@ def build_model(name: str = 'cheap_deriv', in_channels: int = 6, **kw):
         physics_init=kw.get('physics_init', True),
         hidden_channels=kw.get('hidden_channels', 0),
         depth=kw.get('depth', 0),
+        learn_time_fd=kw.get('learn_time_fd', False),
     )

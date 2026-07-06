@@ -115,6 +115,12 @@ def main():
                         'cannot serve multiple dt), so this governs only the spatial '
                         'kernels. Use --no-learnable-stencils for the frozen-FD ablation.')
 
+    p.add_argument('--learn-time-fd', action=argparse.BooleanOptionalAction, default=False,
+                   help='[free-time-fd branch] make the UNIT time-FD rows 1..out_orders '
+                        'learnable Parameters (Vandermonde init, row 0 frozen; analytic '
+                        '1/dt^k scaling kept, so learned coeffs are DIMENSIONLESS and '
+                        'dt-portable across the sweep). Default OFF = exact Vandermonde (control).')
+
     p.add_argument('--batch-size', type=int, default=4)
     p.add_argument('--epochs', type=int, default=200)
     p.add_argument('--lr', type=float, default=3e-4)
@@ -225,12 +231,14 @@ def main():
     model = build_model('cheap_deriv', in_channels=in_ch, out_orders=args.out_orders,
                         grad_kernel=args.grad_kernel, dt=dt0,
                         dx=dx0, dy=dy0, physics_init=not args.no_physics_init,
-                        learnable_stencils=args.learnable_stencils).to(args.device).to(adtype)
+                        learnable_stencils=args.learnable_stencils,
+                        learn_time_fd=args.learn_time_fd).to(args.device).to(adtype)
     trainable = [q for q in model.parameters() if q.requires_grad]
     n_params = sum(q.numel() for q in trainable)
     print(f"[deriv-train] cheap_deriv trainable params={n_params:,}  in_ch={in_ch}  "
-          f"out_orders={args.out_orders}  spatial_stencils={'learn' if args.learnable_stencils else 'frozen'} "
-          f"(time-FD = exact dt^-k W_unit; spatial rescaled per-sample to ref dx0={dx0:.4e})  "
+          f"out_orders={args.out_orders}  spatial_stencils={'learn' if args.learnable_stencils else 'frozen'}  "
+          f"time_fd={'LEARN rows 1..'+str(args.out_orders) if args.learn_time_fd else 'exact Vandermonde'} "
+          f"(dt^-k W_unit path; spatial rescaled per-sample to ref dx0={dx0:.4e})  "
           f"dtype={args.compute_dtype}")
 
     optim = torch.optim.AdamW(trainable, lr=args.lr, weight_decay=args.weight_decay)
