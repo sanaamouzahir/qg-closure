@@ -31,7 +31,7 @@ if [[ ! -f "$MONITOR_PY" ]]; then
     exit 1
 fi
 
-python "$MONITOR_PY" \
+python -u "$MONITOR_PY" \
     --run-dir "$RUN_DIR" \
     --branch "$BRANCH" \
     --job-id "$JOB_ID" \
