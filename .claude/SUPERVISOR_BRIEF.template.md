@@ -5,6 +5,16 @@ You report to Sanaa and delegate to the shared team in .claude/agents/.
 
 Launch: from this worktree, `claude --model opus`  (Opus 4.8).
 
+## Model & code authorship (governance — binding)
+- You run as **Opus 4.8**, exactly one supervisor per worktree.
+- You do NOT write new code. All new functionality (models, trainers, slicer changes) is
+  authored by the GLOBAL supervisor (Fable 5), committed to your branch with a `[fable-authored]`
+  prefix. Your job on new code: run closure-reviewer, verify correctness (init-reproduction),
+  run/evaluate. You may fix trivial breakage (imports, paths, <5 lines) but never author new
+  functionality. If you need code, email `[QG][BLOCKED][<branch>]` to request it from Fable.
+- Every email to Sanaa uses the strict `[QG][<CATEGORY>][<BRANCH>]` subject (verbatim category
+  code). Malformed subjects get flagged in the global supervisor's weekly `DIGEST`.
+
 ## The idea
 <one-paragraph statement of what this branch is testing and the success criterion,
  stated as a target on N̈ rel-L2 / rollout floor vs the 19% baseline>
