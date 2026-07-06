@@ -1,51 +1,38 @@
 #!/usr/bin/env python
 r"""
-check_wiener_floor.py -- empirical verification of 1.b (Theoretical_guarantees).
+check_wiener_floor.py -- 1.b empirical floor decomposition, v2 (measured, no models).
 
-Decomposes the pooled training floor of the unconditioned model into the three
-terms of the 1.b result:
+Per (member, dt): build the ACTUAL depth-7 FD estimate of omega^(m) from the
+deep marks, subtract the ANALYTIC truth -> the true time-error field e. Then:
 
-    L_min = (i) cascade remainder  +  (ii) pooled-variance mismatch
-            + (iii) finite-width shape deficit,
+  raw    = ||e|| / ||omega^(m)||          (must reproduce the k=7 console table:
+                                           Re25k 0.020/0.411/1.510 for m=2 --
+                                           built-in validation anchor)
+  coh(kappa) = |<e, omega^(m)>_shell|^2 / (E_e E_m)   COMPLEX magnitude --
+           the fraction of the error coherent with the field the stencil
+           filters; the quadrature (odd S-m) relation is reachable by a real
+           odd stencil (symbol ~ ik), so the complex modulus is the right
+           coherence. (v1 used the real part, which vanishes structurally for
+           odd S-m -- the coh~1e-4 artifact.)
+  (i)    = sum_kappa E_e(kappa) (1 - coh(kappa)) / sum E_e   -- irreducible.
+  r_j(kappa) = <e, omega^(m)>_shell / E_m(kappa)   -- the MEASURED per-config
+           optimal transfer (complex). The family {r_j} over (member,dt) is
+           what one shared stencil must compromise across.
+  (ii)   = uniform-tier-weighted variance of r_j around the pooled mean,
+           normalized by the weighted mean |r_j|^2. (v1's energy weighting let
+           the largest tier dominate and collapsed this to 0.013.)
+  (iii)  = width-W reachability residue of the pooled |r_bar(kappa)| * k symbol
+           on the sin(jk) odd-stencil basis.
 
-and compares (i)+(ii)+(iii) against the observed plateau
-(control run deriv7_filtered_floor0.1: pooled Nddot ~ 0.19).
-
-Per member x dt, everything is measured on the deep 28-mark builds with fully
-ANALYTIC machinery (spectral recursion, dealiased flux Jacobians, manifest
-forcing) -- no trained model is involved. Method per term:
-
-  (i)  CASCADE REMAINDER. Per shell kappa, regress omega^(S-slot proxy) on the
-       shell-filtered lower derivative: r_frac(kappa) = 1 - |<w7_k, w_k>|^2 /
-       (||w7_k||^2 ||w_k||^2)  (per-shell coherence). Here we use the exact
-       analytic pair (omega^(m), omega^(m+q)) with q = S - m as the
-       diagonal-vs-remainder split: the coherent part IS the best shell-diagonal
-       filter; 1 - coherence is the fraction no filter of omega^(m) can produce.
-       Weighted by the time-error spectrum this gives the irreducible slice.
-
-  (ii) POOLED-VARIANCE MISMATCH. The per-(member,dt) optimal symbol is
-       g_j(kappa) = C_m (dT_j sigma_w(kappa))^(S-m) (up to a shared ik). One
-       shared stencil realizes at best the pooled LS compromise g_bar(kappa) =
-       weighted mean of g_j. The mismatch slice is the weighted variance of
-       g_j around g_bar, normalized like the loss. sigma_w(kappa) is MEASURED
-       (1.a machinery, re-computed here per member).
-
-  (iii) SHAPE DEFICIT. Project the pooled-optimal g_bar(kappa)*ik symbol onto
-       the width-W reachable set (real, odd, W-tap 1D stencils along x and y);
-       the unreachable spectral residue, weighted like the loss, is (iii).
-
-Outputs: per-(member,dt) table of the raw time-error floor, absorbed fraction,
-and the three slices; a pooled summary line 'predicted floor vs observed 0.19';
-plots (per-member stacked-bar decomposition; coherence(kappa) curves;
-g_j(kappa) family vs g_bar). CSV + PNGs to Theoretical_guarantees/Results/
-wiener_floor/.
+Everything float64, analytic recursion, dealiased flux Jacobians, manifest
+forcing, post-filter windows only.
 
 Run FROM $QG_DIR/training on a GPU node (qlogin first):
     python Theoretical_guarantees/check_wiener_floor.py \
         --members data/ensemble_N5_7lag/FRC-Re25k data/ensemble_N5_7lag/FRC-kf4 \
                   data/ensemble_N5_7lag/FRC-256 \
         --dts 5e-3 1e-2 1.5e-2 --m 2 --n-windows 12 --grad-kernel 15
-(--m 2 = Nddot, the rollout-ceiling order; S is read from the deep manifest.)
+Outputs -> Theoretical_guarantees/Results/wiener_floor/.
 """
 from __future__ import annotations
 import argparse
@@ -67,7 +54,6 @@ from qg.solver.opt.basis import to_spectral, to_physical
 OUT_DEFAULT = Path(__file__).resolve().parent / 'Results' / 'wiener_floor'
 
 
-# ---------- analytic machinery (identical conventions to 1.a check) ----------
 def build_L_hat(der, nu, mu, beta):
     L = nu * der.laplacian - mu
     if beta != 0.0:
@@ -97,9 +83,9 @@ def jac_flux(psi, om, der):
     return to_physical(der.dx * uq + der.dy * vq).squeeze(0)
 
 
-def recursion(om, psi, der, L_hat, F, max_k):
-    """omega^(k), psi^(k), N^(m) up to max_k via the exact spectral recursion."""
-    oms = [om]; pss = [psi]; Ns = []
+def recursion_omega(om, psi, der, L_hat, F, max_k):
+    """omega^(0..max_k) via the exact spectral recursion."""
+    oms = [om]; pss = [psi]
     for m in range(max_k):
         acc = None
         for j in range(m + 1):
@@ -108,23 +94,18 @@ def recursion(om, psi, der, L_hat, F, max_k):
         Nm = -acc
         if m == 0 and F is not None:
             Nm = Nm + F
-        Ns.append(Nm)
         onext = to_physical(L_hat * to_spectral(oms[m].unsqueeze(0))).squeeze(0) + Nm
         oms.append(onext)
         pss.append(to_physical(der.inv_laplacian *
                                to_spectral(onext.unsqueeze(0))).squeeze(0))
-    return oms, pss, Ns
+    return oms
 
 
-def fd_row(S, k):
-    """Order-k row of the S-node backward Vandermonde (unit spacing) + the
-    leading truncation constant C_k = -(1/S!) sum W[k,j] (-j)^S."""
+def fd_rows(S):
     x = np.arange(0, -S, -1, dtype=np.float64)
-    A = np.array([[x[j] ** m / math.factorial(m) for j in range(S)]
-                  for m in range(S)])
-    W = np.linalg.inv(A).T
-    Ck = -(1.0 / math.factorial(S)) * float(np.sum(W[k] * ((-np.arange(S)) ** S)))
-    return W[k], Ck
+    A = np.array([[x[j] ** mm / math.factorial(mm) for j in range(S)]
+                  for mm in range(S)])
+    return np.linalg.inv(A).T
 
 
 def shell_index(der, Ny, Nx, dev):
@@ -133,41 +114,40 @@ def shell_index(der, Ny, Nx, dev):
     probe = to_spectral(torch.zeros(1, Ny, Nx, dtype=torch.float64, device=dev))
     if kmag.shape != probe.shape[-2:]:
         kmag = torch.sqrt(kxg.squeeze()[None, :] ** 2 + kyg.squeeze()[:, None] ** 2)
-    sh = torch.round(kmag).to(torch.int64)
-    return sh, int(sh.max().item()) + 1, kmag
+    return torch.round(kmag).to(torch.int64)
 
 
-def shell_sum(x_flat, sh_flat, n_sh):
-    out = torch.zeros(n_sh, dtype=torch.float64, device=x_flat.device)
+def sadd(x_flat, sh_flat, n_sh):
+    out = torch.zeros(n_sh, dtype=x_flat.dtype, device=x_flat.device)
     out.scatter_add_(0, sh_flat, x_flat)
     return out
 
 
-def reachable_residual(g_of_kappa, kappa_axis, width):
-    """(iii): project the target 1D symbol s(k) = g(|k|)*k (odd, real filter)
-    onto the span of width-W unit-spacing stencil symbols {sin(j k h)}_{j=1..W//2}
-    (h=1 grid units -> k in [0, pi]); return relative unreachable energy."""
+def reachable_residual(g_mag, width):
+    """(iii): project s(k) = g(|k|)*k (odd real filter target, grid units)
+    onto span{sin(jk)}_{j=1..width//2}; return relative unreachable energy."""
+    K = len(g_mag)
     kk = np.linspace(1e-3, math.pi, 256)
-    # map physical shell axis onto grid-units k: kappa/kappa_max * pi
-    kap = kappa_axis / max(kappa_axis[-1], 1e-30) * math.pi
-    tgt = np.interp(kk, kap, g_of_kappa) * kk
+    kap = np.arange(K, dtype=np.float64) / max(K - 1, 1) * math.pi
+    tgt = np.interp(kk, kap, g_mag) * kk
     H = width // 2
-    B = np.stack([np.sin(j * kk) for j in range(1, H + 1)], axis=1)   # basis
+    B = np.stack([np.sin(j * kk) for j in range(1, H + 1)], axis=1)
     coef, *_ = np.linalg.lstsq(B, tgt, rcond=None)
     res = tgt - B @ coef
     return float((res ** 2).sum() / max((tgt ** 2).sum(), 1e-300))
 
 
-# --------------------------------- main --------------------------------- #
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--members', nargs='+', type=Path, required=True)
     ap.add_argument('--dts', type=float, nargs='+', default=[5e-3, 1e-2, 1.5e-2])
-    ap.add_argument('--m', type=int, default=2, help='target order (2 = Nddot)')
+    ap.add_argument('--m', type=int, default=2, help='target order (2 = Nddot proxy)')
+    ap.add_argument('--S', type=int, default=7, help='stencil depth')
     ap.add_argument('--n-windows', type=int, default=12)
     ap.add_argument('--grad-kernel', type=int, default=15)
-    ap.add_argument('--observed-floor', type=float, default=0.19,
-                    help='the trained pooled plateau to compare against')
+    ap.add_argument('--observed-floor', type=float, default=0.19)
+    ap.add_argument('--skip-fullslot', action='store_true',
+                    help='skip CHECK 3 (the full-slot regression) for speed')
     ap.add_argument('--out', type=Path, default=OUT_DEFAULT)
     ap.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu')
     args = ap.parse_args()
@@ -175,28 +155,27 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     torch.set_grad_enabled(False)
 
-    m = args.m
+    m, S = args.m, args.S
+    W = fd_rows(S)
+    wrow = torch.tensor(W[m], dtype=torch.float64, device=dev)
+
     rows = []
-    coh_curves = {}
-    g_family = {}          # (member, dt) -> g_j(kappa)
-    weights = {}           # (member, dt) -> loss weight (raw time-error energy)
+    r_family, coh_store = {}, {}
 
     for mem in sorted(args.members):
         deep = mem / 'forced_turbulence_dT_5em3'
         if not (deep / 'packed' / 'inputs.npy').exists():
-            print(f"[skip] {mem.name}: no deep build"); continue
+            print(f"[skip] {mem.name}"); continue
         man = json.loads((deep / 'manifest.json').read_text())
         M = int(man['n_snapshots_per_sample'])
-        S = 7                                           # stencil depth in use
         dtf = float(man['Delta_T'])
         Nx, Ny = int(man['Nx']), int(man['Ny'])
         nu = float(man.get('nu', 0)); mu = float(man.get('mu', 0))
         beta = float(man.get('beta', man.get('B', 0)))
         inp = np.load(deep / 'packed' / 'inputs.npy', mmap_mode='r')
 
-        # surviving windows (quiescent filter) via the sliced split
-        sweep = mem / 'sweep_dT_5em3'
         surv = np.arange(inp.shape[0])
+        sweep = mem / 'sweep_dT_5em3'
         if (sweep / 'split.npz').exists():
             sp = np.load(sweep / 'split.npz')
             na = int(json.loads((sweep / 'manifest.json').read_text()
@@ -210,125 +189,272 @@ def main():
         der = Derivative(grid)
         L_hat = build_L_hat(der, nu, mu, beta)
         F = build_F(man, grid, dev)
-        sh, n_sh, kmag = shell_index(der, Ny, Nx, dev)
+        sh = shell_index(der, Ny, Nx, dev)
         sh_flat = sh.reshape(-1)
-        kappa_axis = np.arange(n_sh, dtype=np.float64)
+        n_sh = int(sh.max().item()) + 1
 
-        # accumulators over windows
-        E_m = torch.zeros(n_sh, dtype=torch.float64, device=dev)      # |w^(m)|^2
-        E_S = torch.zeros(n_sh, dtype=torch.float64, device=dev)      # |w^(S)|^2
-        X_mS = torch.zeros(n_sh, dtype=torch.float64, device=dev)     # Re<w^(S), w^(m)>
-        E_dm = torch.zeros(n_sh, dtype=torch.float64, device=dev)     # |w^(m+1)|^2 (for sigma_w)
-        nrmNm = nrmNm_t = 0.0
-
-        _, Ck = fd_row(S, m)
-
-        for w in picks:
-            om0 = torch.tensor(np.asarray(inp[w, 0], np.float64), device=dev)
-            ps0 = torch.tensor(np.asarray(inp[w, M], np.float64), device=dev)
-            oms, pss, Ns = recursion(om0, ps0, der, L_hat, F, max_k=S)
-            wm = to_spectral(oms[m].unsqueeze(0)).squeeze(0)
-            wS = to_spectral(oms[S].unsqueeze(0)).squeeze(0)
-            wm1 = to_spectral(oms[m + 1].unsqueeze(0)).squeeze(0)
-            E_m += shell_sum((wm.real**2 + wm.imag**2).reshape(-1), sh_flat, n_sh)
-            E_S += shell_sum((wS.real**2 + wS.imag**2).reshape(-1), sh_flat, n_sh)
-            X_mS += shell_sum((wS * wm.conj()).real.reshape(-1), sh_flat, n_sh)
-            E_dm += shell_sum((wm1.real**2 + wm1.imag**2).reshape(-1), sh_flat, n_sh)
-            nrmNm += float(Ns[m].pow(2).sum())
-
-        # measured per-shell rate and coherence
-        sigw_k = torch.sqrt(E_dm / E_m.clamp_min(1e-300)).cpu().numpy()
-        coh_k = (X_mS ** 2 / (E_m * E_S).clamp_min(1e-300)).cpu().numpy()
-        coh_curves[mem.name] = coh_k
-        E_S_np = E_S.cpu().numpy(); E_m_np = E_m.cpu().numpy()
+        # ---- CHECK 2 accumulators: 2-mark sigma-hat vs analytic sigma (per member)
+        E0 = torch.zeros(n_sh, dtype=torch.float64, device=dev)      # |w0|^2
+        Ed_hat = torch.zeros(n_sh, dtype=torch.float64, device=dev)  # |FD2 wdot|^2
+        Ed_true = torch.zeros(n_sh, dtype=torch.float64, device=dev) # |wdot true|^2
 
         for dt in args.dts:
-            # raw time-error energy for order m at this dt (leading-term model):
-            #   T ~ Ck dT^{S-m} * (driver omega^(S)) through the exact Jacobians;
-            # relative floor proxy: ||eps_m|| / ||omega^(m)|| shell-weighted.
-            amp2 = (Ck * dt ** (S - m)) ** 2
-            raw_k = amp2 * E_S_np                                # |eps|^2 per shell
-            raw_rel2 = raw_k.sum() / max(E_m_np.sum() * 0 + nrmNm / len(picks), 1e-300)
-            # (i) irreducible = incoherent fraction of the driver, loss-weighted
-            i_k = raw_k * (1.0 - coh_k)
-            # absorbed candidate (coherent part) -> defines the per-(mem,dt) g_j
-            g_j = np.abs(Ck) * (dt * sigw_k) ** (S - m)
-            g_family[(mem.name, dt)] = g_j
-            weights[(mem.name, dt)] = raw_k                       # spectrum weight
-            rows.append(dict(member=mem.name, dt=dt,
-                             raw=float(np.sqrt(raw_k.sum())),
-                             irreducible=float(np.sqrt(i_k.sum())),
-                             coh_frac=float((raw_k * coh_k).sum()
-                                            / max(raw_k.sum(), 1e-300))))
-        print(f"[{mem.name}] shells={n_sh} windows={len(picks)} "
-              f"Ck(S=7,m={m})={Ck:.3g} sigma_w(bulk)="
-              f"{math.sqrt(float(E_dm.sum()/E_m.sum())):.2f}")
+            j = int(round(dt / dtf))
+            if (S - 1) * j > M - 1:
+                print(f"  [{mem.name}] dT={dt}: span exceeds marks, skip"); continue
 
-    # ---------------- pooled (ii) and (iii) ----------------
-    keys = list(g_family.keys())
-    n_sh_min = min(len(g_family[k]) for k in keys)
-    G = np.stack([g_family[k][:n_sh_min] for k in keys])          # (J, K)
-    Wt = np.stack([weights[k][:n_sh_min] for k in keys])          # (J, K)
-    wj = Wt.sum(axis=1); wj = wj / wj.sum()                        # per-config weight
-    g_bar = (wj[:, None] * G).sum(axis=0)                          # pooled compromise
-    # (ii): weighted variance of g_j around g_bar, normalized by weighted mean g^2
-    var_ii = float((wj[:, None] * (G - g_bar[None]) ** 2).sum()
-                   / max((wj[:, None] * G ** 2).sum(), 1e-300))
-    # (iii): unreachable residue of the pooled symbol for the given width
-    kappa_axis = np.arange(n_sh_min, dtype=np.float64)
-    res_iii = reachable_residual(g_bar, kappa_axis, args.grad_kernel)
+            E_e = torch.zeros(n_sh, dtype=torch.float64, device=dev)
+            E_m = torch.zeros(n_sh, dtype=torch.float64, device=dev)
+            Xc = torch.zeros(n_sh, dtype=torch.complex128, device=dev)
+            num2 = den2 = 0.0
+            # CHECK 3 accumulators (full-slot regression at the N^(m) level):
+            # regressors = response of the assembled N^(m) to a unit basis filter
+            # B_q^d applied to channel c (c in psi^(0..m), omega^(0..m)).
+            H = args.grad_kernel // 2
+            n_reg = 2 * (m + 1) * 2 * H          # channels x {psi,omega} x dir x q
+            G3 = torch.zeros(n_reg, n_reg, dtype=torch.float64, device=dev)
+            b3 = torch.zeros(n_reg, dtype=torch.float64, device=dev)
+            eN2 = 0.0
 
-    # ---------------- report ----------------
-    print("\nper-(member,dt): raw time floor | irreducible (i) | coherent frac")
-    for r in rows:
-        print(f"  {r['member']:10s} dT={r['dt']:<7g} raw={r['raw']:.3e} "
-              f"(i)={r['irreducible']:.3e}  coh={100*r['coh_frac']:.1f}%")
-    print(f"\npooled slices (order m={m}, S=7, width={args.grad_kernel}):")
+            for wdx in picks:
+                marks = torch.tensor(
+                    np.asarray(inp[wdx, [i * j for i in range(S)]], np.float64),
+                    device=dev)                                   # (S, Ny, Nx)
+                psi0 = torch.tensor(np.asarray(inp[wdx, M], np.float64), device=dev)
+                est = torch.einsum('s,shw->hw', wrow, marks) / dt ** m
+                truth = recursion_omega(marks[0], psi0, der, L_hat, F, m)[m]
+                e = est - truth
+                num2 += float(e.pow(2).sum()); den2 += float(truth.pow(2).sum())
+                eh = to_spectral(e.unsqueeze(0)).squeeze(0)
+                th = to_spectral(truth.unsqueeze(0)).squeeze(0)
+                E_e += sadd((eh.real**2 + eh.imag**2).reshape(-1), sh_flat, n_sh)
+                E_m += sadd((th.real**2 + th.imag**2).reshape(-1), sh_flat, n_sh)
+                Xc += sadd((eh * th.conj()).reshape(-1), sh_flat, n_sh)
+                # CHECK 2 (once per member: use the finest tier only)
+                if dt == args.dts[0]:
+                    w0h = to_spectral(marks[0].unsqueeze(0)).squeeze(0)
+                    wd_hat = (marks[0] - marks[1]) / dtf          # 2-mark FD wdot
+                    wd_true = recursion_omega(marks[0], psi0, der, L_hat, F, 1)[1]
+                    dh = to_spectral(wd_hat.unsqueeze(0)).squeeze(0)
+                    dth = to_spectral(wd_true.unsqueeze(0)).squeeze(0)
+                    E0 += sadd((w0h.real**2 + w0h.imag**2).reshape(-1), sh_flat, n_sh)
+                    Ed_hat += sadd((dh.real**2 + dh.imag**2).reshape(-1),
+                                   sh_flat, n_sh)
+                    Ed_true += sadd((dth.real**2 + dth.imag**2).reshape(-1),
+                                    sh_flat, n_sh)
+
+                # ------- CHECK 3: N-level error + full-slot response basis -------
+                if not args.skip_fullslot:
+                    psim = torch.tensor(
+                        np.asarray(inp[wdx, [M + i * j for i in range(S)]],
+                                   np.float64), device=dev)
+                    Wall = torch.tensor(fd_rows(S)[:m + 1], dtype=torch.float64,
+                                        device=dev)
+                    scal = torch.tensor([dt ** kk for kk in range(m + 1)],
+                                        device=dev).view(-1, 1, 1)
+                    om_fd = torch.einsum('ks,shw->khw', Wall, marks) / scal
+                    ps_fd = torch.einsum('ks,shw->khw', Wall, psim) / scal
+                    oms_t = recursion_omega(marks[0], psi0, der, L_hat, F, m)
+                    pss_t = [psi0] + [
+                        to_physical(der.inv_laplacian *
+                                    to_spectral(o.unsqueeze(0))).squeeze(0)
+                        for o in oms_t[1:m + 1]]
+
+                    def gspec(f):
+                        fh = to_spectral(f.unsqueeze(0))
+                        return (to_physical(der.dx * fh).squeeze(0),
+                                to_physical(der.dy * fh).squeeze(0))
+
+                    def asm(o_l, p_l):
+                        acc = None
+                        for jj in range(m + 1):
+                            ax_, ay_ = gspec(p_l[m - jj])
+                            bx_, by_ = gspec(o_l[jj])
+                            t = math.comb(m, jj) * (ax_ * by_ - ay_ * bx_)
+                            acc = t if acc is None else acc + t
+                        return -acc
+
+                    eN = asm(list(om_fd), list(ps_fd)) - asm(oms_t[:m + 1], pss_t)
+                    eN2 += float(eN.pow(2).sum())
+
+                    grads_p = [gspec(pss_t[kk]) for kk in range(m + 1)]
+                    grads_o = [gspec(oms_t[kk]) for kk in range(m + 1)]
+
+                    def bfilt(f, q, dimm):
+                        return (torch.roll(f, -q, dims=dimm)
+                                - torch.roll(f, q, dims=dimm)) / 2.0
+
+                    Rlist = []
+                    for kk in range(m + 1):
+                        for is_psi in (True, False):
+                            f_t = pss_t[kk] if is_psi else oms_t[kk]
+                            for d, dimm in (('x', 1), ('y', 0)):
+                                for q in range(1, H + 1):
+                                    Bf = bfilt(f_t, q, dimm)
+                                    acc = None
+                                    for jj in range(m + 1):
+                                        c = float(math.comb(m, jj))
+                                        px_, py_ = grads_p[m - jj]
+                                        wx_, wy_ = grads_o[jj]
+                                        if is_psi and (m - jj) == kk:
+                                            t = Bf * wy_ if d == 'x' else -Bf * wx_
+                                        elif (not is_psi) and jj == kk:
+                                            t = -py_ * Bf if d == 'x' else px_ * Bf
+                                        else:
+                                            continue
+                                        acc = c * t if acc is None else acc + c * t
+                                    Rlist.append(-acc if acc is not None
+                                                 else torch.zeros_like(eN))
+                    Rmat = torch.stack([r.reshape(-1) for r in Rlist])
+                    G3 += Rmat @ Rmat.T
+                    b3 += Rmat @ eN.reshape(-1)
+
+            raw = math.sqrt(num2 / max(den2, 1e-300))
+            coh = (Xc.abs() ** 2 / (E_e * E_m).clamp_min(1e-300)).cpu().numpy()
+            E_e_np = E_e.cpu().numpy()
+            irr_frac = float((E_e_np * (1 - coh)).sum() / max(E_e_np.sum(), 1e-300))
+            r_j = (Xc / E_m.clamp_min(1e-300).to(torch.complex128)).cpu().numpy()
+            r_family[(mem.name, dt)] = r_j
+            coh_store[(mem.name, dt)] = (coh, E_e_np, E_m.cpu().numpy())
+
+            # CHECK 3 solve: absorbed fraction under the FULL slot basis
+            abs3 = float('nan')
+            if not args.skip_fullslot and eN2 > 0:
+                reg = 1e-12 * float(torch.diagonal(G3).mean()) + 1e-300
+                sol = torch.linalg.solve(
+                    G3 + reg * torch.eye(n_reg, dtype=torch.float64, device=dev),
+                    b3)
+                abs3 = float((b3 @ sol) / eN2)
+                abs3 = min(max(abs3, 0.0), 1.0)
+            rows.append(dict(member=mem.name, dt=dt, raw=raw,
+                             irr_frac=irr_frac,
+                             irreducible=raw * math.sqrt(irr_frac),
+                             abs_fullslot=abs3,
+                             ceiling_cond=(raw * math.sqrt(max(1 - abs3, 0.0))
+                                           if abs3 == abs3 else float('nan'))))
+            xtra = (f"  FULL-SLOT absorbable={100*abs3:.1f}%  "
+                    f"conditioned-ceiling={raw*math.sqrt(max(1-abs3,0)):.4f}"
+                    if abs3 == abs3 else "")
+            print(f"  {mem.name:10s} dT={dt:<7g} raw={raw:.4f}  "
+                  f"diag-absorbable={100*(1-irr_frac):.1f}%  "
+                  f"(i)-slice={raw*math.sqrt(irr_frac):.4f}{xtra}")
+
+        # ---- CHECK 2 plot: 2-mark sigma-hat(kappa) vs analytic sigma(kappa) ----
+        sig_hat = torch.sqrt(Ed_hat / E0.clamp_min(1e-300)).cpu().numpy()
+        sig_true = torch.sqrt(Ed_true / E0.clamp_min(1e-300)).cpu().numpy()
+        band = E0.cpu().numpy() > 1e-12 * float(E0.max())
+        rel = np.median(np.abs(sig_hat[band] - sig_true[band])
+                        / np.maximum(sig_true[band], 1e-300))
+        fig, ax = plt.subplots(figsize=(6.2, 4.4))
+        ax.plot(np.arange(n_sh)[band], sig_true[band], 'k-',
+                label=r'analytic $\sigma_\omega(\kappa)$')
+        ax.plot(np.arange(n_sh)[band], sig_hat[band], 'r--',
+                label=r'2-mark FD $\hat\sigma_\omega(\kappa)$')
+        ax.set_xlabel(r'shell $\kappa$'); ax.set_ylabel(r'$\sigma_\omega(\kappa)$')
+        ax.set_title(f'{mem.name}: conditioning input fidelity '
+                     f'(median rel diff {100*rel:.1f}%)')
+        ax.legend(fontsize=8); fig.tight_layout()
+        fig.savefig(args.out / f'sigma_hat_fidelity_{mem.name}.png', dpi=160)
+        plt.close(fig)
+        print(f"  [{mem.name}] CHECK 2: 2-mark sigma-hat vs analytic, "
+              f"median rel diff = {100*rel:.1f}%")
+
+    # ---------------- pooled (ii)/(iii): VALID BAND + uniform tiers ----------------
+    keys = list(r_family.keys())
+    Kmin = min(len(r_family[k]) for k in keys)
+    # valid band: every tier must have real field energy at the shell (inside its
+    # OWN 2/3 cutoff) -- kills the E_m~0 division artifact beyond the coarsest
+    # member's cutoff (the kappa>60 explosion for FRC-256).
+    Em_all = np.stack([coh_store[k][2][:Kmin] for k in keys])
+    Kband = int(min(np.nonzero(Em_all[jj] > 1e-10 * Em_all[jj].max())[0].max()
+                    for jj in range(len(keys))))
+    R = np.stack([r_family[k][:Kband] for k in keys])            # (J, Kband)
+    Ew = np.stack([coh_store[k][1][:Kband] for k in keys]).mean(axis=0)
+    r_bar = R.mean(axis=0)
+    num_var = np.mean(np.abs(R - r_bar[None]) ** 2, axis=0)
+    den_var = np.mean(np.abs(R) ** 2, axis=0)
+    var_ii = float((Ew * num_var).sum() / max((Ew * den_var).sum(), 1e-300))
+    res_iii = reachable_residual(np.abs(r_bar), args.grad_kernel)
+
+    print(f"\npooled slices (m={m}, S={S}, width={args.grad_kernel}, "
+          f"uniform tiers, valid band kappa<={Kband}):")
     print(f"  (ii) pooled-variance mismatch fraction = {var_ii:.3f}")
     print(f"  (iii) width-{args.grad_kernel} shape-deficit fraction = {res_iii:.3f}")
     print(f"  observed trained plateau (pooled Nddot) = {args.observed_floor}")
-    print("  READING: (ii) is the slice conditioning deletes; if (ii) dominates")
-    print("  (i)+(iii), the conditioned model's headroom is large. (i) moves only")
-    print("  with more lags; (iii) with wider stencils.")
+
+    # ---------------- CHECK 1: dT-collapse of r_j / dT^(S-m) ----------------
+    members_seen = sorted({k[0] for k in keys})
+    for name in members_seen:
+        ks = [k for k in keys if k[0] == name]
+        if len(ks) < 2:
+            continue
+        fig, ax = plt.subplots(figsize=(6.2, 4.4))
+        curves = []
+        for k in ks:
+            g = np.abs(r_family[k][:Kband]) / (k[1] ** (S - m))
+            curves.append(g)
+            ax.plot(np.arange(Kband), g, label=f'dT={k[1]:g}')
+        C = np.stack(curves)
+        # collapse metric: median over shells of (max/min) across dts
+        with np.errstate(divide='ignore', invalid='ignore'):
+            spread = np.nanmedian(C.max(axis=0) / np.maximum(C.min(axis=0), 1e-300))
+        ax.set_yscale('log'); ax.set_xlabel(r'shell $\kappa$')
+        ax.set_ylabel(r'$|r_j(\kappa)| / \Delta T^{\,S-m}$')
+        ax.set_title(f'{name}: dT-collapse (median spread {spread:.2f}x; '
+                     f'1 = perfect factorization)')
+        ax.legend(fontsize=8); fig.tight_layout()
+        fig.savefig(args.out / f'dT_collapse_{name}.png', dpi=160); plt.close(fig)
+        print(f"  CHECK 1 [{name}]: dT-collapse median spread = {spread:.2f}x "
+              f"(1.0 = exact dT^(S-m) factorization; >>1 = h.o.t. matter)")
 
     # ---------------- plots ----------------
     fig, ax = plt.subplots(figsize=(6.6, 4.6))
-    for name, coh in coh_curves.items():
-        ax.plot(np.arange(len(coh)), coh, label=name)
-    ax.set_xlabel(r'shell $\kappa$'); ax.set_ylabel(r'coherence$^2(\omega^{(S)},\ \omega^{(m)})$')
-    ax.set_title(rf'diagonal (absorbable) fraction per shell, $m={m}$, $S=7$')
-    ax.legend(fontsize=8); fig.tight_layout()
+    for (name, dt), (coh, _) in coh_store.items():
+        ax.plot(np.arange(len(coh)), coh, alpha=0.75, label=f'{name} dT={dt:g}')
+    ax.set_xlabel(r'shell $\kappa$')
+    ax.set_ylabel(r'$|\langle e,\,\omega^{(m)}\rangle|^2 / (E_e E_m)$')
+    ax.set_title(rf'absorbable (coherent) fraction of the FD error, $m={m}$, $S={S}$')
+    ax.legend(fontsize=6); fig.tight_layout()
     fig.savefig(args.out / 'coherence_per_shell.png', dpi=160); plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(6.6, 4.6))
-    for (name, dt), g in g_family.items():
-        ax.plot(np.arange(len(g)), g, alpha=0.6, label=f'{name} dT={dt:g}')
-    ax.plot(np.arange(n_sh_min), g_bar, 'k-', lw=2.5, label='pooled compromise')
+    for k in keys:
+        ax.plot(np.arange(Kmin), np.abs(r_family[k][:Kmin]), alpha=0.6,
+                label=f'{k[0]} dT={k[1]:g}')
+    ax.plot(np.arange(Kmin), np.abs(r_bar), 'k-', lw=2.5, label='pooled compromise')
     ax.set_yscale('log'); ax.set_xlabel(r'shell $\kappa$')
-    ax.set_ylabel(r'$|C_m|\,(\Delta T\,\sigma_\omega(\kappa))^{S-m}$')
+    ax.set_ylabel(r'$|r_j(\kappa)|$ (measured optimal transfer)')
     ax.set_title('per-(member, dT) optimal correction vs the one shared stencil')
     ax.legend(fontsize=6); fig.tight_layout()
-    fig.savefig(args.out / 'g_family_vs_pooled.png', dpi=160); plt.close(fig)
+    fig.savefig(args.out / 'r_family_vs_pooled.png', dpi=160); plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(5.4, 4.2))
-    ax.bar(['(i) cascade', '(ii) pooled var', f'(iii) width-{args.grad_kernel}'],
-           [np.mean([r['irreducible'] ** 2 / max(r['raw'] ** 2, 1e-300)
-                     for r in rows]), var_ii, res_iii])
-    ax.set_ylabel('fraction of the raw time-error energy')
-    ax.set_title('Wiener-floor decomposition (pooled)')
+    mean_i = float(np.mean([r['irr_frac'] for r in rows]))
+    ax.bar(['(i) incoherent', '(ii) pooled var', f'(iii) width-{args.grad_kernel}'],
+           [mean_i, var_ii, res_iii])
+    ax.set_ylabel('fraction'); ax.set_title('Wiener-floor decomposition (pooled)')
     fig.tight_layout(); fig.savefig(args.out / 'floor_decomposition.png', dpi=160)
     plt.close(fig)
 
     with open(args.out / 'wiener_floor_summary.csv', 'w', newline='') as f:
-        w = csv.writer(f)
-        w.writerow(['member', 'dt', 'raw_time_floor', 'irreducible_i', 'coh_frac'])
+        wcsv = csv.writer(f)
+        wcsv.writerow(['member', 'dt', 'raw_fd_floor', 'irr_frac',
+                       'irreducible_i', 'abs_fullslot', 'ceiling_conditioned'])
         for r in rows:
-            w.writerow([r['member'], r['dt'], r['raw'], r['irreducible'],
-                        r['coh_frac']])
-        w.writerow([]); w.writerow(['pooled_var_ii', var_ii])
-        w.writerow(['shape_deficit_iii', res_iii])
-        w.writerow(['observed_floor', args.observed_floor])
-    print(f"\n[1b] plots + CSV in {args.out}")
+            wcsv.writerow([r['member'], r['dt'], r['raw'], r['irr_frac'],
+                           r['irreducible'], r['abs_fullslot'],
+                           r['ceiling_cond']])
+        wcsv.writerow([]); wcsv.writerow(['pooled_var_ii', var_ii])
+        wcsv.writerow(['shape_deficit_iii', res_iii])
+        wcsv.writerow(['valid_band_kappa_max', Kband])
+        wcsv.writerow(['observed_floor', args.observed_floor])
+    if not args.skip_fullslot:
+        cc = [r['ceiling_cond'] for r in rows if r['ceiling_cond'] == r['ceiling_cond']]
+        if cc:
+            print(f"\nDECISION LINE: pooled conditioned ceiling (mean over tiers) "
+                  f"= {float(np.mean(cc)):.4f} vs observed unconditioned plateau "
+                  f"{args.observed_floor}. The gap is conditioning's measured prize.")
+    print(f"[1b] plots + CSV in {args.out}")
 
 
 if __name__ == '__main__':
