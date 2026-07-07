@@ -1,0 +1,165 @@
+--- a/src/qg/solver/qg.py
++++ b/src/qg/solver/qg.py
+@@ -15,6 +15,7 @@
+ 
+ from qg.solver.opt.operator.jacobian import advection_uv
+ 
++from qg._output.scalars import ScalarRecorder
+ from qg._output.dataset import (
+     extract_obstacle_mask,
+     extract_sponge_mask,
+@@ -96,6 +97,15 @@
+ 
+         state = self.init()
+ 
++        # Opt-in per-step scalar recorder (SGS branch): active ONLY when the
++        # config has qg.diag.scalar_rate; otherwise rec is None and the hooks
++        # below (and in bc.py / obstacle.py via state._rec) are no-ops, keeping
++        # this path bit-identical to the unhooked solver.
++        rec = ScalarRecorder.build(self.raw_param, self.grid, int(self.param.time.T / self.dt))
++        if rec is not None:
++            state._rec = rec
++            self.logger.info(f"Scalar recorder ON: every {rec.rate} steps -> {rec.out}")
++
+         B = state.qh.shape[0]
+         # Number of save points = floor((steps - first_save_step) / save_rate) + 1.
+         # Loop iterates it from 0 to steps-2, so the last "step" candidate is
+@@ -136,8 +146,12 @@
+             )
+ 
+         for it in tqdm(range(steps)):
+-            self.step(state)            
+-            
++            if rec is not None:
++                rec.begin_step(it, state)
++            self.step(state)
++            if rec is not None:
++                rec.after_step(it, state)
++
+             if (it+1) % save_rate == 0 and (it+1) >= first_save_step:
+                 save_index = (it + 1 - first_save_step) // save_rate
+                 snap = state.out()  # (B, 4, Ny, Nx)
+@@ -214,6 +228,8 @@
+             'spectrum_k': spec_kbins if spec_kbins is not None
+                           else np.zeros(0, dtype=np.float32),
+         }
++        if rec is not None:
++            rec.close()
+         solution[:, -1, ...] = state.out() # B T C H W
+         return solution, diagnostics
+     
+--- a/src/qg/_input/sources/bc.py
++++ b/src/qg/_input/sources/bc.py
+@@ -39,9 +39,41 @@
+     
+ 
+ class Flow:
+-    @staticmethod
+-    def const_x_flow(state, inlet_velocity):
+-        
++    # SGS branch opt-in: per-step inlet velocity from a precomputed table
++    # (qg.bc.inlet_table: path to U_of_t.npz from training/modulation.py).
++    # Absent key => inlet_table is None and const_x_flow is bit-identical to
++    # the original static-scalar behavior. Tables are index-matched to the
++    # solver dt BY DESIGN (no interpolation): U[n] at step n = round(t/dt).
++    _inlet_tables = {}   # path -> (U ndarray float64, table dt)
++
++    @staticmethod
++    def _table_velocity(state, inlet_table):
++        tab = Flow._inlet_tables.get(inlet_table)
++        if tab is None:
++            import numpy as _np
++            _d = _np.load(inlet_table)
++            _U = _np.asarray(_d['U'], dtype=_np.float64)
++            _t = _np.asarray(_d['t'], dtype=_np.float64)
++            tab = (_U, float(_t[1] - _t[0]))
++            Flow._inlet_tables[inlet_table] = tab
++        U, table_dt = tab
++        if abs(table_dt - state.dt) > 1e-12 * max(1.0, abs(state.dt)):
++            raise RuntimeError(
++                f"inlet_table dt={table_dt} != solver dt={state.dt}: regenerate "
++                f"the table at the solver dt (no runtime interpolation by design)")
++        n = int(round(state.t / state.dt))
++        if n >= len(U):
++            raise RuntimeError(f"inlet_table exhausted: step {n} >= table length {len(U)}")
++        return float(U[n])
++
++    @staticmethod
++    def const_x_flow(state, inlet_velocity, inlet_table=None):
++        if inlet_table is not None:
++            inlet_velocity = Flow._table_velocity(state, inlet_table)
++        _rec = getattr(state, '_rec', None)
++        if _rec is not None:
++            _rec.stash_inlet(inlet_velocity)
++
+         @lru_cache(maxsize=1)
+         def base_flow():
+             flow_uh = torch.zeros_like(state.uh)
+@@ -52,7 +84,7 @@
+         flow_uh, flow_vh = base_flow()
+         state.uh[...,0,0] = inlet_velocity
+         state.vh[...,0,0] = 0.0
+-        
++
+         return flow_uh, flow_vh
+ 
+ class Region:
+@@ -169,7 +201,7 @@
+                         **kwargs):
+         return Sponge.vorticity_sponge(state, derivative, sponge,
+                                     Region.outlet_mask_r(grid, _min, _max, width, type='single'),
+-                                    *Flow.const_x_flow(state, inlet_velocity))
++                                    *Flow.const_x_flow(state, inlet_velocity, kwargs.get('inlet_table')))
+         
+ 
+     @staticmethod
+@@ -179,7 +211,7 @@
+                         **kwargs):
+         return Sponge.vorticity_sponge(state, derivative, sponge,
+                                        Region.outlet_mask_rtd(grid, _min, _max, width, type='single'),
+-                                       *Flow.const_x_flow(state, inlet_velocity))
++                                       *Flow.const_x_flow(state, inlet_velocity, kwargs.get('inlet_table')))
+     @staticmethod
+     def const_outlet_diffuse_r(state, grid, derivative, 
+                         inlet_velocity=1.0, _min=0.0, _max=1.0, sponge=4.0,
+@@ -187,7 +219,7 @@
+                         **kwargs):
+         return Sponge.diffuse_sponge(state, derivative, sponge,
+                                     Region.outlet_mask_r(grid, _min, _max, width, type='double'),
+-                                    *Flow.const_x_flow(state, inlet_velocity))
++                                    *Flow.const_x_flow(state, inlet_velocity, kwargs.get('inlet_table')))
+         
+ 
+     @staticmethod
+@@ -197,7 +229,7 @@
+                         **kwargs):
+         return Sponge.diffuse_sponge(state, derivative, sponge,
+                                        Region.outlet_mask_rtd(grid, _min, _max, width, type='triple'),
+-                                       *Flow.const_x_flow(state, inlet_velocity))
++                                       *Flow.const_x_flow(state, inlet_velocity, kwargs.get('inlet_table')))
+ 
+     @staticmethod
+     def none(state, grid, derivative,                  
+--- a/src/qg/solver/opt/operator/obstacle.py
++++ b/src/qg/solver/opt/operator/obstacle.py
+@@ -62,11 +62,18 @@
+     u_chi = chi * (u - chi_velocity[0]) # products to be damped
+     v_chi = chi * (v - chi_velocity[1])
+ 
++    # SGS-branch scalar recorder (opt-in; state._rec exists only when
++    # qg.diag.scalar_rate is configured): hand over the exact discrete momentum
++    # sink applied this step. Reductions happen only on sampled steps.
++    _rec = getattr(state, '_rec', None)
++    if _rec is not None:
++        _rec.stash_penalty(u, v, u_chi, v_chi, chi)
++
+     u_chi_h = to_spectral(u_chi)
+     v_chi_h = to_spectral(v_chi)
+-    
++
+     sponge = (- op.derivative.dx * v_chi_h + op.derivative.dy * u_chi_h) / eta # - d/dx(chi*v) + d/dy(chi*u)
+-    
++
+     return sponge
+ 
+ def brinkman_friction_slip_penalty(op, state, chi, chi_velocity):

@@ -22,6 +22,24 @@ Once every item below is committed to the fork, **delete this directory**.
 | `src/qg/solver/qg.py`, `integrator/imex.py`, `opt/operator/__init__.py`, `bc.py` | 0.2.1-era versions — upstream 0.2.3 refactored exactly these | **Do not port blindly.** Diff for any local fixes (e.g. the colleague's convergence fix referenced in run_akhil_t10_sweep.sh) and re-apply onto 0.2.3 only if still relevant. |
 | everything else (`basis.py`, `derivative.py`, `jacobian.py`, `cartesian.py`, `obstacle.py`, `forcing.py`, `config.py`, `draw.py`, `train.py`, `test.py`, `__init__.py`) | Probably unmodified 0.2.1 | Diff; expect no-ops. Discard if identical to upstream history. |
 
+## SGS-closure hooks (2026-07-07, fable-authored — ALSO LIVE in qg-simple-package-stable)
+
+Unlike the 0.2.1 recovery items above, these are NEW opt-in hooks applied directly to the
+shared `qg-simple-package-stable` working tree (Sanaa ruling, AMENDMENT_01 §A.1) and mirrored
+here for the eventual fork port. Absent their config keys the solver is bit-identical
+(enforced by the SGS branch's Gate 1 max|Δω| = 0.0 regression).
+
+| File | Change | Config key |
+|---|---|---|
+| `sgs_hooks_2026-07-07.patch` | unified diff of the three edits below (byte-exact, verified by round-trip) | — |
+| `src/qg/_input/sources/bc.py` | `Flow.const_x_flow` optional per-step inlet from `U_of_t.npz` (index-matched to solver dt, no interpolation); 4 call sites forward the key | `qg.bc.inlet_table` |
+| `src/qg/solver/qg.py` | build/step/close hooks for the scalar recorder in `_run` | `qg.diag.scalar_rate` |
+| `src/qg/solver/opt/operator/obstacle.py` | 3-line stash of the discrete Brinkman momentum sink (source-time u, v, χu, χv) | (recorder) |
+| `src/qg/_output/scalars.py` | NEW module (full copy here): per-step scalar recorder — Brinkman forces, Cd/Cl (inst+mid), U_inlet readback, U_cyl, E/Z, wake probes; append-safe atomic flush; force derivation in module docstring | `qg.diag.*` |
+
+Port note: on 0.2.3 the BC/operator refactor moves these seams; re-apply by intent
+(table-lookup inlet + recorder stash at the penalty), not by hunk.
+
 ## Verification after porting
 1. `uv pip install -e external/qg-simple` clean.
 2. `python run_qg.py +scenario=decaying_turbulence qg.time.T=0.5` runs on CPU.
