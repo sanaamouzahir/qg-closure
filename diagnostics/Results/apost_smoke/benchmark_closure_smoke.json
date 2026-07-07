@@ -1,0 +1,52 @@
+{
+  "config": {
+    "root_dir": "data/ensemble_N5_7lag/FRC-b2/sweep_dT_5em3",
+    "ckpt": "[PosixPath('data/ensemble_N5_7lag/training_runs/deriv7_filtered_lr5e-5/best.pt')]",
+    "ic_index": "0",
+    "Delta_T": "None",
+    "K": "20",
+    "bench_steps": "8",
+    "fine_bench_steps": "40",
+    "horizon_steps": "12",
+    "accuracy_json": "[PosixPath('/gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/diagnostics/Results/apost_smoke/rollout_apost_smoke.json')]",
+    "device": "cuda",
+    "tag": "smoke",
+    "out_dir": "/gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/diagnostics/Results/apost_smoke"
+  },
+  "Delta_T": 0.005,
+  "K": 20,
+  "M": 12,
+  "results": {
+    "fine_ref": {
+      "ms_per_step": 0.6221175193786621,
+      "steps_to_horizon": 240,
+      "s_to_horizon": 0.1493082046508789,
+      "x_bare": 0.9376875393046447
+    },
+    "bare": {
+      "ms_per_step": 0.663459300994873,
+      "steps_to_horizon": 12,
+      "s_to_horizon": 0.007961511611938477,
+      "x_bare": 1.0
+    },
+    "r3_analytic": {
+      "ms_per_step": 6.055003730580211,
+      "steps_to_horizon": 12,
+      "s_to_horizon": 0.07266004476696253,
+      "x_bare": 9.12641321253706
+    },
+    "closure:deriv7_filtered_lr5e-5(cheap_deriv)": {
+      "ms_per_step": 6.351858377456665,
+      "steps_to_horizon": 12,
+      "s_to_horizon": 0.07622230052947998,
+      "model": "cheap_deriv",
+      "ckpt": "data/ensemble_N5_7lag/training_runs/deriv7_filtered_lr5e-5/best.pt",
+      "x_bare": 9.573847812415776
+    }
+  },
+  "accuracy": {
+    "bare": 2.1357358695472448e-08,
+    "r3only": 2.023241711969149e-08,
+    "closure(cheap_deriv)": 2.1774650278386557e-05
+  }
+}

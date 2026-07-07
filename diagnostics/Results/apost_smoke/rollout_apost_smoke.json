@@ -1,0 +1,88 @@
+{
+  "config": {
+    "root_dir": "data/ensemble_N5_7lag/FRC-b2/sweep_dT_5em3",
+    "ckpt": "data/ensemble_N5_7lag/training_runs/deriv7_filtered_lr5e-5/best.pt",
+    "ic_index": "0",
+    "restart_ic": "None",
+    "Delta_T": "None",
+    "K": "20",
+    "horizon_turnovers": "10.0",
+    "tau_eddy": "None",
+    "n_steps": "12",
+    "n_checkpoints": "4",
+    "arms": "bare,r3only,closure",
+    "no_truth": "False",
+    "r4": "False",
+    "dealias_nn": "True",
+    "scalars_every": "1",
+    "blowup_factor": "10.0",
+    "nn_float64": "True",
+    "device": "cuda",
+    "tag": "smoke",
+    "out_dir": "/gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/diagnostics/Results/apost_smoke"
+  },
+  "Delta_T": 0.005,
+  "K": 20,
+  "h_fine": 0.00025,
+  "M": 12,
+  "tau_eddy": 1.089365985606919,
+  "model": "cheap_deriv",
+  "cp_steps": [
+    0,
+    3,
+    6,
+    9,
+    12
+  ],
+  "t_truth": 0.18886661529541016,
+  "bare_walltime": 0.019660472869873047,
+  "bare_cfl_max": 0.15172158945204178,
+  "bare_blowup_step": null,
+  "bare_verdict": "STABLE",
+  "r3only_walltime": 0.017262697219848633,
+  "r3only_cfl_max": 0.1517215893861711,
+  "r3only_blowup_step": null,
+  "r3only_verdict": "STABLE",
+  "closure_walltime": 8.408849239349365,
+  "closure_cfl_max": 0.15172165436018847,
+  "closure_blowup_step": null,
+  "closure_verdict": "STABLE",
+  "error_table": [
+    {
+      "t": 0.0,
+      "relL2_bare": 0.0,
+      "relL2_r3only": 0.0,
+      "relL2_closure": 0.0
+    },
+    {
+      "t": 0.015,
+      "relL2_bare": 6.394296683575081e-09,
+      "relL2_r3only": 6.159862192569806e-09,
+      "relL2_closure": 8.092098100161001e-08
+    },
+    {
+      "t": 0.03,
+      "relL2_bare": 1.1166848651001607e-08,
+      "relL2_r3only": 1.0627752025563795e-08,
+      "relL2_closure": 3.911842562305065e-07
+    },
+    {
+      "t": 0.045,
+      "relL2_bare": 1.622454848208586e-08,
+      "relL2_r3only": 1.5390219362310916e-08,
+      "relL2_closure": 2.6799037158321086e-06
+    },
+    {
+      "t": 0.06,
+      "relL2_bare": 2.1357358695472448e-08,
+      "relL2_r3only": 2.023241711969149e-08,
+      "relL2_closure": 2.1774650278386557e-05
+    }
+  ],
+  "final_relL2": {
+    "bare": 2.1357358695472448e-08,
+    "r3only": 2.023241711969149e-08,
+    "closure": 2.1774650278386557e-05
+  },
+  "improvement_x": 0.000980835899654916
+}
