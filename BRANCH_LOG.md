@@ -2,6 +2,21 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-07 — session 2b (global supervisor Fable: gate1 tables LANDED)
+- Sanaa GO for the tables CPU job ONLY (explicitly no other qsub; smokes wait until the
+  mmap builds free the GPUs). Submitted job 1826260 sgs_gate1_tables — 27 s, clean exit.
+- 6/6 tables + PNGs under qg-simple-package-stable/src/qg/outputs/SGS_closure_gate1/tables/,
+  all stamped sha 4cfb6dca4, all U(t=0)=2.000000:
+  const 2.5e-4 (U == 2.0 everywhere — bit-identity arm exact); sine 2.5e-4 Re[2418,5600]
+  (min unreached by design: 2/3 period in the 10 t.u. window); ou 2.5e-4/1.25e-4 seed
+  20260707 Re[~3854,4225] N 60001/120001 (dt-consistency pair); telegraph 2.5e-4/1.25e-4
+  rails [2200,5600] hit.
+- Benign pre-script log noise (imageio_ffmpeg import error + dirname complaint from env
+  activation under -V) — no effect; note for future log readers.
+- Emails: [QG][LANDED][SGS-CLOSURE] sent 20:23Z (after session-2 PROPOSE at 20:13Z).
+- HELD: the 5 GPU smokes (GATE1_RELEASE=1 submitter ready). Trigger = mmap builds done +
+  Sanaa's next GO. Then: bit-identity diff → Cd/Cl + overlays → GATE1 report → HARD STOP.
+
 ## 2026-07-07 — session 2 (global supervisor Fable: post-disconnect resume, Gate-1 scripts released, PROPOSE sent)
 - Session context lost to a connection drop; state fully recovered from git + this log
   (nothing on the branch was lost — all Phase A commits intact).
