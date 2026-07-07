@@ -114,6 +114,12 @@ def main():
     cond = build_model('cond_local', **kw).to(args.device).to(torch.float64)
     missing, unexpected = cond.load_state_dict(ctrl.state_dict(), strict=False)
     assert not unexpected, f'unexpected keys: {unexpected}'
+    # every missing key must be conditioning-only; a missing SHARED weight (e.g.
+    # a grad_kernel width mismatch dropped by strict=False) would leave both
+    # models at FD-init and make the equality gate vacuous.
+    bad = [k for k in missing
+           if not (k.startswith('cond.') or k in ('k_of_channel', 'dt0_cond'))]
+    assert not bad, f'missing SHARED weights (gate would be vacuous): {bad}'
     n_new = sum(pp.numel() for pp in cond.cond.parameters())
     print(f'[condlocal-init] shared weights copied; conditioning params={n_new}')
 
@@ -133,6 +139,19 @@ def main():
             break
     if len(picks) < 4:                      # fallback: spread over the index range
         picks = list(np.linspace(0, len(val_ds) - 1, 4).astype(int))
+    # coverage guard: the picks must exercise EVERY grid shape in the pool
+    # (a shape-specific wiring bug must not pass the gate silently).
+    shapes_all = set(val_ds.grid_shapes)
+    shapes_picked = {val_ds.sample_grid_shape(int(g)) for g in picks}
+    if shapes_picked != shapes_all:
+        for gi in range(len(val_ds)):
+            if val_ds.sample_grid_shape(gi) not in shapes_picked:
+                picks.append(gi)
+                shapes_picked.add(val_ds.sample_grid_shape(gi))
+            if shapes_picked == shapes_all:
+                break
+    assert shapes_picked == shapes_all, \
+        f'picks cover {shapes_picked} but pool has {shapes_all}'
     worst = 0.0
     for gi in picks:
         x, y, regime = val_ds[int(gi)]
