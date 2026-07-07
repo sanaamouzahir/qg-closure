@@ -117,6 +117,12 @@ def main():
     p.add_argument('--accuracy-json', type=Path, nargs='*', default=[],
                    help='rollout_apost_*.json files supplying final rel-L2 '
                         'for the cost-vs-accuracy panel')
+    p.add_argument('--nn-float64', action=argparse.BooleanOptionalAction,
+                   default=False,
+                   help='NN dtype for the timed closure arms. Default FALSE: '
+                        'the production inference path is float32 convs '
+                        '(~30x faster on the A6000); pass --nn-float64 only '
+                        'to time the validation path.')
     p.add_argument('--device', type=str, default='cuda')
     p.add_argument('--tag', type=str, default='bench')
     p.add_argument('--out-dir', type=Path, default=Path('.'))
@@ -200,7 +206,8 @@ def main():
     # ---- closures (one per ckpt) ---- #
     for ck in args.ckpt:
         model, name, n_snap = ra.load_deriv_model(ck, manifest, Delta_T,
-                                                  device, nn_float64=True)
+                                                  device,
+                                                  nn_float64=args.nn_float64)
         input_fields = (['omega_0'] + [f'omega_m{k}' for k in range(1, n_snap)]
                         + ['psi_0'] + [f'psi_m{k}' for k in range(1, n_snap)])
         omS, psS = stack_for(n_snap)
