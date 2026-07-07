@@ -79,6 +79,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from cond_grad import SpectralCondGrad
+
 
 def _deriv1d_weights(width: int, h: float) -> np.ndarray:
     """Central 1st-derivative weights on nodes [-(w//2)..w//2]*h (includes 1/h).
@@ -388,13 +390,176 @@ class CheapDerivClosureNet(nn.Module):
         return out
 
 
+class CondDerivClosureNet(nn.Module):
+    """cheap_deriv with the local SpatialGrad replaced by SpectralCondGrad.
+
+    Same pipeline as CheapDerivClosureNet -- TimeFD (per-sample W_unit/dt^k),
+    ORDER CLIP, Jacobian features in the SAME i*n_ord+j order, the SAME
+    physics-init 1x1 binomial mix -- but the spatial-gradient stage is the
+    conditioned SPECTRAL operator of cond_grad.py:
+
+        D_hat_d^(k) = i k_d [1 + dT^(S-k) g^A_theta(x(kappa), kappa~)]
+                    +   k_d  dT^(S-k) g^B_theta(x(kappa), kappa~)
+
+    with x(kappa) = dT * sigma_hat_omega(kappa) read per-sample from the two
+    newest omega marks (arcsin-debiased). There are NO learnable local stencils
+    anywhere in this model; at zero init (g_theta == 0) the gradients are the
+    EXACT spectral ik multipliers, so epoch-0 eval must reproduce the [spec]
+    floors -- the integration acceptance test.
+
+    No refine, no corrector. grad_kernel is irrelevant (spectral operator).
+    The SpectralCondGrad context (sigma-hat + per-shell features) is computed
+    exactly ONCE per forward; each per-order grad() call reuses it.
+
+    Grid handling: the SpectralCondGrad cache is keyed by (Ny, Nx, Lx, Ly) with
+    SCALAR Lx, Ly derived per batch as Nx*dx, Ny*dy. Batches are shape-
+    homogeneous AND (in the current isotropic single-L-per-shape pool) grid-
+    uniform; a mixed-dx batch is refused loudly rather than mis-scaled.
+
+    dtype: run the module at the compute dtype (trainer does .to(float64)).
+    Fields are NOT downcast before the spectral stage -- the rFFTs run at the
+    input/compute dtype (float64 in training), matching the closure pipeline's
+    precision rule.
+    """
+
+    def __init__(self, in_channels: int = 14, out_orders: int = 3,
+                 n_time: int = 7, learnable_stencils: bool = True,
+                 dt: float = 1e-3, dx: float = 1.0, dy: float = 1.0,
+                 physics_init: bool = True, cond_hidden: int = 16):
+        super().__init__()
+        if in_channels != 2 * n_time:
+            raise ValueError(
+                f"in_channels ({in_channels}) must equal 2*n_time "
+                f"({2 * n_time}): [omega x{n_time}, psi x{n_time}]")
+        self.n_time = n_time
+        self.out_orders = out_orders
+
+        self.time_fd = TimeFD(n_time, dt, learnable=learnable_stencils)
+        # ORDER CLIP: identical to CheapDerivClosureNet -- only orders
+        # 0..out_orders are ever emitted (all n_time snapshots still feed each
+        # emitted row; only the noisy unused 1/dt^4.. ORDER OUTPUTS are dropped).
+        self.n_ord = min(out_orders + 1, n_time)   # orders 0..out_orders
+
+        # ONE shared conditioned spectral gradient layer. S = n_time sets the
+        # analytic dT^(S-k) amplitude; n_channels = n_ord gives separate
+        # (omega, psi) MLP pairs per time-derivative order.
+        self.grad = SpectralCondGrad(S=n_time, n_channels=self.n_ord,
+                                     hidden=cond_hidden)
+
+        self.n_jac = self.n_ord * self.n_ord  # J(psi^i, omega^j), i,j in 0..n_ord-1
+
+        # learned mixing: BIT-IDENTICAL construction to cheap_deriv
+        self.mix = nn.Conv2d(self.n_jac, out_orders, kernel_size=1)
+        nn.init.zeros_(self.mix.bias)
+        if physics_init:
+            self._physics_init_mix()
+        else:
+            nn.init.normal_(self.mix.weight, std=0.1)
+
+        # Fixed-grid fallbacks (mirror SpatialGrad.dx0/dy0 and the TimeFD
+        # dt=None path) for calls that omit dt/dx/dy.
+        self.register_buffer('dt0', torch.tensor(float(dt)))
+        self.register_buffer('dx0', torch.tensor(float(dx)))
+        self.register_buffer('dy0', torch.tensor(float(dy)))
+
+    # the SAME physics init as cheap_deriv (shared implementation, not a copy)
+    _physics_init_mix = CheapDerivClosureNet._physics_init_mix
+
+    @staticmethod
+    def _uniform_spacing(v, default: torch.Tensor, name: str) -> float:
+        """Resolve per-sample dx/dy to the batch scalar the spectral cache needs.
+
+        None -> construction-time fallback; tensor -> must be batch-uniform
+        (isotropic single-L-per-shape pool; refuse a mixed-dx batch loudly)."""
+        if v is None:
+            return float(default)
+        if torch.is_tensor(v):
+            v = v.reshape(-1)
+            if v.numel() > 1 and float(v.max() - v.min()) >= 1e-12:
+                raise ValueError(
+                    f"cond_deriv needs a grid-uniform batch: {name} spans "
+                    f"[{float(v.min()):.6e}, {float(v.max()):.6e}]. The "
+                    "GridHomogeneousBatchSampler groups by SHAPE only -- a "
+                    "same-shape/different-L pool needs (shape, L)-keyed batches.")
+            return float(v[0])
+        return float(v)
+
+    def forward(self, x: torch.Tensor, dt: torch.Tensor = None,
+                dx: torch.Tensor = None, dy: torch.Tensor = None) -> torch.Tensor:
+        nt = self.n_time
+        omega_stack = x[:, :nt]          # [omega_0, omega_m1, ...]
+        psi_stack   = x[:, nt:2 * nt]    # [psi_0,   psi_m1,   ...]
+
+        omega_ord = self.time_fd(omega_stack, dt)   # (B, nt, H, W) orders 0..nt-1
+        psi_ord   = self.time_fd(psi_stack, dt)     # (B, nt, H, W)
+        # ORDER CLIP (same as cheap_deriv)
+        no = self.n_ord
+        omega_ord = omega_ord[:, :no]
+        psi_ord   = psi_ord[:, :no]
+
+        # ---- spectral context: computed EXACTLY ONCE per forward ----
+        B, Ny, Nx = x.shape[0], x.shape[-2], x.shape[-1]
+        # sigma-hat reads the two newest PHYSICAL omega marks (raw input
+        # channels, NOT the FD-differenced orders).
+        om0, om1 = x[:, 0], x[:, 1]                  # (B, Ny, Nx)
+        # per-sample dt as a (B,) tensor for the conditioning features
+        if dt is None:
+            dt_vec = self.dt0.to(device=x.device, dtype=x.dtype).expand(B)
+        elif torch.is_tensor(dt):
+            dt_vec = dt.reshape(-1).to(device=x.device, dtype=x.dtype)
+            if dt_vec.numel() == 1:
+                dt_vec = dt_vec.expand(B)
+        else:
+            dt_vec = torch.full((B,), float(dt), device=x.device, dtype=x.dtype)
+        # scalar Lx, Ly from the batch grid (uniform-dx batch asserted)
+        Lx = Nx * self._uniform_spacing(dx, self.dx0, 'dx')
+        Ly = Ny * self._uniform_spacing(dy, self.dy0, 'dy')
+        ctx = self.grad.context(om0, om1, dt_vec, Lx, Ly)
+
+        # ---- per-order conditioned spectral gradients (reuse the one ctx) ----
+        wx, wy, px, py = [], [], [], []
+        for k in range(no):
+            gxw, gyw = self.grad.grad(omega_ord[:, k], k_order=k,
+                                      is_psi=False, ctx=ctx)
+            gxp, gyp = self.grad.grad(psi_ord[:, k], k_order=k,
+                                      is_psi=True, ctx=ctx)
+            wx.append(gxw); wy.append(gyw); px.append(gxp); py.append(gyp)
+
+        # J(psi^i, omega^j) = (d_x psi^i)(d_y omega^j) - (d_y psi^i)(d_x omega^j)
+        # SAME feature order (i*n_ord + j) as cheap_deriv -> physics init lines up.
+        jac = []
+        for i in range(no):              # psi order
+            for j in range(no):          # omega order
+                jac.append((px[i] * wy[j] - py[i] * wx[j]).unsqueeze(1))
+        jac = torch.cat(jac, dim=1)      # (B, n_jac, H, W)
+
+        return self.mix(jac)             # (B, out_orders, H, W); corrector OFF
+
+
 def build_model(name: str = 'cheap_deriv', in_channels: int = 6, **kw):
     """Factory matching the train.py build_model(...) convention.
 
     n_time defaults to in_channels // 2 (half omega, half psi), so 6->3 and
     8->4 without an explicit flag.
+
+    name='cheap_deriv' -> CheapDerivClosureNet (learned local FD stencils);
+    name='cond_deriv'  -> CondDerivClosureNet (conditioned SPECTRAL gradients;
+                          grad_kernel / refine / corrector kwargs are ignored).
     """
     n_time = kw.get('n_time', in_channels // 2)
+    if name == 'cond_deriv':
+        return CondDerivClosureNet(
+            in_channels=in_channels,
+            out_orders=kw.get('out_orders', 3),
+            n_time=n_time,
+            learnable_stencils=kw.get('learnable_stencils', True),
+            dt=kw.get('dt', 1e-3), dx=kw.get('dx', 1.0), dy=kw.get('dy', 1.0),
+            physics_init=kw.get('physics_init', True),
+            cond_hidden=kw.get('cond_hidden', 16),
+        )
+    if name != 'cheap_deriv':
+        raise ValueError(f"unknown model name {name!r} "
+                         "(expected 'cheap_deriv' or 'cond_deriv')")
     return CheapDerivClosureNet(
         in_channels=in_channels,
         out_orders=kw.get('out_orders', 3),

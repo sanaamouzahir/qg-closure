@@ -94,6 +94,11 @@ def main():
     p.add_argument('--grid', type=str, default=None,
                    help="restrict to one grid 'NyxNx' (default: most common in pool)")
 
+    p.add_argument('--model', default='cheap_deriv',
+                   choices=['cheap_deriv', 'cond_deriv'],
+                   help="'cheap_deriv' = learned local FD stencils (control); "
+                        "'cond_deriv' = conditioned spectral gradients "
+                        "(exp/wiener-conditioning; ignores --grad-kernel)")
     p.add_argument('--n-snapshots', type=int, default=4,
                    help='lags fed to the model (4 -> 8 channels, n_time=4; gives '
                         'N^(1..3) exactly in the FD span)')
@@ -222,13 +227,13 @@ def main():
 
     # ---- model (corrector OFF; built at the REFERENCE grid spacing) ----
     in_ch = 2 * args.n_snapshots
-    model = build_model('cheap_deriv', in_channels=in_ch, out_orders=args.out_orders,
+    model = build_model(args.model, in_channels=in_ch, out_orders=args.out_orders,
                         grad_kernel=args.grad_kernel, dt=dt0,
                         dx=dx0, dy=dy0, physics_init=not args.no_physics_init,
                         learnable_stencils=args.learnable_stencils).to(args.device).to(adtype)
     trainable = [q for q in model.parameters() if q.requires_grad]
     n_params = sum(q.numel() for q in trainable)
-    print(f"[deriv-train] cheap_deriv trainable params={n_params:,}  in_ch={in_ch}  "
+    print(f"[deriv-train] {args.model} trainable params={n_params:,}  in_ch={in_ch}  "
           f"out_orders={args.out_orders}  spatial_stencils={'learn' if args.learnable_stencils else 'frozen'} "
           f"(time-FD = exact dt^-k W_unit; spatial rescaled per-sample to ref dx0={dx0:.4e})  "
           f"dtype={args.compute_dtype}")
