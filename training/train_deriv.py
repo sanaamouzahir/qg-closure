@@ -95,10 +95,13 @@ def main():
                    help="restrict to one grid 'NyxNx' (default: most common in pool)")
 
     p.add_argument('--model', default='cheap_deriv',
-                   choices=['cheap_deriv', 'cond_deriv'],
+                   choices=['cheap_deriv', 'cond_local', 'cond_deriv'],
                    help="'cheap_deriv' = learned local FD stencils (control); "
+                        "'cond_local' = control + sigma-hat tap modulation "
+                        "(the deliverable; inference = control + 2 FFTs/step); "
                         "'cond_deriv' = conditioned spectral gradients "
-                        "(exp/wiener-conditioning; ignores --grad-kernel)")
+                        "(~24 FFTs/step; ceiling-measurement instrument only, "
+                        "ignores --grad-kernel)")
     p.add_argument('--n-snapshots', type=int, default=4,
                    help='lags fed to the model (4 -> 8 channels, n_time=4; gives '
                         'N^(1..3) exactly in the FD span)')

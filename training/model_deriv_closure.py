@@ -543,10 +543,31 @@ def build_model(name: str = 'cheap_deriv', in_channels: int = 6, **kw):
     8->4 without an explicit flag.
 
     name='cheap_deriv' -> CheapDerivClosureNet (learned local FD stencils);
+    name='cond_local'  -> CondLocalDerivClosureNet (the DELIVERABLE: control
+                          pipeline + sigma-hat-conditioned tap modulation;
+                          inference = control + 2 FFTs/step);
     name='cond_deriv'  -> CondDerivClosureNet (conditioned SPECTRAL gradients;
-                          grad_kernel / refine / corrector kwargs are ignored).
+                          ~24 FFTs/step -- ceiling-measurement instrument ONLY,
+                          dead as a deliverable; grad_kernel / refine /
+                          corrector kwargs are ignored).
     """
     n_time = kw.get('n_time', in_channels // 2)
+    if name == 'cond_local':
+        from model_cond_local import CondLocalDerivClosureNet
+        return CondLocalDerivClosureNet(
+            in_channels=in_channels,
+            out_orders=kw.get('out_orders', 3),
+            n_time=n_time,
+            refine_channels=kw.get('refine_channels', 0),
+            learnable_stencils=kw.get('learnable_stencils', True),
+            kernel=kw.get('kernel', 3),
+            grad_kernel=kw.get('grad_kernel', 15),
+            dt=kw.get('dt', 1e-3), dx=kw.get('dx', 1.0), dy=kw.get('dy', 1.0),
+            physics_init=kw.get('physics_init', True),
+            hidden_channels=kw.get('hidden_channels', 0),
+            depth=kw.get('depth', 0),
+            cond_hidden=kw.get('cond_hidden', 24),
+        )
     if name == 'cond_deriv':
         return CondDerivClosureNet(
             in_channels=in_channels,
