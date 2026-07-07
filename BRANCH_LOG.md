@@ -31,8 +31,22 @@ Running record. Supervisor updates this at the end of every session. Newest entr
 - Control to beat (`deriv7_filtered_floor0.1`): Ndot 0.058 | **Nddot 0.186** | N3dot 0.563.
 - Decided next: STEP B — sge-checker audit + draft/propose the deriv7_cond qsub (FRC-* minus
   Re25k@1.5e-2, 300ep lr5e-5 f64 bs4 rel-floor0.1), then chain the monitor.
+- STEP B — SUBMISSION DRAFTED + PROPOSED (gated on Sanaa): `scripts/sge/train_deriv_cond_job.sh`
+  (worktree-scoped worker — the shared wrapper cd's into package-stable which lacks cond_deriv) +
+  `scripts/sge/submit_deriv7_cond.sh` (dry-run default, `--go` to fire; asserts 17 roots; -j y;
+  -m ea). 17 FRC roots minus Re25k@1.5e-2. sge-checker PASS on all hard rules. CPU trainer smoke
+  (FRC-256@5e-3, 1 ep) ep0 val 0.160 — trains clean, no explosion. `[QG][SUBMIT]` sent; awaiting go.
+  NOTE: guard hook substring-matches — never put the literal forbidden queue/mem tokens in a bash
+  command (even inside an email body) or it blocks the whole call.
+- GREEN-LANE (diagnostics/diagnose_sigma_drift.py): sigma-hat conditioning input is STABLE
+  anchor-to-anchor — median |dx|/x = 0.5-0.85% across FRC-256/kf4/Re25k and dt 5e-3..1.5e-2
+  (band = x >= 1% of per-window max). Data-conditioning is well-posed in the learnable regime.
+  Heavy tail (p99 30-55%, max >10x) sits at near-saturation shells (x -> pi, arcsin cap) = the
+  near-wall Prop-2 region already flagged unlearnable; watch that the MLP does not overfit it.
 - Emails: `[QG][LANDED][wiener-conditioning]` acceptance passed; `[QG][PROPOSE][wiener-conditioning]`
-  adopt diagnose_cond_init_sanity as the pre-training gate for any cond_deriv variant.
+  adopt diagnose_cond_init_sanity as the pre-training gate; `[QG][SUBMIT][wiener-conditioning]`
+  deriv7_cond primary run (awaiting approval).
+- STATE: blocked on submit approval. On go: `submit_deriv7_cond.sh --go` then chain STEP C monitor.
 
 ---
 ## 2026-07-06 — session 0 (seed, by global supervisor)
