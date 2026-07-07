@@ -10,7 +10,7 @@
 
 \title{Error Analysis of the Shallow-NN Temporal Closure\\
 \large Sources, distribution through $N^{(m)}$, Wiener floors with and without
-physics conditioning}
+physics conditioning --- full derivations}
 \author{}
 \date{}
 
@@ -24,10 +24,15 @@ physics conditioning}
 \psi = \nabla^{-2}\omega,\qquad \dot F = 0,\\
 &\hat L(\mathbf{k}) = -\nu\kappa^2-\mu + i\beta k_x/\kappa^2,\qquad
 \kappa=|\mathbf{k}|,\qquad
-J(a,b)=\partial_x a\,\partial_y b-\partial_y a\,\partial_x b,\\
-&\omega^{(k)} = L\,\omega^{(k-1)}+N^{(k-1)},\qquad
-\psi^{(k)}=\nabla^{-2}\omega^{(k)},\\
-&N^{(m)} = -\sum_{j=0}^{m}\binom{m}{j}\,
+J(a,b)=\partial_x a\,\partial_y b-\partial_y a\,\partial_x b.
+\end{align}
+Derivative recursion; $J$ bilinear, Leibniz on $N=-J(\psi,\omega)+F$,
+$F^{(m)}=0$ for $m\ge1$:
+\begin{align}
+&\omega^{(k)} = \partial_t\,\omega^{(k-1)} = L\,\omega^{(k-1)}+N^{(k-1)},
+\qquad \psi^{(k)}=\nabla^{-2}\omega^{(k)},\\
+&N^{(m)} = -\partial_t^{\,m} J(\psi,\omega)
+= -\sum_{j=0}^{m}\binom{m}{j}\,
 J\!\bigl(\psi^{(m-j)},\,\omega^{(j)}\bigr),\qquad m\ge1.
 \end{align}
 
@@ -41,205 +46,442 @@ J\!\bigl(\psi^{(m-j)},\,\omega^{(j)}\bigr),\qquad m\ge1.
 \quad p=0,\dots,S-1
 \qquad(\text{Vandermonde rows }W),\\
 &\omega^{(k)}_{\mathrm{FD}}=\frac{1}{\DT^{\,k}}\sum_{i=0}^{S-1}
-W_{k i}\,\omega_{-i},\qquad
-\psi^{(k)}_{\mathrm{FD}}=\frac{1}{\DT^{\,k}}\sum_{i=0}^{S-1}
-W_{k i}\,\psi_{-i},\\
-&\varepsilon_k \equiv \omega^{(k)}_{\mathrm{FD}}-\omega^{(k)}
-= C_k\,\DT^{\,S-k}\,\omega^{(S)}+O(\DT^{\,S-k+1}),\qquad
-C_k = -\frac{1}{S!}\sum_{i=0}^{S-1}W_{k i}\,(-i)^{S},\\
-&\psi^{(k)}_{\mathrm{FD}}-\psi^{(k)}
-= C_k\,\DT^{\,S-k}\,\nabla^{-2}\omega^{(S)}+O(\DT^{\,S-k+1}).
+W_{k i}\,\omega_{-i}.
 \end{align}
+Taylor expansion of each mark about $t$:
+\begin{equation}
+\omega_{-i}=\sum_{p=0}^{S-1}\frac{(-i\DT)^{p}}{p!}\,\omega^{(p)}
++\frac{(-i\DT)^{S}}{S!}\,\omega^{(S)}+O(\DT^{\,S+1}).
+\end{equation}
+Insertion into (7) and exchange of sums:
+\begin{align}
+\omega^{(k)}_{\mathrm{FD}}
+&=\frac{1}{\DT^{\,k}}\sum_{p=0}^{S-1}\DT^{\,p}\,\omega^{(p)}
+\underbrace{\sum_{i=0}^{S-1}W_{k i}\frac{(-i)^{p}}{p!}}_{=\ \delta_{kp}
+\ \text{by (6)}}
++\frac{\DT^{\,S-k}}{S!}\,\omega^{(S)}\sum_{i=0}^{S-1}W_{k i}(-i)^{S}
++O(\DT^{\,S-k+1})\\
+&=\omega^{(k)}
++C_k\,\DT^{\,S-k}\,\omega^{(S)}+O(\DT^{\,S-k+1}),
+\qquad
+C_k \equiv \frac{1}{S!}\sum_{i=0}^{S-1}W_{k i}\,(-i)^{S},\\
+\varepsilon_k
+&\equiv\omega^{(k)}_{\mathrm{FD}}-\omega^{(k)}
+= C_k\,\DT^{\,S-k}\,\omega^{(S)}+O(\DT^{\,S-k+1}).
+\end{align}
+Same rows applied to the $\psi$ marks; $\nabla^{-2}$ commutes with the linear
+combination and with $\partial_t$:
+\begin{equation}
+\varepsilon^{\psi}_{k}
+\equiv\psi^{(k)}_{\mathrm{FD}}-\psi^{(k)}
+=\nabla^{-2}\varepsilon_k
+= C_k\,\DT^{\,S-k}\,\nabla^{-2}\omega^{(S)}+O(\DT^{\,S-k+1}).
+\end{equation}
 
 \section{Learned spatial operators and the error at the $N$-level}
 
 \begin{align}
 &D^x_\theta=\partial_x+\delta^x,\qquad D^y_\theta=\partial_y+\delta^y,\qquad
 \delta=(\delta^x,\delta^y)\ \text{local, one pair for the pool},\\
-&\mathcal{P}=\{\text{members}\times\DT\times\text{anchors}\},\\
-&N^{(m)}_{\mathrm{est}}
+&\mathcal{P}=\{\text{members}\times\DT\times\text{anchors}\},\qquad
+N^{(m)}_{\mathrm{est}}
 =-\sum_{j=0}^{m}\binom{m}{j}\,
-J_\theta\!\bigl(\psi^{(m-j)}_{\mathrm{FD}},\,\omega^{(j)}_{\mathrm{FD}}\bigr),\\
-&J_\theta(a,b)=D^x_\theta a\,D^y_\theta b-D^y_\theta a\,D^x_\theta b,\\
-&\Delta N^{(m)}\equiv N^{(m)}_{\mathrm{est}}-N^{(m)}
+J_\theta\!\bigl(\psi^{(m-j)}_{\mathrm{FD}},\,\omega^{(j)}_{\mathrm{FD}}\bigr).
+\end{align}
+Expansion of one slot; bilinearity of $J_\theta$ in each argument, then
+linearity of $J_\theta$ in the operators:
+\begin{align}
+J_\theta\bigl(\psi^{(i)}+\varepsilon^{\psi}_{i},\,
+\omega^{(j)}+\varepsilon_{j}\bigr)
+&=J_\theta\bigl(\psi^{(i)},\omega^{(j)}\bigr)
++J_\theta\bigl(\varepsilon^{\psi}_{i},\omega^{(j)}\bigr)
++J_\theta\bigl(\psi^{(i)},\varepsilon_{j}\bigr)
++J_\theta\bigl(\varepsilon^{\psi}_{i},\varepsilon_{j}\bigr),\\
+J_\theta(a,b)
+&=(\partial_x+\delta^x)a\,(\partial_y+\delta^y)b
+-(\partial_y+\delta^y)a\,(\partial_x+\delta^x)b\notag\\
+&=J(a,b)+\delta J(a,b)+O(\delta^2),\\
+\delta J(a,b)
+&\equiv\delta^x a\,\partial_y b+\partial_x a\,\delta^y b
+-\delta^y a\,\partial_x b-\partial_y a\,\delta^x b .
+\end{align}
+Collection over slots, discarding
+$O(\varepsilon\delta,\varepsilon^2,\delta^2)$:
+\begin{align}
+\Delta N^{(m)}
+&\equiv N^{(m)}_{\mathrm{est}}-N^{(m)}
 = T^{(m)}+\mathcal{A}^{(m)}[\delta]
 +O(\varepsilon\delta,\ \varepsilon^2,\ \delta^2),\\
-&T^{(m)}=-\sum_{j=0}^{m}\binom{m}{j}
+T^{(m)}
+&=-\sum_{j=0}^{m}\binom{m}{j}
 \Bigl[J\!\bigl(\nabla^{-2}\varepsilon_{m-j},\,\omega^{(j)}\bigr)
 +J\!\bigl(\psi^{(m-j)},\,\varepsilon_{j}\bigr)\Bigr],\\
-&\mathcal{A}^{(m)}[\delta]
-=-\sum_{j=0}^{m}\binom{m}{j}\,\delta J_{m-j,\,j},\\
-&\delta J_{i j}
-=\delta^x\psi^{(i)}\,\partial_y\omega^{(j)}
-+\partial_x\psi^{(i)}\,\delta^y\omega^{(j)}\notag\\
-&\quad
--\delta^y\psi^{(i)}\,\partial_x\omega^{(j)}
--\partial_y\psi^{(i)}\,\delta^x\omega^{(j)}.
+\mathcal{A}^{(m)}[\delta]
+&=-\sum_{j=0}^{m}\binom{m}{j}\,
+\delta J\!\bigl(\psi^{(m-j)},\,\omega^{(j)}\bigr).
 \end{align}
-Distribution of the time error through the binomial (leading powers of $\DT$,
-via (8)--(9)):
+Distribution of the time error through the binomial: insertion of (10)--(11)
+into (18); each slot carries the $\DT$-power of its own channel:
 \begin{align}
 T^{(m)}
-&=-\sum_{j=0}^{m}\binom{m}{j}\DT^{\,S-(m-j)}\,C_{m-j}\,
+&=-\sum_{j=0}^{m}\binom{m}{j}\,C_{m-j}\,\DT^{\,S-(m-j)}\,
 J\!\bigl(\nabla^{-2}\omega^{(S)},\,\omega^{(j)}\bigr)\notag\\
 &\qquad
--\sum_{j=0}^{m}\binom{m}{j}\DT^{\,S-j}\,C_{j}\,
-J\!\bigl(\psi^{(m-j)},\,\omega^{(S)}\bigr)+\text{h.o.t.}\\
-&=\DT^{\,S-m}\Bigl[
--C_m\,J\!\bigl(\nabla^{-2}\omega^{(S)},\,\omega^{(0)}\bigr)
--C_m\,J\!\bigl(\psi^{(0)},\,\omega^{(S)}\bigr)\Bigr]
-+O(\DT^{\,S-m+1}).
+-\sum_{j=0}^{m}\binom{m}{j}\,C_{j}\,\DT^{\,S-j}\,
+J\!\bigl(\psi^{(m-j)},\,\omega^{(S)}\bigr)+\text{h.o.t.}
 \end{align}
+Smallest power $=S-m$, attained at $j=0$ (first sum) and $j=m$ (second sum);
+$\binom{m}{0}=\binom{m}{m}=1$:
+\begin{equation}
+T^{(m)}
+=\DT^{\,S-m}\,C_m\Bigl[
+-J\!\bigl(\nabla^{-2}\omega^{(S)},\,\omega^{(0)}\bigr)
+-J\!\bigl(\psi^{(0)},\,\omega^{(S)}\bigr)\Bigr]
++O(\DT^{\,S-m+1}).
+\end{equation}
 
 \section{Pooled least squares and the unconditioned Wiener floor}
 
 \begin{align}
-&\mathcal{L}(\delta)=\sum_{m=1}^{3}\E_{\mathcal{P}}
-\bigl\lVert T^{(m)}+\mathcal{A}^{(m)}[\delta]\bigr\rVert^{2},
-\qquad T=(T^{(1)},T^{(2)},T^{(3)}),\quad
-\mathcal{A}[\delta]=(\mathcal{A}^{(1)},\mathcal{A}^{(2)},\mathcal{A}^{(3)}),\\
-&\E_{\mathcal{P}}\bigl\langle
-\mathcal{A}[\eta],\,T+\mathcal{A}[\delta^\star]\bigr\rangle=0
-\quad\forall\,\eta\in\mathcal{F}
-\qquad(\mathcal{F}=\text{width-}W\text{ filter pairs}),\\
-&\mathcal{A}[\delta^\star]=-\,\Pi_{\mathcal{A}\mathcal{F}}\,T,\qquad
-\mathcal{L}_{\min}
-=\E_{\mathcal{P}}\bigl\lVert(I-\Pi_{\mathcal{A}\mathcal{F}})\,T
-\bigr\rVert^{2}
-=\E_{\mathcal{P}}\norm{T}^{2}
--\E_{\mathcal{P}}\norm{\Pi_{\mathcal{A}\mathcal{F}}T}^{2},\\
-&\mathcal{L}_{\min}
-=\underbrace{\E_{\mathcal{P}}\norm{T_r}^{2}}_{\text{(i) cascade remainder}}
-+\underbrace{\E_{\mathcal{P}}\bigl\lVert
-\mathcal{A}\bigl[\delta^\star_{(\text{member},\DT)}-\bar\delta^\star\bigr]
-\bigr\rVert^{2}}_{\text{(ii) pooled-variance mismatch}}
-+\underbrace{\mathrm{def}(\mathcal{F})}_{\text{(iii) finite-width shape deficit}}.
+&\mathcal{L}(\delta)=\sum_{j\in\mathcal{J}} w_j\,\mathcal{L}_j(\delta),
+\qquad
+\mathcal{L}_j(\delta)=\E_j\norm{T+\mathcal{A}[\delta]}^{2},
+\qquad
+\mathcal{J}=\{(\text{member},\DT)\ \text{tiers}\},\ \textstyle\sum_j w_j=1,\\
+&T=(T^{(1)},T^{(2)},T^{(3)}),\qquad
+\mathcal{A}[\delta]=(\mathcal{A}^{(1)},\mathcal{A}^{(2)},\mathcal{A}^{(3)}),
+\qquad \mathcal{A}\ \text{linear in }\delta .
 \end{align}
-Measured (S=7, $m=2$, width 15, valid band):
+First variation at the per-tier optimum $\delta^\star_j\in\mathcal{F}$
+($\mathcal{F}=$ width-$W$ filter pairs):
+\begin{align}
+&0=\tfrac{d}{ds}\Big|_{s=0}\,
+\E_j\norm{T+\mathcal{A}[\delta^\star_j+s\,\eta]}^{2}
+=2\,\E_j\bigl\langle
+\mathcal{A}[\eta],\,T+\mathcal{A}[\delta^\star_j]\bigr\rangle
+\qquad\forall\,\eta\in\mathcal{F}.
+\end{align}
+Orthogonal decomposition of any $\delta\in\mathcal{F}$ about
+$\delta^\star_j$; the cross term vanishes by (23):
+\begin{align}
+\mathcal{L}_j(\delta)
+&=\E_j\norm{T+\mathcal{A}[\delta^\star_j]
++\mathcal{A}[\delta-\delta^\star_j]}^{2}\notag\\
+&=\mathcal{L}_j(\delta^\star_j)
++2\,\E_j\bigl\langle \mathcal{A}[\delta-\delta^\star_j],\,
+T+\mathcal{A}[\delta^\star_j]\bigr\rangle
++\E_j\norm{\mathcal{A}[\delta-\delta^\star_j]}^{2}\notag\\
+&=\mathcal{L}_j(\delta^\star_j)
++\E_j\norm{\mathcal{A}[\delta-\delta^\star_j]}^{2}.
+\end{align}
+Pooled functional at the single shared filter; minimization over
+$\bar\delta\in\mathcal{F}$:
+\begin{align}
+\mathcal{L}(\bar\delta)
+&=\sum_j w_j\,\mathcal{L}_j(\delta^\star_j)
++\sum_j w_j\,\E_j\norm{\mathcal{A}[\delta^\star_j-\bar\delta]}^{2},\\
+\mathcal{L}_{\min}^{\mathrm{uncond}}
+&=\underbrace{\sum_j w_j\,\mathcal{L}_j(\delta^\star_j)}
+_{\text{per-tier floors}}
++\underbrace{\min_{\bar\delta\in\mathcal{F}}
+\sum_j w_j\,\E_j\norm{\mathcal{A}[\delta^\star_j-\bar\delta]}^{2}}
+_{\text{(ii) pooled-variance mismatch}}.
+\end{align}
+Per-tier floor split by enlarging the family:
+$\mathcal{F}\subset\mathcal{F}_\infty$
+($\mathcal{F}_\infty=$ all shell-diagonal transfers), with
+$\delta^{\star\star}_j$ the optimum in $\mathcal{F}_\infty$:
+\begin{align}
+\mathcal{L}_j(\delta^\star_j)
+&=\underbrace{\mathcal{L}_j(\delta^{\star\star}_j)}
+_{\text{(i) cascade remainder, tier }j}
++\underbrace{\E_j\norm{\mathcal{A}
+[\delta^{\star\star}_j-\delta^{\star}_j]}^{2}}
+_{\text{(iii) shape deficit of width }W,\ \text{tier }j},\\
+\mathcal{L}_{\min}^{\mathrm{uncond}}
+&=\underbrace{\sum_j w_j\,\mathcal{L}_j(\delta^{\star\star}_j)}_{\text{(i)}}
++\underbrace{\text{(ii)}}_{\text{pooled variance}}
++\underbrace{\sum_j w_j\,\E_j\norm{\mathcal{A}
+[\delta^{\star\star}_j-\delta^{\star}_j]}^{2}}_{\text{(iii)}}.
+\end{align}
+Measured ($S=7$, $m=2$, $W=15$, valid band):
 \begin{equation}
 \text{diag.\ absorbable}=0.21\text{--}0.29,\qquad
 \text{full-slot absorbable}=0.36\text{--}0.44,\qquad
-\text{(ii)}=0.72,\qquad \text{(iii)}=0.31.
+\text{(ii)}=0.72,\qquad \text{(iii)}=0.31 .
 \end{equation}
 
 \section{Single-mode analysis of the driver $\omega^{(S)}$}
 
-Sweeping split ($\mathbf{u}=\mathbf{U}(t)+\mathbf{u}'$):
+Fourier transform of (1) at fixed $\mathbf{k}$:
+\begin{equation}
+\partial_t\hat\omega(\mathbf{k},t)
+=\hat L(\mathbf{k})\,\hat\omega(\mathbf{k},t)+\hat N(\mathbf{k},t).
+\end{equation}
+\textbf{Assumption A1 (sweeping split).}
+$\mathbf{u}=\mathbf{U}(t)+\mathbf{u}'$; the dominant advection of mode
+$\mathbf{k}$ is transport by $\mathbf{U}$:
 \begin{align}
-&\partial_t\hat\omega(\mathbf{k},t)
+&\hat N(\mathbf{k},t)
+=-\,i\bigl(\mathbf{k}\!\cdot\!\mathbf{U}(t)\bigr)\hat\omega(\mathbf{k},t)
++\hat f(\mathbf{k},t)
+\qquad(\hat f=\text{genuine triads}),\\
+&\partial_t\hat\omega
 =\bigl[\,i\Omega(\mathbf{k},t)+\lambda(\kappa)\bigr]\hat\omega
-+\hat f(\mathbf{k},t),\qquad
++\hat f,\qquad
 \Omega=-\,\mathbf{k}\!\cdot\!\mathbf{U}+\frac{\beta k_x}{\kappa^{2}},\qquad
-\lambda=-\nu\kappa^{2}-\mu,\\
-&a\equiv i\Omega+\lambda,\qquad \dot a=0\ \ (\text{frozen}):\qquad
+\lambda=-\nu\kappa^{2}-\mu .
+\end{align}
+\textbf{Assumption A2 (frozen coefficients).}
+$\dot a=0$ over the stencil span, $a\equiv i\Omega+\lambda$.
+Induction claim:
+\begin{equation}
 \hat\omega^{(n)}=a^{n}\hat\omega
-+\sum_{j=0}^{n-1}a^{\,j}\hat f^{\,(n-1-j)},\\
-&\hat\omega^{(S)}
-=a^{\,S-k}\,\hat\omega^{(k)}
++\sum_{j=0}^{n-1}a^{\,j}\hat f^{\,(n-1-j)} .
+\end{equation}
+Base $n=1$: (31) $=a\hat\omega+\hat f$ $=$ (32) with the single term
+$a^{0}\hat f^{(0)}$. Step $n\to n+1$: differentiate (32) under A2,
+\begin{align}
+\hat\omega^{(n+1)}
+&=a^{n}\hat\omega^{(1)}+\sum_{j=0}^{n-1}a^{\,j}\hat f^{\,(n-j)}
+=a^{n}\bigl(a\hat\omega+\hat f\bigr)
++\sum_{j=0}^{n-1}a^{\,j}\hat f^{\,(n-j)}\notag\\
+&=a^{n+1}\hat\omega
++\underbrace{a^{n}\hat f^{\,(0)}}_{j=n\ \text{term}}
++\sum_{j=0}^{n-1}a^{\,j}\hat f^{\,(n-j)}
+=a^{n+1}\hat\omega+\sum_{j=0}^{n}a^{\,j}\hat f^{\,(n-j)}.\qquad\square
+\end{align}
+Elimination of $\hat\omega$ between orders $S$ and $k$: (32) at $n=S$ and
+$n=k$, second multiplied by $a^{S-k}$, subtracted:
+\begin{align}
+a^{S-k}\hat\omega^{(k)}
+&=a^{S}\hat\omega+\sum_{j=0}^{k-1}a^{\,j+S-k}\,\hat f^{\,(k-1-j)}
+=a^{S}\hat\omega+\sum_{j'=S-k}^{S-1}a^{\,j'}\,\hat f^{\,(S-1-j')}
+\quad(j'=j+S-k),\\
+\hat\omega^{(S)}-a^{S-k}\hat\omega^{(k)}
+&=\sum_{j=0}^{S-1}a^{\,j}\hat f^{\,(S-1-j)}
+-\sum_{j=S-k}^{S-1}a^{\,j}\hat f^{\,(S-1-j)}
+=\sum_{j=0}^{S-k-1}a^{\,j}\,\hat f^{\,(S-1-j)},\\
+\hat\omega^{(S)}
+&=a^{\,S-k}\,\hat\omega^{(k)}
 +\underbrace{\sum_{j=0}^{S-k-1}a^{\,j}\,
-\hat f^{\,(S-1-j)}}_{\displaystyle \hat r_1},\\
-&|\Omega|\gg|\lambda|:\qquad
-a^{\,S-k}\approx(i\Omega)^{S-k}
+\hat f^{\,(S-1-j)}}_{\displaystyle \hat r_1}.
+\end{align}
+\textbf{Assumption A3 (advective band).} $\Omega^{2}\gg\lambda^{2}$:
+\begin{align}
+a^{\,S-k}
+&=(i\Omega)^{S-k}\Bigl(1+\frac{\lambda}{i\Omega}\Bigr)^{S-k}
+=(i\Omega)^{S-k}\Bigl(1+(S-k)\frac{\lambda}{i\Omega}
++O\bigl(\tfrac{\lambda^2}{\Omega^2}\bigr)\Bigr)
+\approx(i\Omega)^{S-k},\\
+(i\Omega)^{S-k}
+&=|\Omega|^{S-k}\,\bigl(i\,\mathrm{sign}\,\Omega\bigr)^{S-k}
 =|\Omega|^{S-k}\,e^{\,i\phi},\qquad
-\phi=(S-k)\tfrac{\pi}{2}\,\mathrm{sign}(\Omega),\\
-&\sigma_\omega(\kappa)^{2}
-=\frac{\E\norm{\dot\omega_\kappa}^{2}}{\E\norm{\omega_\kappa}^{2}}
+\phi=(S-k)\,\tfrac{\pi}{2}\,\mathrm{sign}(\Omega).
+\end{align}
+Shell rate identification: from (31) with
+\textbf{Assumption A4} ($\hat f$ subdominant in the shell balance of
+$\dot{\hat\omega}$),
+\begin{align}
+&\norm{\dot{\hat\omega}_\kappa}^{2}
+=\bigl\langle|a|^{2}|\hat\omega|^{2}\bigr\rangle_{\mathrm{shell}}
++O(\hat f),\qquad
+\sigma_\omega(\kappa)^{2}
+\equiv\frac{\E\norm{\dot\omega_\kappa}^{2}}{\E\norm{\omega_\kappa}^{2}}
 =\bigl\langle\Omega^{2}+\lambda^{2}\bigr\rangle_{\mathrm{shell}}
-\approx\bigl\langle\Omega^{2}\bigr\rangle_{\mathrm{shell}},\\
-&\bigl\langle\Omega^{2}\bigr\rangle_{\mathrm{shell}}
-=\tfrac{1}{2}\kappa^{2}U^{2}
+\approx\bigl\langle\Omega^{2}\bigr\rangle_{\mathrm{shell}} .
+\end{align}
+Shell average: shell angle $\alpha$, $\theta_x=\alpha$,
+$\theta_{\mathbf U}=\alpha-\alpha_{\mathbf U}$
+($\alpha_{\mathbf U}=$ angle of $\mathbf U$ to $x$):
+\begin{align}
+\Omega^{2}
+&=\kappa^{2}U^{2}\cos^{2}(\alpha-\alpha_{\mathbf U})
++\frac{\beta^{2}}{\kappa^{2}}\cos^{2}\alpha
+-2\,U\beta\,\cos(\alpha-\alpha_{\mathbf U})\cos\alpha,\\
+\bigl\langle\cos^{2}\cdot\bigr\rangle_\alpha
+&=\Bigl\langle\tfrac{1+\cos2\cdot}{2}\Bigr\rangle_\alpha=\tfrac12,\qquad
+\bigl\langle\cos(\alpha-\alpha_{\mathbf U})\cos\alpha\bigr\rangle_\alpha
+=\Bigl\langle\tfrac{\cos\alpha_{\mathbf U}
++\cos(2\alpha-\alpha_{\mathbf U})}{2}\Bigr\rangle_\alpha
+=\tfrac12\cos\alpha_{\mathbf U},\\
+\bigl\langle\Omega^{2}\bigr\rangle_{\mathrm{shell}}
+&=\tfrac{1}{2}\kappa^{2}U^{2}
 +\tfrac{1}{2}\frac{\beta^{2}}{\kappa^{2}}
--U\beta\cos\alpha_{\mathbf{U}}
-\qquad(\alpha_{\mathbf{U}}=\text{angle of }\mathbf{U}\text{ to }x),\\
-&\widehat{\omega^{(S)}}_\kappa
+-U\beta\cos\alpha_{\mathbf{U}} .
+\end{align}
+Diagonal ansatz: $|\Omega|\to\sigma_\omega(\kappa)$ in (38):
+\begin{equation}
+\widehat{\omega^{(S)}}_\kappa
 =\sigma_\omega(\kappa)^{S-k}\,e^{i\phi(\kappa)}\,
 \widehat{\omega^{(k)}}_\kappa+\hat r,\qquad
-\hat r=\hat r_1+\hat r_2+\hat r_3.
-\end{align}
+\hat r=\hat r_1+\hat r_2+\hat r_3 .
+\end{equation}
 
 \section{Remainder taxonomy}
 
 \subsection*{$r_1$ (cascade input; irreducible)}
 \begin{align}
-&\hat r_1=\sum_{j=0}^{S-k-1}a^{\,j}\,\hat f^{\,(S-1-j)},\qquad
-\bigl\langle \hat r_{1},\,\hat\omega^{(k)}\bigr\rangle_{\mathrm{shell}}
-\approx 0,\\
-&\text{measured incoherent fraction }=1-\mathrm{coh}^{2}
+&\hat r_1=\sum_{j=0}^{S-k-1}a^{\,j}\,\hat f^{\,(S-1-j)}
+\qquad(\text{from (36); dominated by }a^{0}\hat f^{\,(S-1)}),\\
+&\bigl\langle \hat r_{1},\,\hat\omega^{(k)}\bigr\rangle_{\mathrm{shell}}
+\approx 0
+\qquad(\hat f:\ \text{triads of other modes; phases unrelated}),\\
+&\text{measured incoherent fraction}=1-\mathrm{coh}^{2}
 =0.71\text{--}0.79\ \ (\text{healthy tiers}).
 \end{align}
 
 \subsection*{$r_2$ (coefficient drift; conditionable in time)}
+Relax A2: $\dot a\neq0$, $\hat f$ dropped (in $r_1$).
+Explicit differentiation, $\hat\omega^{(1)}=a\hat\omega$:
 \begin{align}
-&\dot a\neq0:\qquad
+\hat\omega^{(2)}
+&=\dot a\,\hat\omega+a\,\hat\omega^{(1)}
+=\bigl(a^{2}+\dot a\bigr)\hat\omega,\\
+\hat\omega^{(3)}
+&=\partial_t\bigl[(a^{2}+\dot a)\hat\omega\bigr]
+=(2a\dot a+\ddot a)\hat\omega+(a^{2}+\dot a)\,a\hat\omega\notag\\
+&=\bigl(a^{3}+3a\dot a\bigr)\hat\omega
++O(\ddot a,\dot a^{2}),\\
+\hat\omega^{(4)}
+&=\partial_t\bigl[(a^{3}+3a\dot a)\hat\omega\bigr]+\text{h.o.}
+=(3a^{2}\dot a)\hat\omega+(a^{3}+3a\dot a)a\hat\omega+\text{h.o.}
+=\bigl(a^{4}+6a^{2}\dot a\bigr)\hat\omega+\text{h.o.},\\
+&\text{coefficients }1,3,6,\dots=\tbinom{n}{2}:\qquad
 \hat\omega^{(n)}
 =\Bigl[a^{n}+\tbinom{n}{2}a^{\,n-2}\dot a
-+O(\ddot a,\dot a^{2})\Bigr]\hat\omega,\\
-&\hat r_2=\Bigl(\tbinom{S}{2}-\tbinom{k}{2}\Bigr)
-a^{\,S-k-2}\,\dot a\;\hat\omega^{(k)},\qquad
-\tbinom{S}{2}-\tbinom{k}{2}=\frac{(S-k)(S+k-1)}{2},\\
-&\dot a=i\dot\Omega=-i\,\mathbf{k}\!\cdot\!\dot{\mathbf{U}},\qquad
-\frac{|\hat r_2|}{|a^{S-k}\hat\omega^{(k)}|}
-=\frac{(S-k)(S+k-1)}{2}\,\frac{|\dot a|}{|a|^{2}}
-\sim\frac{(S-k)(S+k-1)}{2}\,\frac{\tau_\kappa}{T_U},\\
-&\tau_\kappa=\frac{1}{\sigma_\omega(\kappa)},\\
-&(S,k)=(7,2):\quad
-\tbinom{S}{2}-\tbinom{k}{2}=20 .
++O(\ddot a,\dot a^{2})\Bigr]\hat\omega .
 \end{align}
+Transfer between orders; first-order expansion of the quotient:
+\begin{align}
+\frac{\hat\omega^{(S)}}{\hat\omega^{(k)}}
+&=\frac{a^{S}+\binom{S}{2}a^{S-2}\dot a}
+{a^{k}+\binom{k}{2}a^{k-2}\dot a}
+=a^{S-k}\,
+\frac{1+\binom{S}{2}\dot a/a^{2}}{1+\binom{k}{2}\dot a/a^{2}}
+=a^{S-k}\Bigl[1+\Bigl(\tbinom{S}{2}-\tbinom{k}{2}\Bigr)
+\frac{\dot a}{a^{2}}+O\Bigl(\tfrac{\dot a}{a^{2}}\Bigr)^{2}\Bigr],\\
+\hat r_2
+&=\Bigl(\tbinom{S}{2}-\tbinom{k}{2}\Bigr)
+a^{\,S-k-2}\,\dot a\;\hat\omega^{(k)},\qquad
+\tbinom{S}{2}-\tbinom{k}{2}
+=\frac{S(S-1)-k(k-1)}{2}
+=\frac{(S-k)(S+k-1)}{2}.
+\end{align}
+Size; $\dot a=i\dot\Omega=-i\,\mathbf{k}\!\cdot\!\dot{\mathbf{U}}$,
+$|\dot{\mathbf U}|\sim U/T_U$ (one large-eddy turnover),
+$|a|\approx|\Omega|\sim\kappa U=\sigma_\omega(\kappa)$:
+\begin{align}
+\frac{|\dot a|}{|a|^{2}}
+\sim\frac{\kappa U/T_U}{(\kappa U)^{2}}
+=\frac{1}{T_U\,\kappa U}
+=\frac{\tau_\kappa}{T_U},\qquad
+\tau_\kappa=\frac{1}{\sigma_\omega(\kappa)},\qquad
+\frac{|\hat r_2|}{|a^{S-k}\hat\omega^{(k)}|}
+=\frac{(S-k)(S+k-1)}{2}\,\frac{\tau_\kappa}{T_U},
+\end{align}
+\begin{equation}
+(S,k)=(7,2):\qquad \tbinom{S}{2}-\tbinom{k}{2}=21-1=20 .
+\end{equation}
 
 \subsection*{$r_3$ (intra-shell anisotropy; conditionable in angle)}
+Relax the shell-rms substitution; A2, A3 kept.
+Sweeping-only ($\beta$-term analogous on the $\theta_x$ axis):
 \begin{align}
-&\Omega(\mathbf{k})=-\kappa U\cos\theta_{\mathbf U}
-+\frac{\beta}{\kappa}\cos\theta_x,\qquad
-\Omega^{2}=\sigma(\kappa)^{2}\bigl(1+\eta(\hat{\mathbf k})\bigr),\qquad
+&\Omega=-\kappa U\cos\theta_{\mathbf U},\qquad
+\Omega^{2}=\kappa^{2}U^{2}\cos^{2}\theta_{\mathbf U},\qquad
+\bigl\langle\Omega^{2}\bigr\rangle_{\mathrm{shell}}
+=\tfrac12\kappa^{2}U^{2}=\sigma^{2},\\
+&\eta(\hat{\mathbf k})
+\equiv\frac{\Omega^{2}}{\sigma^{2}}-1
+=2\cos^{2}\theta_{\mathbf U}-1=\cos2\theta_{\mathbf U}\in[-1,1],\qquad
 \bigl\langle\eta\bigr\rangle_{\mathrm{shell}}=0,\\
-&\text{sweeping only: }\ \eta=\cos2\theta_{\mathbf U}\in[-1,1],\\
-&\hat r_3=\Bigl[(i\Omega)^{S-k}-i^{\,S-k}\sigma(\kappa)^{S-k}\Bigr]
-\hat\omega^{(k)},\\
-&\frac{|\Omega|^{S-k}}{\sigma^{S-k}}=(1+\eta)^{\frac{S-k}{2}}
-\in\bigl[0,\;2^{\frac{S-k}{2}}\bigr],\\
-&\cos^{5}\theta
+&\hat r_3
+\equiv\Bigl[(i\Omega)^{S-k}-i^{\,S-k}\sigma^{S-k}\Bigr]
+\hat\omega^{(k)},\qquad
+\frac{|\Omega|^{S-k}}{\sigma^{S-k}}
+=\Bigl(\frac{\Omega^{2}}{\sigma^{2}}\Bigr)^{\frac{S-k}{2}}
+=(1+\eta)^{\frac{S-k}{2}}
+\in\bigl[0,\;2^{\frac{S-k}{2}}\bigr].
+\end{align}
+Sign structure; $S-k$ odd, transfer $\propto\cos^{S-k}\theta_{\mathbf U}$;
+Euler expansion of the fifth power:
+\begin{align}
+\cos^{5}\theta
+&=\Bigl(\frac{e^{i\theta}+e^{-i\theta}}{2}\Bigr)^{5}
+=\frac{1}{32}\sum_{n=0}^{5}\binom{5}{n}e^{i(5-2n)\theta}\notag\\
+&=\frac{1}{32}\Bigl[\bigl(e^{i5\theta}+e^{-i5\theta}\bigr)
++5\bigl(e^{i3\theta}+e^{-i3\theta}\bigr)
++10\bigl(e^{i\theta}+e^{-i\theta}\bigr)\Bigr]
 =\frac{10\cos\theta+5\cos3\theta+\cos5\theta}{16},\\
-&\bigl\langle\cos^{5}\theta\bigr\rangle_{\theta}=0
+\bigl\langle\cos^{5}\theta\bigr\rangle_{\theta\in[0,2\pi)}
+&=0
 \qquad(\text{best isotropic transfer of the sweeping part}=0).
 \end{align}
+Reality/parity constraint on any corrected operator symbol $D(\mathbf k)$
+and its consistency:
+\begin{equation}
+D(-\mathbf{k})=\overline{D(\mathbf{k})},\qquad
+\Omega(-\mathbf{k})=-\Omega(\mathbf{k})
+\ \Rightarrow\
+(i\Omega(-\mathbf{k}))^{S-k}
+=\overline{(i\Omega(\mathbf{k}))^{S-k}}\ \ \checkmark .
+\end{equation}
 
 \section{Physics conditioning}
 
-Per-channel factorization of the measured optimal transfer:
+Per-channel factorization; insertion of the diagonal ansatz (45) into
+$\varepsilon_k$ of (10), per shell:
 \begin{align}
-&r_j^{(k)}(\kappa)
+(\hat\varepsilon_k)_\kappa
+&=C_k\,\DT^{\,S-k}\,\widehat{\omega^{(S)}}_\kappa+\text{h.o.t.}
+=C_k\,\DT^{\,S-k}\,\sigma_\omega(\kappa)^{S-k}e^{i\phi(\kappa)}\,
+\widehat{\omega^{(k)}}_\kappa
++C_k\,\DT^{\,S-k}\hat r+\text{h.o.t.},\\
+r_j^{(k)}(\kappa)
+&\equiv\frac{\bigl\langle\hat\varepsilon_k,
+\widehat{\omega^{(k)}}\bigr\rangle_\kappa}
+{\norm{\widehat{\omega^{(k)}}_\kappa}^{2}}
 =\underbrace{\DT_j^{\,S-k}}_{\text{exact}}\times
-\underbrace{g^{(k)}\bigl(\kappa;\,Re,\beta,\mu\bigr)}_{\text{regime shape}}
-+\text{h.o.t.},\\
-&g^{(k)}(\kappa;Re,\beta,\mu)
-=C_k\,\sigma_\omega(\kappa;Re,\beta,\mu)^{S-k}\,e^{i\phi(\kappa)}
-+\dots
-\qquad(\text{regime enters only through }\sigma_\omega(\kappa)),\\
-&x(\kappa)\equiv\DT\,\hat\sigma_\omega(\kappa),\qquad
+\underbrace{C_k\,\sigma_\omega(\kappa;Re,\beta,\mu)^{S-k}
+e^{i\phi(\kappa)}}_{g^{(k)}(\kappa)}
++\text{h.o.t.}
+\end{align}
+Regime sufficiency: $(Re,\beta,\mu)$ enter $g^{(k)}$ only through
+$\sigma_\omega(\kappa)$; dimensionless group
+$x(\kappa)=\DT\,\sigma_\omega(\kappa)$.
+Sample-local estimator; single mode
+$\hat\omega(t)=\hat\omega_0e^{i\Omega(t-t_0)}$:
+\begin{align}
+\hat\omega_0-\hat\omega_{-1}
+&=\hat\omega_0\bigl(1-e^{-i\Omega\DT}\bigr),\qquad
+\bigl|1-e^{-i\Omega\DT}\bigr|
+=2\bigl|\sin\tfrac{\Omega\DT}{2}\bigr|,\\
 \hat\sigma_{\mathrm{raw}}(\kappa)
-=\frac{\norm{(\hat\omega_0-\hat\omega_{-1})_\kappa}}
-{\DT\,\norm{(\hat\omega_0)_\kappa}},\qquad
+&=\frac{\norm{(\hat\omega_0-\hat\omega_{-1})_\kappa}}
+{\DT\,\norm{(\hat\omega_0)_\kappa}}
+=\frac{2}{\DT}\Bigl|\sin\frac{\Omega\DT}{2}\Bigr|
+\ \Rightarrow\
 \hat\sigma(\kappa)
-=\frac{2}{\DT}\arcsin\!\Bigl(\min\bigl(\tfrac{\hat\sigma_{\mathrm{raw}}\DT}{2},
-\,1\bigr)\Bigr),\\
+=\frac{2}{\DT}\arcsin\!\Bigl(\min\bigl(
+\tfrac{\hat\sigma_{\mathrm{raw}}\DT}{2},\,1\bigr)\Bigr)=|\Omega|,\\
 &\text{measured: }\ \mathrm{med}_\kappa
-\frac{|\hat\sigma-\sigma|}{\sigma}=0.000\text{--}0.001,\\
-&\text{measured $\DT$-collapse of }r_j/\DT^{S-k}:\ 1.6\times
-\ (\text{truncation-dominated tiers}).
+\tfrac{|\hat\sigma-\sigma|}{\sigma}=0.000\text{--}0.001;\qquad
+\text{measured $\DT$-collapse of }r_j/\DT^{S-k}:\ 1.6\times .
 \end{align}
 Conditioned operator families (per channel $k$, per direction $d$):
 \begin{align}
 &\mathcal{F}_{\mathrm{spec}}:\quad
 \hat D_d^{(k)}(\mathbf{k})
 =ik_d\Bigl[1+\DT^{\,S-k}g^{A}_{\theta,k}(x,\tilde\kappa)\Bigr]
-+k_d\,\DT^{\,S-k}g^{B}_{\theta,k}(x,\tilde\kappa),\notag\\
-&\hspace{22em}\tilde\kappa=\kappa/\kappa_{\max},\\
++k_d\,\DT^{\,S-k}g^{B}_{\theta,k}(x,\tilde\kappa),\qquad
+\tilde\kappa=\kappa/\kappa_{\max},\\
 &\mathcal{F}_{\mathrm{loc}}:\quad
 \mathrm{taps}^{(k)}_{d}
 =\mathrm{taps}^{(k)}_{d,\mathrm{base}}
 +\DT^{\,S-k}\,\Delta\mathrm{taps}_{\theta,k,d}
 \bigl(\hat\sigma\text{-features}\bigr)
-\quad(\text{width }W;\ 0\text{-FFT inference}),\\
+\quad(0\text{-FFT inference}),\\
 &\mathrm{def}(\mathcal{F}_{\mathrm{spec}})=0,\qquad
 \mathrm{def}(\mathcal{F}_{\mathrm{loc}})=\mathrm{res}(W)
 \quad(\text{measured, }W=15:\ 0.31).
@@ -247,25 +489,44 @@ Conditioned operator families (per channel $k$, per direction $d$):
 
 \section{Floors with and without conditioning}
 
+Conditioning $=$ the filter may depend on the tier through
+$(\DT\ \text{exact},\ \hat\sigma\text{-features})$; the per-tier optimum
+becomes reachable, deleting (ii) in (27):
 \begin{align}
 \mathcal{L}_{\min}^{\mathrm{uncond}}
-&=\E_{\mathcal{P}}\norm{T_{r_1}}^{2}
-+\E_{\mathcal{P}}\norm{\mathcal{A}[\delta_j^\star-\bar\delta^\star]}^{2}
-+\mathrm{def}(\mathcal{F})
-\qquad(\text{measured: net absorption }\approx0.03),\\
+&=\underbrace{\sum_j w_j\,\mathcal{L}_j(\delta^{\star\star}_j)}_{\text{(i)}}
++\underbrace{\min_{\bar\delta}\sum_j w_j\E_j
+\norm{\mathcal{A}[\delta^\star_j-\bar\delta]}^{2}}_{\text{(ii)}=0.72}\notag\\
+&\qquad
++\underbrace{\sum_j w_j\E_j\norm{\mathcal{A}
+[\delta^{\star\star}_j-\delta^\star_j]}^{2}}_{\text{(iii)}}
+\quad(\text{net absorption }\approx0.03),\\
 \mathcal{L}_{\min}^{\mathrm{cond}}
-&=\E_{\mathcal{P}}\norm{T_{r_1}}^{2}
+&=\underbrace{\sum_j w_j\,\mathcal{L}_j(\delta^{\star\star}_j)}
+_{\text{(i): }r_1}
 +\underbrace{\Bigl[\tfrac{(S-1)\DT}{T_U}\Bigr]\text{-residue of }r_2}
-_{\text{within-span drift}}
+_{\text{within-span drift; }\hat\sigma\ \text{anchored at }t_0}\notag\\
+&\qquad
 +\underbrace{\text{unmodeled harmonics of }r_3}
 _{\substack{\text{isotropic }g:\ \text{all sweeping}\\
-+(k_x/\kappa)^2\text{-features}:\ \cos3\theta,\cos5\theta\ \text{only}}}
-+\mathrm{def}(\mathcal{F})+\text{h.o.t.},\\
-\mathrm{floor}_j^{\mathrm{cond}}
-&=\mathrm{raw}_j\sqrt{\ \mathrm{irr}_j
-+\mathrm{coh}_j\bigl(\mathrm{def}(\mathcal{F})+\text{h.o.t.}\bigr)\ }
-\qquad(\text{per tier }j).
++(k_x/\kappa)^{2}\text{-features}:\ \cos3\theta,\cos5\theta\ \text{only}}}
++\mathrm{def}(\mathcal{F})+\text{h.o.t.}
 \end{align}
+Within-span drift residue; $\hat\sigma$ measured at anchor $t_0$, transfer
+applied over lags $\le(S-1)\DT$:
+\begin{equation}
+a(t)-a(t_0)=\dot a\,(t-t_0)+O(\ddot a),\qquad
+\frac{|a(t)-a(t_0)|}{|a|}
+\le\frac{|\dot a|}{|a|}\,(S-1)\DT
+\sim\frac{(S-1)\DT}{T_U}\,.
+\end{equation}
+Per-tier ceiling; from (24)--(28) restricted to tier $j$ with the conditioned
+family:
+\begin{equation}
+\mathrm{floor}_j^{\mathrm{cond}}
+=\mathrm{raw}_j\sqrt{\ \mathrm{irr}_j
++\mathrm{coh}_j\bigl(\mathrm{def}(\mathcal{F})+\text{h.o.t.}\bigr)\ }.
+\end{equation}
 Measured per-tier ceilings (full-slot basis, $m=2$):
 \begin{equation}
 \begin{aligned}
