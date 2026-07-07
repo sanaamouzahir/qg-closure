@@ -2,6 +2,39 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-06 — session 1 (cond_deriv integration + acceptance, branch supervisor)
+- Synced origin/main into the worktree (merge 0866cc0): brought in `Theoretical_guarantees/`
+  {cond_grad.py, conditioned_parameterization_note.md, THEORETICAL_GUARANTEES.md, checks}.
+  Note: system git 1.8.3.1 cannot drive this worktree — use `/opt/rocks/bin/git` (2.9.2).
+  Symlinked `training/data` → package-stable `.../src/qg/training/data` (data is gitignored;
+  worktree shares code only). Excluded locally; never commit the symlink.
+- Job 1 (Fable, `[fable-authored]` 1033f14): `build_model('cond_deriv')` = cheap_deriv pipeline
+  with SpatialGrad→SpectralCondGrad. New `CondDerivClosureNet`; `training/cond_grad.py` (prod
+  copy of the design module); `--model {cheap_deriv,cond_deriv}` in train_deriv.py. ORDER CLIP +
+  frozen binomial mix preserved; context computed once/forward; NO local stencils. 2932 params
+  (SpectralCondGrad 2832 + mix 51 + inert TimeFD 49). cheap_deriv unaffected (still 3,700).
+- STEP A — ACCEPTANCE: **PASS.** `diagnostics/diagnose_cond_init_sanity.py` (new): 4/4 probes
+  (FRC-256@5e-3 256², kf4@1e-2, combo@5e-3, Re25k@1e-2 512²) → **rel(model, exact-spectral-
+  advective) ≈ 5e-16** on all of N1/N2/N3. SpectralCondGrad zero-init exactness is bit-exact
+  end-to-end; Fable's wiring is clean. layer.grad == solver spectral derivative to 2.3e-16.
+- SCIENTIFIC CORRECTION to the kickoff's STEP A phrasing: cond_deriv does NOT (and cannot) match
+  the FLUX-form `[spec]` floors to 1e-12 — cond_deriv is ADVECTIVE-form. The gap (rel(M,[spec]) =
+  7e-3/1.4e-2/1.0e-1) is the **advective-vs-flux discrete form difference** (CLAUDE deferred item,
+  shared with cheap_deriv), NOT a wiring bug. The true zero-init test is vs a spectral-ADVECTIVE
+  reference (→5e-16, above). diagnose_one_sample.py gained `--model`; its `[model]` row = 0.0073/
+  0.0135/0.0886 vs target (norm ratio 1.000) — the exact-spectral-advective floor.
+- MINOR (noted, not fixed — preserve control comparability): TimeFD's `W_unit` buffer is float32
+  (`.to(torch.float32)` at construction), injecting ~2.7e-4 into assembled N2dot vs a fully-f64
+  pipeline (psi order-2 field differs 14% vs f64 vandermonde). Pre-existing cheap_deriv behaviour,
+  far below the ~0.04–0.19 science floor. Candidate one-line f64 fix for a FUTURE run; would break
+  bit-comparability with the control, so out of scope here.
+- Control to beat (`deriv7_filtered_floor0.1`): Ndot 0.058 | **Nddot 0.186** | N3dot 0.563.
+- Decided next: STEP B — sge-checker audit + draft/propose the deriv7_cond qsub (FRC-* minus
+  Re25k@1.5e-2, 300ep lr5e-5 f64 bs4 rel-floor0.1), then chain the monitor.
+- Emails: `[QG][LANDED][wiener-conditioning]` acceptance passed; `[QG][PROPOSE][wiener-conditioning]`
+  adopt diagnose_cond_init_sanity as the pre-training gate for any cond_deriv variant.
+
+---
 ## 2026-07-06 — session 0 (seed, by global supervisor)
 - Sanaa asked for: create branch + seed brief, then STOP (theory-first).
 - Ran / submitted (job ids): nothing — branch is theory-gated.

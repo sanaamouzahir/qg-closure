@@ -60,6 +60,15 @@ def main():
     ap.add_argument('--grad-kernel', type=int, default=15)
     ap.add_argument('--ckpt', type=Path, default=None,
                     help='init.pt (or best.pt) to run the actual model too')
+    ap.add_argument('--model', default='cheap_deriv',
+                    choices=['cheap_deriv', 'cond_deriv'],
+                    help="model type of --ckpt. NOTE for cond_deriv: the [spec] "
+                         "row is FLUX-form and cond_deriv is ADVECTIVE-form, so "
+                         "the model will NOT match [spec] to round-off (that is "
+                         "the deferred flux-vs-advective gap, not a bug); and the "
+                         "'rel vs hand-FD variant' line is cheap_deriv-oriented "
+                         "(width-K FD, not spectral). Use "
+                         "diagnose_cond_init_sanity.py for the cond_deriv gate.")
     ap.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu')
     args = ap.parse_args()
     dev = args.device
@@ -161,7 +170,7 @@ def main():
     if args.ckpt is not None:
         from model_deriv_closure import build_model
         ck = torch.load(args.ckpt, map_location=dev, weights_only=False)
-        mdl = build_model('cheap_deriv', in_channels=2 * S, out_orders=3,
+        mdl = build_model(args.model, in_channels=2 * S, out_orders=3,
                           grad_kernel=K, dt=dt, dx=dx_, dy=dy_,
                           physics_init=True, learnable_stencils=True
                           ).to(dev).double()
