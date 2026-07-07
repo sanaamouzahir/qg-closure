@@ -2,6 +2,28 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-07 — session 2 (global supervisor Fable: post-disconnect resume, Gate-1 scripts released, PROPOSE sent)
+- Session context lost to a connection drop; state fully recovered from git + this log
+  (nothing on the branch was lost — all Phase A commits intact).
+- Gate-1 scripts: TBDs filled and committed (3efca02) — modulation.py path
+  $QG_ROOT/qg-sgs-closure/training/modulation.py (+ existence guard), T_WAIT=5.0,
+  hydra APPEND keys as implemented (+qg.bc.inlet_table=<npz>, +qg.diag.scalar_rate=10;
+  legacy arm qg.bc.inlet_velocity=2.0 — the config composes plain YAML, new keys need
+  the + prefix; verified vs conf/config.yaml + register_configs). Table-path grep in
+  the submitter re-verified against the + form. sge-checker re-audit post-edit: PASS x3.
+- Bit-identity precondition confirmed in code: U_PER_RE = 2/3900 exactly, modulation.py
+  asserts U(3900) == 2.0 bitwise, so table_const vs legacy can be exactly 0.0.
+- SUBMISSION RULE (Sanaa, this session): NO qsub without her explicit per-step GO —
+  email the report/PROPOSE first, wait for approval. A prepared sgs_gate1_tables qsub
+  was countermanded before submission; NOTHING has been submitted on this branch.
+- Email #1 for the branch sent: [QG][PROPOSE][SGS-CLOSURE] "Gate-1 release ready" to
+  sanaamz@mit.edu, 2026-07-07T20:13Z (plan: tables job -> GATE1_RELEASE=1 5 smokes ->
+  analysis -> GATE1 report -> HARD STOP).
+- Queue note: running build_mmap/deriv7/monitor jobs belong to the wiener/main track, not SGS.
+- Next (on Sanaa's GO): tables job -> smokes -> bit-identity diff + Cd/Cl + overlays ->
+  [QG][GATE1][SGS-CLOSURE] report -> hard stop before Phase B.
+
+---
 ## 2026-07-07 — session 1b (global supervisor Fable: Phase A code handoff)
 - AMENDMENT 01 committed verbatim (docs/briefs/AMENDMENT_01_diagnostics.md).
 - [fable-authored] training/modulation.py + training/spectral_regrid.py committed on branch.
