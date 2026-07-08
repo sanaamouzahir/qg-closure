@@ -2,6 +2,20 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-08 — DIRECTIVE (Sanaa, chat): convergence tier extended to FIVE grids
+- The convergence grid study now covers the FULL sweep {256^2, 512^2, 1024^2, 2048^2,
+  4096^2} (was {1024^2, 2048^2, 4096^2}). All MOD-const, shared-IC, fixed-physical-eta.
+- BRANCH SUPERVISOR: this changes YOUR CP-2 submission plan — the convergence tier gains
+  the 256^2 and 512^2 runs (t=30 IC extract spectrally regridded DOWN to both; storage
+  +~0.7 GB total, negligible; dt/CFL per grid to be stated per-run in the plan). Audit B
+  (audit_resolution.py) is being authored 5-grid-aware (--grids CLI, partial-tier
+  tolerant, under-resolved coarse anchors labeled as lower bounds, 2-degree rule stays
+  on the 4096-vs-2048 fine pair only).
+- Theory context: pts/delta at Re_mid ~ 0.20 (256^2) and 0.41 (512^2) — deeply
+  under-resolved BY DESIGN; they anchor the coarse end of the convergence curve.
+  (Repo rule 12 — 512^2 under-resolved for cylinder at Re >= 600 — is exactly why they
+  belong in a convergence study and exactly why they are NOT production grids.)
+
 ## 2026-07-08 — Supervisor_simulation.md delivered + committed; CP-1 plan emailed (global supervisor)
 - Blocker resolved: Sanaa delivered the theory doc; committed verbatim as
   docs/briefs/Supervisor_simulation.md next to AMENDMENT_02_workflow.md. Read in full.
