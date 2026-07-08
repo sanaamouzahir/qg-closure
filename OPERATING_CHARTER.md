@@ -144,3 +144,86 @@ amendment: a new invariant, a new gate, a new template, or a tier change
 for the decision class involved. Sanaa approves amendments (RED), and the
 class of decisions that needed her shrinks monotonically. Target steady
 state: Sanaa touches RED items and weekly digests only.
+# CHARTER AMENDMENT v1.1 (append to OPERATING_CHARTER.md)
+
+## 3. INVARIANTS -- additions
+
+I12 LOG DISCIPLINE. Every .sh submission script in every branch writes its
+    SGE stdout/stderr to <branch>/logs/<run-name>.o$JOB_ID / .e$JOB_ID
+    (#$ -o / #$ -e lines mandatory; sge-checker G5 now audits their
+    presence). Within 5 minutes of any qsub, the submitting supervisor
+    emails [QG][SUBMIT][log] <job-name> with the job id, node, and the
+    log path; thereafter it appends the last ~40 log lines to the daily
+    digest while the job runs, and sends an updated [QG][SUBMIT][log] on
+    any state change (start, first checkpoint, warning, finish). Purpose:
+    Sanaa monitors from her phone and replies with instructions; treat a
+    reply to a [log] email as a direct order to the branch supervisor.
+
+I13 EDIT AUTONOMY. File edits inside a worktree are NEVER submitted to
+    Sanaa for approval -- not in chat, not via permission prompts. The
+    protections are the gates (G3/G4), DECISIONS.md, and git history, not
+    pre-approval. (Mechanical enforcement: the project settings allow
+    Edit/Write without prompting; see ops note in the adoption order.)
+    RED-tier files (charter, CLAUDE.md, guard hooks, anything on main)
+    remain the only exception.
+
+I14 QDEL + RESUBMIT RIGHTS. A branch supervisor may qdel ITS OWN branch's
+    running job and resubmit when it has evidence of: loss blow-up
+    (EXPLODE per the monitor), a spotted config/code error, a wrong data
+    pool, or a violated invariant. Procedure: qdel -> fix -> gates ->
+    resubmit under the same template -> [QG][ACTED][branch] email stating
+    (a) what was wrong, with the evidence (log lines / monitor verdict),
+    (b) the fix, (c) old and new job ids. No pre-approval. Jobs belonging
+    to other branches or to Sanaa directly remain RED.
+
+I15 RESULTS HYGIENE. (a) A-posteriori truth refinement K >= 100 for any
+    run reported as a RESULT; K < 100 runs are SMOKEs and every mention of
+    their numbers must carry the word SMOKE. (b) No number enters an email
+    or a doc without its run parameters recoverable from the same email
+    (see 6.1). (c) OOD pairings labeled per I7.
+
+## 6. EMAIL PROTOCOL -- v2.1 additions
+
+6.1 PARAMETER HEADER (mandatory, all categories, before any prose).
+    First block of every email = the full context of what was run, so a
+    mistake is spottable from the phone without opening anything:
+    - Simulation/rollout: member, Re (or nu), beta, mu, grid Nx x Ny,
+      Lx x Ly, dT, K, h_fine, scheme per arm, truth convention (I4),
+      horizon (steps + turnovers), IC (index/restart + tag), ckpt path,
+      forcing, special flags (--r4, --dealias-nn, f32-NN timing mode...).
+    - Training: model type, run-name, data pool (members x dts actually
+      included, exclusions named), lr, epochs, batch, precision, loss/
+      floor, input fields, param count, init-gate result.
+    - Build/data: generator script, members, dT, n_marks, n_samples,
+      split logic.
+    A number whose header omits the parameter that would falsify it is a
+    protocol violation (this catches the K=20-reported-as-if-deployment
+    class of error).
+
+6.2 NEXT STEPS (mandatory, all categories). Every email ends with a
+    "NEXT:" block -- 1-3 concrete options with the supervisor's
+    recommendation marked. FLAG emails already required this; it now
+    applies to LANDED/SUBMIT/ACTED/DIGEST too. An email that reports a
+    problem without a proposed fix is incomplete.
+
+6.3 [QG][SUBMIT][log] subformat: subject carries the job name; body =
+    parameter header (6.1) + job id/node + log path + current tail
+    (~40 lines) + NEXT block. Replies to these emails are orders (I12).
+
+## 1. DECISION RIGHTS -- reclassifications
+- "qdel + fix + resubmit own branch job on evidence" : YELLOW (was
+  effectively RED in practice). Governed by I14.
+- "file edits inside a worktree" : explicitly GREEN, prompts disabled
+  (I13). Was GREEN de jure, RED de facto via permission prompts.
+
+## 7. GIT-VISIBLE STATUS (extends the ratchet)
+Sanaa reads git, not just email. Therefore:
+- Every branch keeps BRANCH_LOG.md at its root: reverse-chronological,
+  3-6 lines per day per active branch -- what ran, what landed, what's
+  pending, current job ids. Updated at least daily while active; the
+  commit touching it is pushed so it is visible from the GitHub UI.
+- Commit messages carry the tier tag: [green]/[yellow]/[red-approved]
+  prefix after the [fable-authored] marker where applicable, so the git
+  log doubles as the decision ledger.
+- DECISIONS.md and BRANCH_LOG.md are always pushed same-day; an unpushed
+  ledger is a protocol violation (invisible autonomy is not autonomy).
