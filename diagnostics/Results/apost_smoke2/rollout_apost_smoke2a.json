@@ -1,0 +1,92 @@
+{
+  "config": {
+    "root_dir": "data/ensemble_N5_7lag/FRC-kf4/sweep_dT_1p5em2",
+    "ckpt": "data/ensemble_N5_7lag/training_runs/deriv7_filtered_lr5e-5/best.pt",
+    "ic_index": "820",
+    "restart_ic": "None",
+    "Delta_T": "None",
+    "K": "20",
+    "horizon_turnovers": "10.0",
+    "tau_eddy": "None",
+    "n_steps": "16",
+    "n_checkpoints": "4",
+    "arms": "bare,r3only,closure",
+    "no_truth": "False",
+    "r4": "False",
+    "dealias_nn": "True",
+    "diag": "True",
+    "scalars_every": "1",
+    "blowup_factor": "10.0",
+    "nn_float64": "True",
+    "device": "cuda",
+    "tag": "smoke2a",
+    "out_dir": "/gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/diagnostics/Results/apost_smoke2"
+  },
+  "Delta_T": 0.015,
+  "K": 20,
+  "h_fine": 0.00075,
+  "M": 16,
+  "tau_eddy": 1.0747633532086371,
+  "model": "cheap_deriv",
+  "cp_steps": [
+    0,
+    4,
+    8,
+    12,
+    16
+  ],
+  "diag_term_rms": {
+    "R3 L^3 w   (anal)": 1.4198979379072536e-08,
+    "R3 L^2 N   (anal)": 1.1375935374092063e-07,
+    "R3 L*Ndot  (NN)": 2.462992239411318e-06,
+    "R3 5*Nddot (NN)": 0.00035615442447914977
+  },
+  "t_truth": 1.453185796737671,
+  "bare_walltime": 0.01925826072692871,
+  "bare_cfl_max": 0.8457431358095366,
+  "bare_blowup_step": null,
+  "bare_verdict": "STABLE",
+  "r3only_walltime": 0.019571542739868164,
+  "r3only_cfl_max": 0.8457422233279188,
+  "r3only_blowup_step": null,
+  "r3only_verdict": "STABLE",
+  "closure_walltime": 0.08231449127197266,
+  "closure_cfl_max": 0.8456716702666891,
+  "closure_blowup_step": 12,
+  "closure_verdict": "UNSTABLE",
+  "error_table": [
+    {
+      "t": 0.0,
+      "relL2_bare": 4.912973675966709e-16,
+      "relL2_r3only": 4.912973675966709e-16,
+      "relL2_closure": 4.912973675966709e-16
+    },
+    {
+      "t": 0.06,
+      "relL2_bare": 0.0017830250082892533,
+      "relL2_r3only": 0.0017826523572510725,
+      "relL2_closure": 0.00023067645653272606
+    },
+    {
+      "t": 0.12,
+      "relL2_bare": 0.003975840859419817,
+      "relL2_r3only": 0.003975008506208851,
+      "relL2_closure": 0.0053423322038798965
+    },
+    {
+      "t": 0.18,
+      "relL2_bare": 0.008957375750638237,
+      "relL2_r3only": 0.008955309447444137
+    },
+    {
+      "t": 0.24,
+      "relL2_bare": 0.03779660635567215,
+      "relL2_r3only": 0.037784258398417585
+    }
+  ],
+  "final_relL2": {
+    "bare": 0.03779660635567215,
+    "r3only": 0.037784258398417585,
+    "closure": null
+  }
+}

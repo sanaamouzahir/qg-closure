@@ -1,0 +1,85 @@
+{
+  "config": {
+    "root_dir": "data/ensemble_N5_7lag/FRC-b2/sweep_dT_5em3",
+    "ckpt": "data/ensemble_N5_7lag/training_runs/deriv7_filtered_lr5e-5/best.pt",
+    "ic_index": "934",
+    "restart_ic": "None",
+    "Delta_T": "None",
+    "K": "20",
+    "horizon_turnovers": "10.0",
+    "tau_eddy": "None",
+    "n_steps": "12",
+    "n_checkpoints": "4",
+    "arms": "bare,closure",
+    "no_truth": "False",
+    "r4": "False",
+    "dealias_nn": "True",
+    "diag": "False",
+    "ckpt2": "None",
+    "freeze_sigma": "False",
+    "log_sigma": "True",
+    "profile_step": "0",
+    "save_refs": "False",
+    "load_refs": "None",
+    "pareto": "False",
+    "pareto_dt_factors": "1,2,4,8,16,40,100",
+    "scalars_every": "1",
+    "blowup_factor": "10.0",
+    "nn_float64": "True",
+    "device": "cuda",
+    "tag": "smoke2b_val",
+    "out_dir": "/gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/diagnostics/Results/apost_smoke2"
+  },
+  "Delta_T": 0.005,
+  "K": 20,
+  "h_fine": 0.00025,
+  "M": 12,
+  "tau_eddy": 0.5988849851150387,
+  "model": "cheap_deriv",
+  "cp_steps": [
+    0,
+    3,
+    6,
+    9,
+    12
+  ],
+  "t_truth": 1.0979816913604736,
+  "bare_walltime": 0.015493392944335938,
+  "bare_cfl_max": 0.7221291898732407,
+  "bare_blowup_step": null,
+  "bare_verdict": "STABLE",
+  "closure_walltime": 0.07989811897277832,
+  "closure_cfl_max": 3.6235764733957962,
+  "closure_blowup_step": 11,
+  "closure_verdict": "UNSTABLE",
+  "error_table": [
+    {
+      "t": 0.0,
+      "relL2_bare": 4.668371593443986e-16,
+      "relL2_closure": 4.668371593443986e-16
+    },
+    {
+      "t": 0.015,
+      "relL2_bare": 0.0006006367801767102,
+      "relL2_closure": 0.00013807807028293442
+    },
+    {
+      "t": 0.03,
+      "relL2_bare": 0.0012387790131373354,
+      "relL2_closure": 0.0005715748651683414
+    },
+    {
+      "t": 0.045,
+      "relL2_bare": 0.0018881418316533261,
+      "relL2_closure": 0.01767100346202939
+    },
+    {
+      "t": 0.06,
+      "relL2_bare": 0.002549283186953007
+    }
+  ],
+  "final_relL2": {
+    "bare": 0.002549283186953007,
+    "closure": null
+  }
+}

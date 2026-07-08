@@ -58,6 +58,15 @@ Outputs (all under --out-dir, tagged):
                              per-step E/Z scalar series, CFL log
   rollout_apost_<tag>.json : config + rel-L2 tables + blowup verdicts
   rollout_apost_<tag>.csv  : t, relL2_bare, relL2_r3only, relL2_closure
+  sigma_hat_<tag>_<arm>.csv: sigma-hat(kappa) at closure-arm checkpoints
+                             (--log-sigma, default on; zero extra FFTs)
+  apost_refs_<tag>.npz     : truth stack for reuse (--save-refs/--load-refs)
+  ..._pareto.png           : bare-dt-sweep cost/accuracy front (--pareto)
+
+A/B and comparison flags: --freeze-sigma (cond_local static-recalibration
+leg), --ckpt2 (second checkpoint as arm 'closure2' through the identical
+code path -- the cond-vs-control comparison), --diag (per-term RMS at IC),
+--profile-step (cuda-event per-block breakdown, pareto port).
 
 Brinkman/sponge note: this driver covers the periodic FRC/DEC scenarios (no
 mask). When the flow-past-obstacle scenario is added, the penalty/sponge eta
@@ -98,8 +107,10 @@ sys.path.insert(0, str(_find_training_dir()))
 # physics primitives -- bit-identical to the validated pareto/perfect legs
 from rollout_timed_pareto import (                                  # noqa: E402
     N_spectral, N_spectral_fields, _dealias_mul, build_L_hat, rk4_step,
-    rollout_fine, build_forcing, psi_from_omega, assemble_inputs, _sync)
+    rollout_fine, build_forcing, psi_from_omega, assemble_inputs, _sync,
+    _StepProfiler, _NOPROF)
 from model_deriv_closure import build_model                         # noqa: E402
+from cond_grad import sigma_hat_spec                                # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
@@ -194,8 +205,11 @@ def rel_l2(a, b):
 def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
             derivative, L_hat, F_hat, device, model=None, input_fields=None,
             dealias_nn=True, include_r4=False, blowup_factor=10.0,
-            scalars_every=1):
-    """One arm of the comparison. arm in {'bare','r3only','closure'}.
+            scalars_every=1, freeze_sigma=False, sigma_log=None,
+            profile_step=0):
+    """One arm of the comparison. arm in {'bare','r3only','closure',
+    'closure2'} ('closure2' = a second checkpoint through the identical
+    code path, e.g. the control vs the conditioned model).
 
     Returns dict: fields {step: ndarray}, scalars (t, E, Z arrays),
     cfl_max, blowup (None or step), walltime (3-step warmup EXCLUDED).
@@ -205,6 +219,18 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
     stencil + checkpoint dump, + 2 NN-output FFTs). E/Z are Parseval
     reductions (zero FFTs); the cond_local sigma-hat context is a shell
     reduction of the stepper's own spectral states (zero FFTs).
+
+    freeze_sigma : cond_local only -- compute the sigma-hat context ONCE at
+        t=0 and reuse it every step (the static-recalibration A/B leg).
+    sigma_log : optional list; at every checkpoint step the FULL sigma-hat
+        shell vector from the stepper's spectral states is appended as
+        (step, t, sig ndarray) -- zero extra FFTs (r2-drift measurement).
+        NOTE: the shell reduction is non-zero COMPUTE inside the timed loop
+        (at checkpoint steps only, ~sub-percent of the arm walltime);
+        headline benchmarks (3b) run with sigma_log=None.
+    profile_step : cuda only; after the clean timed loop, step this many
+        more times WITH cuda-event marks and print the per-block breakdown
+        (ported from rollout_timed_pareto._StepProfiler).
     """
     from qg.solver.opt.basis import to_spectral, to_physical
     # truth = RK4 (exact flow) -> the target is the FULL Taylor defect:
@@ -220,24 +246,29 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
     L4 = L2 * L2
     # implicit fold: the -(c12) L^3 w term evaluated at w_{n+1} moves to the LHS
     denom_clos = denom_bare + c12 * L3
-    with_closure = arm in ('r3only', 'closure')
+    is_clos = arm.startswith('closure')
+    with_closure = is_clos or arm == 'r3only'
     denom = denom_clos if with_closure else denom_bare
     Nyg, Nxg = omega_stack[0].shape[-2], omega_stack[0].shape[-1]
-    is_cond = (arm == 'closure'
-               and hasattr(model, 'context_feats_from_spectral'))
+    is_cond = is_clos and hasattr(model, 'context_feats_from_spectral')
     dt_v = torch.full((1,), Delta_T, device=device, dtype=torch.float64)
     dx_v = torch.full((1,), _DX, device=device, dtype=torch.float64)
     dy_v = torch.full((1,), _DY, device=device, dtype=torch.float64)
+    frozen_feats = [None]        # filled at t=0 when freeze_sigma
 
-    def one_step(qh_curr, qh_minus, Nh_curr, Nh_minus, om_hist, ps_hist):
+    def one_step(qh_curr, qh_minus, Nh_curr, Nh_minus, om_hist, ps_hist,
+                 prof=_NOPROF):
+        prof.mark('bare')
         AB2_Nh = 1.5 * Nh_curr - 0.5 * Nh_minus
         rhs = qh_curr + Delta_T * (0.5 * L_hat * qh_curr + AB2_Nh)
         if with_closure:
+            prof.mark('e_anal')
             rhs = rhs - c12 * (L2 * Nh_curr)                 # explicit analytic L^2 N
-        if arm == 'closure':
+        if is_clos:
             # feed the stack at float64 so the TimeFD differencing is
             # cancellation-clean (the model handles its own mixed precision);
             # dt/dx/dy passed explicitly = the exact training call signature.
+            prof.mark('inputs')
             x = assemble_inputs(input_fields, om_hist, ps_hist,
                                 torch.float64, device)
             kw = {}
@@ -245,33 +276,50 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
                 # sigma-hat context from the stepper's OWN spectral states --
                 # shell reduction only, ZERO extra FFTs (the solver's
                 # norm='forward' scaling cancels in the per-shell ratio).
-                kw['cond_feats'] = model.context_feats_from_spectral(
-                    qh_curr, qh_curr - qh_minus, dt_v, _LX, _LY, Nyg, Nxg)
+                prof.mark('sigma')
+                if freeze_sigma:
+                    if frozen_feats[0] is None:
+                        frozen_feats[0] = model.context_feats_from_spectral(
+                            qh_curr, qh_curr - qh_minus, dt_v, _LX, _LY,
+                            Nyg, Nxg)
+                    kw['cond_feats'] = frozen_feats[0]
+                else:
+                    kw['cond_feats'] = model.context_feats_from_spectral(
+                        qh_curr, qh_curr - qh_minus, dt_v, _LX, _LY, Nyg, Nxg)
+            prof.mark('nn_conv')
             with torch.no_grad():
                 yhat = model(x, dt=dt_v, dx=dx_v, dy=dy_v,
                              **kw).to(torch.float64)
+            prof.mark('nn_fft')
             Ndot_h = to_spectral(yhat[:, 0:1][0])            # 1 FFT
             Nddot_h = to_spectral(yhat[:, 1:2][0])           # 1 FFT
+            prof.mark('f_NN')
             f_nn = (1.0 / 12.0) * (L_hat * Ndot_h - 5.0 * Nddot_h)
+            prof.mark('dealias')
             if dealias_nn:
                 f_nn = _dealias_mul(f_nn, derivative)
+            prof.mark('combine')
             rhs = rhs - coef * f_nn
             if include_r4:
+                prof.mark('r4')
                 N3dot_h = to_spectral(yhat[:, 2:3][0])       # +1 FFT (--r4 only)
                 e_r4 = -coef4 * (1.0 / 24.0) * (2.0 * L4 * qh_curr
                                                 + 2.0 * L3 * Nh_curr
                                                 + 2.0 * L2 * Ndot_h
                                                 - 4.0 * L_hat * Nddot_h
                                                 + N3dot_h)
+                prof.mark('dealias')
                 if dealias_nn:
                     e_r4 = _dealias_mul(e_r4, derivative)
+                prof.mark('combine')
                 rhs = rhs + e_r4
+        prof.mark('combine')
         qh_new = rhs / denom
-        if arm == 'closure':
+        if is_clos:
             # the new N eval hands back omega/psi PHYSICAL -> reused for the
             # stencil and the checkpoint dump; neither is iFFT'd a second time.
             Nh_new, om_new, ps_new = N_spectral_fields(qh_new, derivative,
-                                                       F_hat)
+                                                       F_hat, prof=prof)
             return qh_new, Nh_new, om_new, ps_new
         return qh_new, N_spectral(qh_new, derivative, F_hat), None, None
 
@@ -283,6 +331,13 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
     ps = [s.clone() for s in psi_stack]
     w_par = _parseval_weight(qh_curr, Nxg)
 
+    def log_sigma(step, qc, qm):
+        if sigma_log is None or not is_clos:
+            return
+        sig, _ = sigma_hat_spec(qc, qc - qm, dt_v, _LX, _LY, Nyg, Nxg)
+        sigma_log.append((step, step * Delta_T,
+                          sig[0].detach().cpu().numpy().copy()))
+
     # warmup (untimed) -- exercises the same code path on cloned state,
     # then discards it (lazy-init / cuFFT-plan costs stay out of walltime)
     qc, qm = qh_curr.clone(), qh_minus.clone()
@@ -290,11 +345,14 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
     om_w, ps_w = list(om), list(ps)
     for _ in range(3):
         qn, Nn, on, pn = one_step(qc, qm, Nc, Nm, om_w, ps_w)
-        if arm == 'closure':
+        if is_clos:
             om_w = [on] + om_w[:-1]
             ps_w = [pn] + ps_w[:-1]
         qm, qc = qc, qn
         Nm, Nc = Nc, Nn
+    # NOTE: freeze_sigma context is (re)pinned from the REAL IC states below,
+    # not from the warmup clones.
+    frozen_feats[0] = None
 
     fields = {}
     cps = set(cp_steps)
@@ -305,6 +363,7 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
     if 0 in cps:
         fields[0] = to_physical(qh_curr)[0].cpu().numpy()
     ts.append(0.0); Es.append(E0); Zs.append(Z0)
+    log_sigma(0, qh_curr, qh_minus)
 
     _sync(device); t0 = time.time()
     for s in range(1, n_steps + 1):
@@ -312,7 +371,7 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
                                                   Nh_curr, Nh_minus, om, ps)
         qh_minus, qh_curr = qh_curr, qh_new
         Nh_minus, Nh_curr = Nh_curr, Nh_new
-        if arm == 'closure':
+        if is_clos:
             om = [om_new] + om[:-1]        # newest-first history for the stencil
             ps = [ps_new] + ps[:-1]
         if s % scalars_every == 0 or s in cps or s == n_steps:
@@ -320,11 +379,16 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
             ts.append(s * Delta_T); Es.append(E); Zs.append(Z)
             if (not np.isfinite(Z)) or Z > blowup_factor * max(Z0, 1e-30):
                 blowup = s
+                if np.isfinite(Z):        # CFL AT the failing step (sanity flag)
+                    cfl_max = max(cfl_max, cfl_from_qh(qh_curr, derivative,
+                                                       Delta_T, _DX, _DY))
                 print(f'      [{arm}] BLOWUP at step {s} '
-                      f'(Z={Z:.3e} vs Z0={Z0:.3e}) -- stopping arm.')
+                      f'(Z={Z:.3e} vs Z0={Z0:.3e}  cfl={cfl_max:.3f}) '
+                      f'-- stopping arm.')
                 break
         if s in cps:
-            arr = (om_new if arm == 'closure'
+            log_sigma(s, qh_curr, qh_minus)
+            arr = (om_new if is_clos
                    else to_physical(qh_curr))[0].cpu().numpy()
             fields[s] = arr
             if not np.isfinite(np.sqrt(np.mean(arr ** 2))):   # non-finite guard
@@ -335,9 +399,95 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
             cfl_max = max(cfl_max, cfl_from_qh(qh_curr, derivative,
                                                Delta_T, _DX, _DY))
     _sync(device)
+    wall = time.time() - t0
+
+    # ---- optional per-block breakdown (separate short window; the headline
+    # walltime above is from the un-instrumented loop) -- pareto port ------ #
+    if profile_step and is_clos and str(device).startswith('cuda') \
+            and blowup is None:
+        prof = _StepProfiler(device)
+        for _ in range(int(profile_step)):
+            prof.step_begin()
+            h0 = time.perf_counter()
+            qh_new, Nh_new, om_new, ps_new = one_step(
+                qh_curr, qh_minus, Nh_curr, Nh_minus, om, ps, prof=prof)
+            prof.host_ms += (time.perf_counter() - h0) * 1e3   # enqueue, no sync
+            prof.step_end()                                    # syncs + reads events
+            qh_minus, qh_curr = qh_curr, qh_new
+            Nh_minus, Nh_curr = Nh_curr, Nh_new
+            om = [om_new] + om[:-1]
+            ps = [ps_new] + ps[:-1]
+        n_fft = 8 + (1 if include_r4 else 0)
+        prof.report(clean_ms_per_step=wall / max(n_steps, 1) * 1e3,
+                    n_fft=n_fft)
+
     return dict(fields=fields, t=np.asarray(ts), E=np.asarray(Es),
                 Z=np.asarray(Zs), cfl_max=cfl_max, blowup=blowup,
-                walltime=time.time() - t0)
+                walltime=wall)
+
+
+def diag_term_rms(model, omega_stack, psi_stack, Delta_T, derivative, L_hat,
+                  F_hat, device, input_fields, include_r4=False):
+    """--diag: per-term RMS of the closure correction AT THE IC (ported from
+    rollout_timed_pareto --diag). Splits the bracket into analytic (L^3 w,
+    L^2 N) vs NN-predicted (L Ndot, 5 Nddot; R4 terms with --r4) mass so a
+    wrong closure arm is a one-look diagnosis of WHICH term is mis-scaled.
+    The NN-predicted fraction x the per-derivative val rel-L2 is the
+    NN-limited closure error floor. Returns {term: rms} (also saved to json).
+    """
+    from qg.solver.opt.basis import to_spectral, to_physical
+    L2 = L_hat ** 2
+    L3 = L2 * L_hat
+    L4 = L2 * L2
+    cf = 1.0 / 12.0
+    qh0 = to_spectral(omega_stack[0])
+    qh1 = to_spectral(omega_stack[1])
+    Nh0 = N_spectral(qh0, derivative, F_hat)
+    dt_v = torch.full((1,), Delta_T, device=device, dtype=torch.float64)
+    dx_v = torch.full((1,), _DX, device=device, dtype=torch.float64)
+    dy_v = torch.full((1,), _DY, device=device, dtype=torch.float64)
+    x = assemble_inputs(input_fields, omega_stack, psi_stack,
+                        torch.float64, device)
+    kw = {}
+    if hasattr(model, 'context_feats_from_spectral'):
+        Nyg, Nxg = omega_stack[0].shape[-2], omega_stack[0].shape[-1]
+        kw['cond_feats'] = model.context_feats_from_spectral(
+            qh0, qh0 - qh1, dt_v, _LX, _LY, Nyg, Nxg)
+    with torch.no_grad():
+        yhat = model(x, dt=dt_v, dx=dx_v, dy=dy_v, **kw).to(torch.float64)
+    Nd = to_spectral(yhat[:, 0:1][0])
+    Ndd = to_spectral(yhat[:, 1:2][0])
+    N3d = to_spectral(yhat[:, 2:3][0]) if yhat.shape[1] >= 3 else None
+
+    def _rms(spec):
+        return float(torch.sqrt((to_physical(spec) ** 2).mean()))
+
+    terms = {
+        'R3 L^3 w   (anal)': Delta_T ** 3 * cf * _rms(L3 * qh0),
+        'R3 L^2 N   (anal)': Delta_T ** 3 * cf * _rms(L2 * Nh0),
+        'R3 L*Ndot  (NN)':   Delta_T ** 3 * cf * _rms(L_hat * Nd),
+        'R3 5*Nddot (NN)':   Delta_T ** 3 * cf * 5.0 * _rms(Ndd),
+    }
+    if include_r4:
+        # driver assembly: -coef4 (1/24)(2L^4 w + 2L^3 N + 2L^2 Ndot
+        #                            - 4L Nddot + N3dot), coef4 = DT^4
+        c24 = Delta_T ** 4 / 24.0
+        terms['R4 2L^4 w   (anal)'] = c24 * 2.0 * _rms(L4 * qh0)
+        terms['R4 2L^3 N   (anal)'] = c24 * 2.0 * _rms(L3 * Nh0)
+        terms['R4 2L^2 Ndot(NN)'] = c24 * 2.0 * _rms(L2 * Nd)
+        terms['R4 4L*Nddot (NN)'] = c24 * 4.0 * _rms(L_hat * Ndd)
+        if N3d is not None:
+            terms['R4 N3dot    (NN)'] = c24 * _rms(N3d)
+    tot = sum(terms.values()) or 1e-30
+    nn_mass = sum(v for k, v in terms.items() if '(NN)' in k)
+    print('\n============ CLOSURE TERM RMS AT IC (--diag) ============')
+    for k, v in terms.items():
+        print(f'  {k:<20} rms={v:.4e}  {100 * v / tot:5.1f}%')
+    print(f'  {"-" * 46}')
+    print(f'  total correction rms = {tot:.4e}')
+    print(f'  NN-predicted fraction = {100 * nn_mass / tot:.1f}%')
+    print('=' * 57)
+    return terms
 
 
 # --------------------------------------------------------------------------- #
@@ -380,6 +530,43 @@ def main():
                    help='add the partial R4 bracket (uses the N3dot head)')
     p.add_argument('--dealias-nn', action=argparse.BooleanOptionalAction,
                    default=True)
+    p.add_argument('--diag', action='store_true',
+                   help='print the per-term RMS breakdown of the closure '
+                        'correction at the IC (analytic L^k vs NN terms; '
+                        'ported from rollout_timed_pareto)')
+    p.add_argument('--ckpt2', type=Path, default=None,
+                   help="second checkpoint run as arm 'closure2' through the "
+                        'IDENTICAL code path (e.g. control vs conditioned; '
+                        'appended to --arms automatically)')
+    p.add_argument('--freeze-sigma', action='store_true',
+                   help='cond_local: pin the sigma-hat context at its t=0 '
+                        'value for the whole rollout (the static-'
+                        'recalibration A/B leg vs live conditioning)')
+    p.add_argument('--log-sigma', action=argparse.BooleanOptionalAction,
+                   default=True,
+                   help='write sigma_hat(kappa,t) at closure-arm checkpoints '
+                        'to sigma_hat_<tag>_<arm>.csv (zero extra FFTs; the '
+                        'a-posteriori r2-drift measurement)')
+    p.add_argument('--profile-step', type=int, default=0, metavar='N',
+                   help='after the clean closure timing, N instrumented '
+                        'steps with per-block cuda-event timers + host-vs-'
+                        'device verdict (pareto port; cuda only, 0=off)')
+    p.add_argument('--save-refs', action='store_true',
+                   help='save the RK4 truth checkpoint stack to '
+                        'apost_refs_<tag>.npz for reuse via --load-refs '
+                        '(the truth is the expensive leg). Stored float32: '
+                        'reloaded rel-L2 matches the original to ~1e-7 '
+                        '(fields are O(1); fine for errors >= 1e-5)')
+    p.add_argument('--load-refs', type=Path, default=None,
+                   help='reuse a saved truth stack; hard guards: identical '
+                        'Delta_T, K, h_fine, checkpoint grid, and IC field')
+    p.add_argument('--pareto', action='store_true',
+                   help='bare at a dt sweep vs the SAME truth at the final '
+                        'common time -- the cost-vs-accuracy front with the '
+                        'closure point(s) overlaid; needs a truth')
+    p.add_argument('--pareto-dt-factors', type=str,
+                   default='1,2,4,8,16,40,100',
+                   help='bare dt = Delta_T / factor (capped at h_fine)')
     p.add_argument('--scalars-every', type=int, default=1,
                    help='record E/Z every this many coarse steps')
     p.add_argument('--blowup-factor', type=float, default=10.0,
@@ -438,6 +625,14 @@ def main():
         args.ckpt, manifest, Delta_T, device, nn_float64=args.nn_float64)
     input_fields = (['omega_0'] + [f'omega_m{k}' for k in range(1, n_snap)]
                     + ['psi_0'] + [f'psi_m{k}' for k in range(1, n_snap)])
+    model2 = model2_name = None
+    if args.ckpt2 is not None:
+        model2, model2_name, n_snap2 = load_deriv_model(
+            args.ckpt2, manifest, Delta_T, device, nn_float64=args.nn_float64)
+        if n_snap2 != n_snap:
+            sys.exit(f'[apost] --ckpt2 n_snapshots={n_snap2} != --ckpt '
+                     f'n_snapshots={n_snap}; arms would need different '
+                     f'history depths.')
 
     # ---- IC: S-deep history at Delta_T spacing, newest first ---- #
     if args.ic_index is not None:
@@ -499,14 +694,49 @@ def main():
           f'horizon M={M} coarse steps = {M*Delta_T:.3f} t.u. '
           f'= {M*Delta_T/tau_eddy:.1f} turnovers; {len(cp)} field checkpoints')
 
+    # ---- optional per-term diagnosis at the IC ---- #
+    diag_terms = None
+    if args.diag:
+        diag_terms = diag_term_rms(model, omega_stack, psi_stack, Delta_T,
+                                   derivative, L_hat, F_hat, device,
+                                   input_fields, include_r4=args.r4)
+
     # ---- truth ---- #
     results = dict(config={k: str(v) for k, v in vars(args).items()},
                    Delta_T=Delta_T, K=K, h_fine=h_fine, M=M, tau_eddy=tau_eddy,
                    model=model_name, cp_steps=cp)
+    if diag_terms is not None:
+        results['diag_term_rms'] = diag_terms
     npz_payload = dict(cp_steps=np.asarray(cp, np.int64),
                        cp_times=np.asarray([s * Delta_T for s in cp]))
     truth_cp = None
-    if not args.no_truth:
+    if args.load_refs is not None:
+        rf = np.load(args.load_refs)
+        for name, cur in (('Delta_T', Delta_T), ('K', float(K)),
+                          ('h_fine', h_fine)):
+            if abs(float(rf[name]) - cur) > 1e-12 * max(abs(cur), 1e-30):
+                sys.exit(f'[apost] --load-refs {name} mismatch: refs '
+                         f'{float(rf[name])} vs current {cur}')
+        refs_cp = [int(s) for s in rf['cp_steps']]
+        if refs_cp != cp:
+            sys.exit(f'[apost] --load-refs checkpoint-grid mismatch: refs '
+                     f'{refs_cp} vs current {cp} (match --n-steps / '
+                     f'--n-checkpoints to the saving run)')
+        ic_saved = np.asarray(rf['ic_omega_0'], np.float64)
+        ic_cur = omega_stack[0][0].detach().cpu().numpy()
+        rel = (np.sqrt(np.mean((ic_saved - ic_cur) ** 2))
+               / max(np.sqrt(np.mean(ic_cur ** 2)), 1e-30))
+        if rel > 1e-12:
+            sys.exit(f'[apost] --load-refs IC mismatch (rel {rel:.2e}): the '
+                     f'saved truth was integrated from a DIFFERENT state.')
+        truth_cp = {s * K: np.asarray(rf['truth_stack'][i])
+                    for i, s in enumerate(refs_cp)}
+        t_truth = float(rf['t_truth'])
+        results['t_truth'] = t_truth
+        npz_payload['truth_stack'] = np.asarray(rf['truth_stack'])
+        print(f'[apost] truth REUSED from {args.load_refs} '
+              f'(skipped {M*K} RK4 steps; saved t_truth={t_truth:.1f}s)')
+    elif not args.no_truth:
         cp_fine = [s * K for s in cp]
         print(f'[apost] truth: {M*K} RK4 steps @ h={h_fine:.3e} '
               f'(rollout_timed_pareto.rollout_fine; single-step, F_phys '
@@ -519,19 +749,61 @@ def main():
             [np.asarray(truth_cp[s * K], np.float32) for s in cp
              if s * K in truth_cp])
         print(f'[apost]   truth walltime {t_truth:.1f}s')
+        if args.save_refs:
+            avail_cp = [s for s in cp if s * K in truth_cp]
+            refs_path = out_dir / f'apost_refs_{args.tag}.npz'
+            np.savez(refs_path,
+                     Delta_T=np.float64(Delta_T), K=np.int64(K),
+                     h_fine=np.float64(h_fine),
+                     cp_steps=np.asarray(avail_cp, np.int64),
+                     ic_index=np.int64(-1 if args.ic_index is None
+                                       else args.ic_index),
+                     ic_omega_0=omega_stack[0][0].detach().cpu().numpy(),
+                     t_truth=np.float64(t_truth),
+                     truth_stack=np.stack(
+                         [np.asarray(truth_cp[s * K], np.float32)
+                          for s in avail_cp]))
+            print(f'[apost] saved truth refs -> {refs_path} '
+                  f'({len(avail_cp)} checkpoints, float32) -- reuse with '
+                  f'--load-refs {refs_path}')
 
     # ---- arms ---- #
     arms = [a.strip() for a in args.arms.split(',') if a.strip()]
+    if model2 is not None and 'closure2' not in arms:
+        arms.append('closure2')
+    if model2 is not None:
+        results['model2'] = model2_name
+        results['ckpt2'] = str(args.ckpt2)
     arm_out = {}
     for arm in arms:
-        print(f'[apost] arm={arm}: {M} coarse steps ...')
+        mdl = model2 if arm == 'closure2' else model
+        sig_rows = ([] if (args.log_sigma and arm.startswith('closure'))
+                    else None)
+        print(f'[apost] arm={arm}: {M} coarse steps ...'
+              + (f'  [ckpt2={args.ckpt2.parent.name}]'
+                 if arm == 'closure2' else '')
+              + ('  [sigma FROZEN at t=0]'
+                 if (args.freeze_sigma and arm.startswith('closure'))
+                 else ''))
         r = run_arm(arm, omega_stack, psi_stack, Delta_T, M, cp,
                     derivative, L_hat, F_hat, device,
-                    model=model, input_fields=input_fields,
+                    model=mdl, input_fields=input_fields,
                     dealias_nn=args.dealias_nn, include_r4=args.r4,
                     blowup_factor=args.blowup_factor,
-                    scalars_every=args.scalars_every)
+                    scalars_every=args.scalars_every,
+                    freeze_sigma=args.freeze_sigma, sigma_log=sig_rows,
+                    profile_step=args.profile_step)
         arm_out[arm] = r
+        if sig_rows:
+            sig_csv = out_dir / f'sigma_hat_{args.tag}_{arm}.csv'
+            n_sh = len(sig_rows[0][2])
+            with open(sig_csv, 'w', newline='') as f:
+                w = csv.writer(f)
+                w.writerow(['step', 't'] + [f'kappa_{i}' for i in range(n_sh)])
+                for st, tt, sg in sig_rows:
+                    w.writerow([st, f'{tt:.6f}'] + [f'{v:.8e}' for v in sg])
+            print(f'[apost]   sigma-hat drift -> {sig_csv.name} '
+                  f'({len(sig_rows)} checkpoints x {n_sh} shells, zero FFTs)')
         print(f'[apost]   walltime {r["walltime"]:.1f}s  cfl_max={r["cfl_max"]:.3f}'
               f'  blowup={"none" if r["blowup"] is None else r["blowup"]}')
         npz_payload[f'{arm}_stack'] = np.stack(
@@ -573,11 +845,81 @@ def main():
         results['error_table'] = rows
         finals = {a: rows[-1].get(f'relL2_{a}') for a in arms if rows}
         results['final_relL2'] = finals
-        if 'bare' in finals and 'closure' in finals and finals.get('closure'):
-            results['improvement_x'] = finals['bare'] / max(finals['closure'], 1e-30)
-            print(f'\n[apost] final rel-L2: ' +
-                  '  '.join(f'{a}={v:.4e}' for a, v in finals.items() if v) +
-                  f'   closure improvement = {results["improvement_x"]:.1f}x')
+        if 'bare' in finals:
+            imps = []
+            for a in (x for x in arms if x.startswith('closure')):
+                if finals.get(a):
+                    results[f'improvement_x_{a}'] = (finals['bare']
+                                                     / max(finals[a], 1e-30))
+                    imps.append(f'{a}={results[f"improvement_x_{a}"]:.1f}x')
+            if 'improvement_x_closure' in results:      # legacy key
+                results['improvement_x'] = results['improvement_x_closure']
+            if imps:
+                print(f'\n[apost] final rel-L2: ' +
+                      '  '.join(f'{a}={v:.4e}'
+                                for a, v in finals.items() if v) +
+                      '   improvement: ' + '  '.join(imps))
+
+        # ---- pareto: bare at a dt sweep vs the SAME truth (headline
+        # cost-vs-accuracy front, closure point(s) overlaid) ---- #
+        if args.pareto and rows:
+            common = [s for s in cp if s * K in truth_cp]
+            s_end = common[-1]
+            print('\n============ PARETO (bare dt sweep) ============')
+            pts = []
+            for fac in (float(x) for x in args.pareto_dt_factors.split(',')):
+                dtb = Delta_T / fac
+                if dtb < h_fine * 0.999:
+                    continue
+                # final time nst*dtb matches s_end*Delta_T to within dtb/2
+                nst = int(round(s_end * Delta_T / dtb))
+                # AB2 history must be dtb-spaced: seed omega(-dtb) with ONE
+                # RK4 back-step (O(dtb^5)). Reusing the Delta_T-spaced
+                # omega_m1 injects a dt^1 startup error that flattens the
+                # small-dt tail of the front -- flattering the closure point
+                # (reviewer catch; the same flaw exists in the original
+                # rollout_timed_pareto sweep).
+                om_m1_dtb = rk4_step(omega_stack[0], -dtb, derivative,
+                                     L_hat, F_phys)
+                rb = run_arm('bare', [omega_stack[0], om_m1_dtb],
+                             psi_stack[:2], dtb, nst, [nst],
+                             derivative, L_hat, F_hat, device,
+                             scalars_every=10 ** 9)
+                if nst not in rb['fields']:
+                    print(f'  bare dt={dtb:.3e}  blew up -- skipped')
+                    continue
+                err = rel_l2(rb['fields'][nst], truth_cp[s_end * K])
+                pts.append((dtb, rb['walltime'], err))
+                print(f'  bare dt={dtb:.3e}  steps={nst}  '
+                      f'wall={rb["walltime"]:.3f}s  rel-L2={err:.4e}')
+            results['pareto'] = [list(x) for x in pts]
+            try:
+                import matplotlib
+                matplotlib.use('Agg')
+                import matplotlib.pyplot as plt
+                fig, ax = plt.subplots(figsize=(6.2, 4.6))
+                if pts:
+                    _, wts_, errs_ = zip(*pts)
+                    ax.loglog(wts_, errs_, 'o-', color='C0',
+                              label=r'bare @ varying $\delta t$')
+                for i, a in enumerate(x for x in arms
+                                      if x.startswith('closure')):
+                    fe = rows[-1].get(f'relL2_{a}')
+                    if fe:
+                        ax.loglog([results[f'{a}_walltime']], [fe], '*',
+                                  ms=15, color=f'C{3 + i}', label=a)
+                ax.set_xlabel('walltime (s)')
+                ax.set_ylabel('final rel-L2 vs RK4 truth')
+                ax.set_title(f'cost / accuracy front (K={K})')
+                ax.grid(alpha=0.3, which='both')
+                ax.legend(fontsize=8)
+                fig.tight_layout()
+                fig.savefig(out_dir / f'rollout_apost_{args.tag}_pareto.png',
+                            dpi=130)
+                print(f'[apost] wrote rollout_apost_{args.tag}_pareto.png')
+            except Exception as e:              # noqa: BLE001 (fig never kills run)
+                print(f'[apost] pareto figure skipped '
+                      f'({type(e).__name__}: {e})')
 
     np.savez(out_dir / f'rollout_apost_{args.tag}.npz', **npz_payload)
     (out_dir / f'rollout_apost_{args.tag}.json').write_text(

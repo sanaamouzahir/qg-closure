@@ -118,6 +118,11 @@ def main():
     p.add_argument('--accuracy-json', type=Path, nargs='*', default=[],
                    help='rollout_apost_*.json files supplying final rel-L2 '
                         'for the cost-vs-accuracy panel')
+    p.add_argument('--profile-step', type=int, default=0, metavar='N',
+                   help='per-block cuda-event breakdown of the closure step '
+                        '(host-vs-device verdict) over N instrumented steps '
+                        'after the clean timing; 0 = off (pareto port via '
+                        'rollout_aposteriori.run_arm)')
     p.add_argument('--nn-float64', action=argparse.BooleanOptionalAction,
                    default=False,
                    help='NN dtype for the timed closure arms. Default FALSE: '
@@ -213,7 +218,8 @@ def main():
         # run_arm warms up internally (3 untimed steps on cloned state)
         r = ra.run_arm('closure', omS, psS, Delta_T, args.bench_steps, [],
                        derivative, L_hat, F_hat, device, model=model,
-                       input_fields=input_fields, scalars_every=10 ** 9)
+                       input_fields=input_fields, scalars_every=10 ** 9,
+                       profile_step=args.profile_step)
         ms = 1e3 * r['walltime'] / args.bench_steps
         results[label] = dict(ms_per_step=ms, steps_to_horizon=M,
                               s_to_horizon=ms * M / 1e3, model=name,
