@@ -82,6 +82,21 @@ def relative_l2_perchannel_vec(pred, target, floor=None):
     return (num / den).mean(dim=0)
 
 
+def relative_l2_persample(pred, target, floor=None):
+    """(B,C) per-sample per-operator relative L2 with the SAME floored
+    denominator as the loss. Used to report per-order MEDIANS each epoch
+    (F1, incident 1827034): the floored-mean stays the headline/best metric,
+    the median is printed+logged alongside so plateaus stay comparable to
+    the 0.19/0.26/0.33 physics-init convention (rule 16)."""
+    p = pred.flatten(start_dim=2)
+    t = target.flatten(start_dim=2)
+    num = torch.norm(p - t, dim=2)
+    den = torch.norm(t, dim=2).clamp_min(1e-30)
+    if floor is not None:
+        den = torch.maximum(den, floor.to(den.dtype))
+    return num / den
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -254,12 +269,16 @@ def main():
         'roots': [str(r) for r in roots]}, indent=2, default=str))
     log = run_dir / 'log.csv'
     onames = ORDER_NAMES[:args.out_orders]
+    # F1: val_{o} columns stay the floored per-order MEANS (backward compatible);
+    # val_med_{o} medians are APPENDED after elapsed_s (positional parsers unaffected).
     log.write_text('epoch,lr,train_relL2,val_relL2,best_val,'
-                   + ','.join(f'val_{o}' for o in onames) + ',elapsed_s\n')
+                   + ','.join(f'val_{o}' for o in onames) + ',elapsed_s,'
+                   + ','.join(f'val_med_{o}' for o in onames) + '\n')
 
     def run_epoch(loader, train):
         model.train(train)
         tot = 0.0; per = np.zeros(args.out_orders); nb = 0
+        samp = []   # per-sample (B,out_orders) floored rel-L2 -> per-order medians
         ctx = torch.enable_grad() if train else torch.no_grad()
         with ctx:
             for x, y, regime in loader:
@@ -280,11 +299,16 @@ def main():
                 if train:
                     optim.zero_grad(); loss.backward(); optim.step()
                 tot += loss.item()
-                per += relative_l2_perchannel_vec(nd, y, floor).detach().cpu().numpy()
+                r = relative_l2_persample(nd, y, floor).detach().cpu().numpy()
+                per += r.mean(axis=0)   # == relative_l2_perchannel_vec (batch mean)
+                samp.append(r)
                 nb += 1
         nb = max(nb, 1)
-        # headline = mean per-order FLOORED rel-L2; raw medians via diagnostics/
-        return tot / nb, per / nb
+        # headline/best = mean per-order FLOORED rel-L2 (same denominator as the
+        # loss); med = per-order MEDIAN over all samples (F1, printed+logged).
+        med = (np.median(np.concatenate(samp, axis=0), axis=0) if samp
+               else np.zeros(args.out_orders))
+        return tot / nb, per / nb, med
 
     best = float('inf'); t0 = time.time()
     for ep in range(args.epochs):
@@ -295,8 +319,8 @@ def main():
             _bs = getattr(_ld, 'batch_sampler', None)
             if _bs is not None and hasattr(_bs, 'set_epoch'):
                 _bs.set_epoch(ep)
-        tr, _ = run_epoch(tl, True)
-        va, va_per = run_epoch(vl, False)
+        tr, _, _ = run_epoch(tl, True)
+        va, va_per, va_med = run_epoch(vl, False)
         sched.step()
         improved = va < best
         if improved:
@@ -309,22 +333,26 @@ def main():
         with open(log, 'a') as f:
             f.write(f'{ep},{optim.param_groups[0]["lr"]:.3e},{tr:.6e},{va:.6e},'
                     f'{best:.6e},' + ','.join(f'{v:.6e}' for v in va_per)
-                    + f',{time.time()-t0:.1f}\n')
+                    + f',{time.time()-t0:.1f},'
+                    + ','.join(f'{v:.6e}' for v in va_med) + '\n')
         if ep % args.print_every == 0 or improved:
             brk = ' '.join(f'{o}={v:.3e}' for o, v in zip(onames, va_per))
+            brm = ' '.join(f'{o}={v:.3e}' for o, v in zip(onames, va_med))
             print(f"  ep {ep:4d} {'*' if improved else ' '}  "
-                  f"train={tr:.4e}  val={va:.4e}  best={best:.4e} (mean relL2/order)  "
-                  f"[{brk}]  ({time.time()-te0:.1f}s)")
+                  f"train={tr:.4e}  val={va:.4e}  best={best:.4e} (floored-mean relL2/order)  "
+                  f"[mean: {brk}]  [med: {brm}]  ({time.time()-te0:.1f}s)")
 
     print(f"\n[deriv-train] done in {(time.time()-t0)/60:.1f} min, best val={best:.4e}")
     ckpt = torch.load(run_dir / 'best.pt', map_location=args.device, weights_only=False)
     model.load_state_dict(ckpt['model'])
-    test, test_per = run_epoch(te, False)
+    test, test_per, test_med = run_epoch(te, False)
     brk = ' '.join(f'{o}={v:.4e}' for o, v in zip(onames, test_per))
-    print(f"[deriv-train] TEST relL2={test:.4e}  [{brk}]")
+    brm = ' '.join(f'{o}={v:.4e}' for o, v in zip(onames, test_med))
+    print(f"[deriv-train] TEST relL2={test:.4e}  [mean: {brk}]  [med: {brm}]")
     with open(log, 'a') as f:
         f.write(f'-1,0.0,0.0,{test:.6e},{best:.6e},'
-                + ','.join(f'{v:.6e}' for v in test_per) + f',{time.time()-t0:.1f}\n')
+                + ','.join(f'{v:.6e}' for v in test_per) + f',{time.time()-t0:.1f},'
+                + ','.join(f'{v:.6e}' for v in test_med) + '\n')
 
 
 if __name__ == '__main__':
