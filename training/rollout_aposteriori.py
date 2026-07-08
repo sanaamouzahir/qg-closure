@@ -9,7 +9,18 @@ One driver, four arms from a SHARED developed-flow IC:
              non-finite guard at checkpoints)
   bare     : AB2CN2 at Delta_T, no closure
   r3only   : AB2CN2 at Delta_T + ANALYTIC R3 pieces only (L^3 w implicit,
-             L^2 N explicit) -- no NN
+             L^2 N explicit) -- no NN. NB for low-nu members (kf4/b2 etc.,
+             nu~1e-4, mu=0.02) these terms are ~1e-4 of the bracket (N-ddot
+             carries it; verified vs the error-prop budget AND independently
+             at IC kf4/820: predicted 4-step effect 3.2e-7 == observed
+             bare-vs-r3only gap 3.0e-7) -- r3only ~= bare is PHYSICAL there,
+             not a bug.
+  r3anal   : AB2CN2 at Delta_T + FULL analytic R3 (+R4 with --r4): exact
+             chain-rule Ndot/Nddot each step (rollout_perfect_closure's
+             analytic_n_derivs_hat) through the IDENTICAL assembly as
+             'closure' -- the analytic-LTE ceiling inside this driver and
+             the blowup discriminator (r3anal stable + closure blown up =>
+             NN-injected instability, not the scheme's)
   closure  : AB2CN2 at Delta_T + trained closure per the inference decomposition:
                  implicit : the -(coef/12) L^3 w term is folded into the IMEX
                             solve (evaluated at w_{n+1}; denominator gains
@@ -24,6 +35,15 @@ One driver, four arms from a SHARED developed-flow IC:
              K keeps its role as the truth refinement factor ONLY.
              Reference implementation for both the scheme and the
              coefficient: rollout_timed_pareto.py.
+
+K RULE (accuracy runs): the truth must stand in for the ANALYTIC flow --
+we deliberately do NOT model the RK4 LTE in the closure (the T5 formula
+needs a much deeper network), so the RK4 truth error must be driven below
+the closure residual by brute force: set K so h_fine = Delta_T/K <= ~1e-5
+(smoke convention; e.g. K=1500 at Delta_T=1.5e-2). K=O(20) leaves the
+truth's own LTE in the comparison and is NOT acceptable for accuracy
+tables; small K remains fine for --no-truth stability runs where the
+truth arm is skipped anyway.
 
 FFT budget per coarse step (ported from rollout_timed_pareto): bare/r3only = 5
 (minimal N eval, N kept SPECTRAL, no round trips); closure = 8 = the same 5
@@ -60,6 +80,10 @@ Outputs (all under --out-dir, tagged):
   rollout_apost_<tag>.csv  : t, relL2_bare, relL2_r3only, relL2_closure
   sigma_hat_<tag>_<arm>.csv: sigma-hat(kappa) at closure-arm checkpoints
                              (--log-sigma, default on; zero extra FFTs)
+  lte_<tag>_<arm>.csv      : --track-lte; full analytic LTE per-term rms at
+                             each arm's own state per checkpoint + (closure
+                             arms) NN-vs-analytic rel-L2 per head and the
+                             injected error coef*rms(f_NN - f_anal)
   apost_refs_<tag>.npz     : truth stack for reuse (--save-refs/--load-refs)
   ..._pareto.png           : bare-dt-sweep cost/accuracy front (--pareto)
 
@@ -111,6 +135,7 @@ from rollout_timed_pareto import (                                  # noqa: E402
     _StepProfiler, _NOPROF)
 from model_deriv_closure import build_model                         # noqa: E402
 from cond_grad import sigma_hat_spec                                # noqa: E402
+from rollout_perfect_closure import analytic_n_derivs_hat           # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
@@ -206,10 +231,15 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
             derivative, L_hat, F_hat, device, model=None, input_fields=None,
             dealias_nn=True, include_r4=False, blowup_factor=10.0,
             scalars_every=1, freeze_sigma=False, sigma_log=None,
-            profile_step=0):
-    """One arm of the comparison. arm in {'bare','r3only','closure',
-    'closure2'} ('closure2' = a second checkpoint through the identical
-    code path, e.g. the control vs the conditioned model).
+            lte_log=None, profile_step=0):
+    """One arm of the comparison. arm in {'bare','r3only','r3anal',
+    'closure','closure2'} ('closure2' = a second checkpoint through the
+    identical code path, e.g. the control vs the conditioned model;
+    'r3anal' = full analytic R3 [+R4 with --r4] via the exact chain-rule
+    Ndot/Nddot each step, NO NN, through the SAME assembly as 'closure' --
+    the analytic-LTE ceiling and the blowup discriminator: if r3anal is
+    stable where closure blows up, the instability is NN-injected, not
+    the scheme's).
 
     Returns dict: fields {step: ndarray}, scalars (t, E, Z arrays),
     cfl_max, blowup (None or step), walltime (3-step warmup EXCLUDED).
@@ -228,6 +258,13 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
         NOTE: the shell reduction is non-zero COMPUTE inside the timed loop
         (at checkpoint steps only, ~sub-percent of the arm walltime);
         headline benchmarks (3b) run with sigma_log=None.
+    lte_log : optional list; at every checkpoint step the FULL ANALYTIC LTE
+        at the arm's CURRENT state is computed (chain-rule Ndot/Nddot,
+        ~50 FFTs/checkpoint) and its per-term rms appended; closure arms
+        additionally log the NN-vs-analytic rel-L2 per head and the
+        injected per-step correction error rms(coef*(f_NN - f_anal)) --
+        the noise-feedback track. NON-ZERO compute inside the timed loop:
+        headline benchmarks run with lte_log=None.
     profile_step : cuda only; after the clean timed loop, step this many
         more times WITH cuda-event marks and print the per-block breakdown
         (ported from rollout_timed_pareto._StepProfiler).
@@ -247,7 +284,8 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
     # implicit fold: the -(c12) L^3 w term evaluated at w_{n+1} moves to the LHS
     denom_clos = denom_bare + c12 * L3
     is_clos = arm.startswith('closure')
-    with_closure = is_clos or arm == 'r3only'
+    is_anal = arm == 'r3anal'
+    with_closure = is_clos or is_anal or arm == 'r3only'
     denom = denom_clos if with_closure else denom_bare
     Nyg, Nxg = omega_stack[0].shape[-2], omega_stack[0].shape[-1]
     is_cond = is_clos and hasattr(model, 'context_feats_from_spectral')
@@ -264,6 +302,34 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
         if with_closure:
             prof.mark('e_anal')
             rhs = rhs - c12 * (L2 * Nh_curr)                 # explicit analytic L^2 N
+        if is_anal:
+            # full analytic R3 (+R4 with --r4): exact chain-rule Ndot/Nddot
+            # at w_n, assembled EXACTLY like the NN arm (same implicit fold,
+            # same coef, same dealias placement) -- only the [Ndot, Nddot]
+            # source differs. rollout_perfect_closure.analytic_n_derivs_hat
+            # is the validated chain-rule builder. NB: mirrors THIS driver's
+            # closure arm, which folds L^3 implicitly and divides the whole
+            # corrected rhs by denom_clos; rollout_perfect_closure keeps L^3
+            # explicit at w_n -- the two differ at O(h^4) BY DESIGN, so an
+            # r3anal-vs-rollout_perfect numeric gap at that order is not a bug.
+            prof.mark('anal_derivs')
+            Nd = analytic_n_derivs_hat(qh_curr, derivative, L_hat, F_hat,
+                                       max_order=3 if include_r4 else 2)
+            f_anal = (1.0 / 12.0) * (L_hat * Nd[1] - 5.0 * Nd[2])
+            prof.mark('dealias')
+            if dealias_nn:
+                f_anal = _dealias_mul(f_anal, derivative)
+            prof.mark('combine')
+            rhs = rhs - coef * f_anal
+            if include_r4:
+                e_r4 = -coef4 * (1.0 / 24.0) * (2.0 * L4 * qh_curr
+                                                + 2.0 * L3 * Nh_curr
+                                                + 2.0 * L2 * Nd[1]
+                                                - 4.0 * L_hat * Nd[2]
+                                                + Nd[3])
+                if dealias_nn:
+                    e_r4 = _dealias_mul(e_r4, derivative)
+                rhs = rhs + e_r4
         if is_clos:
             # feed the stack at float64 so the TimeFD differencing is
             # cancellation-clean (the model handles its own mixed precision);
@@ -338,6 +404,56 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
         sigma_log.append((step, step * Delta_T,
                           sig[0].detach().cpu().numpy().copy()))
 
+    def log_lte(step, qc, qm, om_hist, ps_hist):
+        """--track-lte: the FULL analytic LTE at the arm's CURRENT state.
+        Every arm logs the R3 term-rms budget (the tau the closure should be
+        removing); closure arms additionally log NN-vs-analytic rel-L2 per
+        head + the injected per-step correction error coef*rms(f_NN-f_anal)
+        (the noise-feedback track)."""
+        if lte_log is None:
+            return
+        if not (torch.isfinite(qc.real).all() and torch.isfinite(qc.imag).all()):
+            return
+        from qg.solver.opt.basis import to_spectral, to_physical
+
+        def _rms(spec):
+            return float(torch.sqrt((to_physical(spec) ** 2).mean()))
+
+        Nd = analytic_n_derivs_hat(qc, derivative, L_hat, F_hat, max_order=2)
+        tau_h = -c12 * (L3 * qc + L2 * Nd[0] + L_hat * Nd[1] - 5.0 * Nd[2])
+        row = dict(step=step, t=step * Delta_T,
+                   rms_tau_full=_rms(tau_h),
+                   rms_L3w=c12 * _rms(L3 * qc),
+                   rms_L2N=c12 * _rms(L2 * Nd[0]),
+                   rms_LNdot=c12 * _rms(L_hat * Nd[1]),
+                   rms_5Nddot=c12 * 5.0 * _rms(Nd[2]))
+        if is_clos:
+            x = assemble_inputs(input_fields, om_hist, ps_hist,
+                                torch.float64, device)
+            kw = {}
+            if is_cond:
+                kw['cond_feats'] = (frozen_feats[0]
+                                    if (freeze_sigma and frozen_feats[0]
+                                        is not None)
+                                    else model.context_feats_from_spectral(
+                                        qc, qc - qm, dt_v, _LX, _LY,
+                                        Nyg, Nxg))
+            with torch.no_grad():
+                yhat = model(x, dt=dt_v, dx=dx_v, dy=dy_v,
+                             **kw).to(torch.float64)
+            Ndh = to_spectral(yhat[:, 0:1][0])
+            Nddh = to_spectral(yhat[:, 1:2][0])
+            f_nn = (1.0 / 12.0) * (L_hat * Ndh - 5.0 * Nddh)
+            f_an = (1.0 / 12.0) * (L_hat * Nd[1] - 5.0 * Nd[2])
+            if dealias_nn:
+                f_nn = _dealias_mul(f_nn, derivative)
+                f_an = _dealias_mul(f_an, derivative)
+            row['rel_Ndot_nn'] = _rms(Ndh - Nd[1]) / max(_rms(Nd[1]), 1e-30)
+            row['rel_Nddot_nn'] = _rms(Nddh - Nd[2]) / max(_rms(Nd[2]), 1e-30)
+            row['rel_fnn'] = _rms(f_nn - f_an) / max(_rms(f_an), 1e-30)
+            row['rms_inj'] = coef * _rms(f_nn - f_an)
+        lte_log.append(row)
+
     # warmup (untimed) -- exercises the same code path on cloned state,
     # then discards it (lazy-init / cuFFT-plan costs stay out of walltime)
     qc, qm = qh_curr.clone(), qh_minus.clone()
@@ -364,6 +480,7 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
         fields[0] = to_physical(qh_curr)[0].cpu().numpy()
     ts.append(0.0); Es.append(E0); Zs.append(Z0)
     log_sigma(0, qh_curr, qh_minus)
+    log_lte(0, qh_curr, qh_minus, om, ps)
 
     _sync(device); t0 = time.time()
     for s in range(1, n_steps + 1):
@@ -388,6 +505,7 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
                 break
         if s in cps:
             log_sigma(s, qh_curr, qh_minus)
+            log_lte(s, qh_curr, qh_minus, om, ps)
             arr = (om_new if is_clos
                    else to_physical(qh_curr))[0].cpu().numpy()
             fields[s] = arr
@@ -513,7 +631,11 @@ def main():
                    help='rollout coarse step (default: manifest Delta_T)')
     p.add_argument('--K', type=int, default=100,
                    help='fine RK4 substeps per coarse step -- truth refinement '
-                        'factor ONLY (does NOT enter the closure coefficient)')
+                        'factor ONLY (does NOT enter the closure coefficient). '
+                        'Accuracy runs: pick K so h_fine=Delta_T/K <= ~1e-5 '
+                        '(the truth stands in for the ANALYTIC flow; we do '
+                        'not model the RK4 LTE). The driver warns above '
+                        '2.5e-5.')
     p.add_argument('--horizon-turnovers', type=float, default=10.0,
                    help='horizon in eddy turnovers (tau_eddy = 1/omega_rms(IC))')
     p.add_argument('--tau-eddy', type=float, default=None,
@@ -523,7 +645,10 @@ def main():
     p.add_argument('--n-checkpoints', type=int, default=24,
                    help='number of checkpointed FIELD snapshots (for spectra)')
     p.add_argument('--arms', type=str, default='bare,r3only,closure',
-                   help='comma list from {bare,r3only,closure}')
+                   help='comma list from {bare,r3only,r3anal,closure} '
+                        '(r3anal = full analytic R3 via exact chain-rule '
+                        'Ndot/Nddot, no NN -- the analytic-LTE ceiling / '
+                        'blowup discriminator)')
     p.add_argument('--no-truth', action='store_true',
                    help='skip the fine-truth arm (long-horizon stability runs)')
     p.add_argument('--r4', action='store_true',
@@ -547,6 +672,13 @@ def main():
                    help='write sigma_hat(kappa,t) at closure-arm checkpoints '
                         'to sigma_hat_<tag>_<arm>.csv (zero extra FFTs; the '
                         'a-posteriori r2-drift measurement)')
+    p.add_argument('--track-lte', action='store_true',
+                   help='at every checkpoint, compute the FULL ANALYTIC LTE '
+                        'at each arm\'s current state (chain-rule Ndot/Nddot) '
+                        'and write per-term rms + NN-vs-analytic rel-L2 '
+                        '(closure arms) to lte_<tag>_<arm>.csv. Non-zero '
+                        'compute inside the timed loop -- diagnostics runs '
+                        'only, not headline timings.')
     p.add_argument('--profile-step', type=int, default=0, metavar='N',
                    help='after the clean closure timing, N instrumented '
                         'steps with per-block cuda-event timers + host-vs-'
@@ -604,6 +736,11 @@ def main():
     print(f'[apost] Delta_T={Delta_T}  K={K} (truth refinement only)  '
           f'h_fine={h_fine:.3e}  coef=DT^3={Delta_T**3:.6e} '
           f'(RK4 truth -> full Taylor defect, no (1-1/K^2))')
+    if not args.no_truth and h_fine > 2.5e-5:
+        print(f'[apost] WARNING: h_fine={h_fine:.3e} > 2.5e-5 -- the RK4 '
+              f'truth is NOT a stand-in for the analytic flow at closure-'
+              f'residual level (we do not model the RK4 LTE). Raise K to '
+              f'>= {int(np.ceil(Delta_T / 1e-5))} for accuracy tables.')
 
     from qg.solver.grid.cartesian import CartesianGrid
     from qg.solver.opt.derivative import Derivative
@@ -769,6 +906,14 @@ def main():
 
     # ---- arms ---- #
     arms = [a.strip() for a in args.arms.split(',') if a.strip()]
+    bad = [a for a in arms if a not in ('bare', 'r3only', 'r3anal',
+                                        'closure', 'closure2')]
+    if bad:
+        sys.exit(f'[apost] unknown arm(s) {bad}; valid: '
+                 f'bare, r3only, r3anal, closure, closure2')
+    if 'closure2' in arms and model2 is None:
+        sys.exit('[apost] arm closure2 requires --ckpt2 (fail fast: the '
+                 'truth leg would otherwise run before the crash)')
     if model2 is not None and 'closure2' not in arms:
         arms.append('closure2')
     if model2 is not None:
@@ -779,6 +924,7 @@ def main():
         mdl = model2 if arm == 'closure2' else model
         sig_rows = ([] if (args.log_sigma and arm.startswith('closure'))
                     else None)
+        lte_rows = [] if args.track_lte else None
         print(f'[apost] arm={arm}: {M} coarse steps ...'
               + (f'  [ckpt2={args.ckpt2.parent.name}]'
                  if arm == 'closure2' else '')
@@ -792,8 +938,16 @@ def main():
                     blowup_factor=args.blowup_factor,
                     scalars_every=args.scalars_every,
                     freeze_sigma=args.freeze_sigma, sigma_log=sig_rows,
-                    profile_step=args.profile_step)
+                    lte_log=lte_rows, profile_step=args.profile_step)
         arm_out[arm] = r
+        if lte_rows:
+            lte_csv = out_dir / f'lte_{args.tag}_{arm}.csv'
+            with open(lte_csv, 'w', newline='') as f:
+                w = csv.DictWriter(f, fieldnames=list(lte_rows[0].keys()))
+                w.writeheader()
+                w.writerows(lte_rows)
+            print(f'[apost]   analytic-LTE track -> {lte_csv.name} '
+                  f'({len(lte_rows)} checkpoints)')
         if sig_rows:
             sig_csv = out_dir / f'sigma_hat_{args.tag}_{arm}.csv'
             n_sh = len(sig_rows[0][2])

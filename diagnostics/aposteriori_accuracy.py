@@ -95,7 +95,8 @@ def main():
     cp_steps = d['cp_steps']
     cp_times = d['cp_times']
     truth = d['truth_stack']
-    arms = [a for a in ('closure', 'bare', 'r3only') if f'{a}_stack' in d.files]
+    arms = [a for a in ('closure', 'closure2', 'bare', 'r3only', 'r3anal')
+            if f'{a}_stack' in d.files]
     Delta_T = float(meta.get('Delta_T', cp_times[1] / max(cp_steps[1], 1)
                              if len(cp_times) > 1 else 1.0))
     Lx = args.Lx or 4 * np.pi
@@ -135,7 +136,8 @@ def main():
 
     # figure
     fig, ax = plt.subplots(1, 3, figsize=(16.5, 4.6))
-    colors = {'bare': 'C0', 'r3only': 'C1', 'closure': 'C3'}
+    colors = {'bare': 'C0', 'r3only': 'C1', 'r3anal': 'C2', 'closure': 'C3',
+              'closure2': 'C4'}
     for a in arms:
         ax[0].semilogy(times[a], rel[a], 'o-', ms=3, color=colors[a], label=a)
         ax[2].plot(times[a], corr[a], 'o-', ms=3, color=colors[a], label=a)

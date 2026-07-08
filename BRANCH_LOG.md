@@ -2,6 +2,28 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-08 — session 4 (Sanaa's smoke-2 checks: r3only verified, K fixed, blowup ISOLATED)
+- Sanaa's directives: (1) check r3only≈bare, (2) add full-analytic-LTE diagnostic, (3) triple-check
+  developed flow / ΔT³·(1/12)·L prefactors / signs, (4) K=20 too coarse — truth must be ~analytic.
+  Also: act autonomously, report after (saved to memory).
+- r3only≈bare is PHYSICAL: independent numpy recompute matches diag (c12·rms(L³ω)=1.420e-8 exact);
+  predicted 4-step analytic effect 3.16e-7 == observed gap 3.0e-7; low-ν members → bracket ≥99.9% N̈.
+- Prefactors/signs verified vs rollout_perfect_closure term-for-term; ICs 820/837/964/934 all
+  filter-KEPT at 0.83–1.12× member-median target norms (developed).
+- K: driver now warns h_fine>2.5e-5; rule = h_fine ≤1e-5 for accuracy runs (we don't model τ_RK4).
+  Measured old K=20 truth error ≤1.7e-9 → smoke-2 tables were NOT materially polluted.
+- NEW (driver): `r3anal` arm (exact chain-rule Ṅ/N̈ through the identical assembly, no NN) +
+  `--track-lte` (per-checkpoint analytic-LTE budget + NN-vs-analytic drift + injected error inj).
+  closure-reviewer clean; sge-checker soft-fixes applied.
+- SMOKE3 (job 1827061, h_fine=1e-5, arms bare/r3only/r3anal/closure, train+val ICs):
+  **blowup mechanism ISOLATED = NN-injected history-contamination loop, NOT marginal-AB2.**
+  r3anal stable at CFL 0.85 and 26–133× better than bare; closure diverges exponentially even at
+  CFL 0.56 (3c); LTE track: rel-N̈ flat at val level ~0.2 for 2–4 steps then doubles per ~1–2 steps;
+  blowup ≈ 4 steps after inj/τ→1. Mechanism: NN noise → 7-lag history → 1/dt^k TimeFD amplification
+  → noisier correction. See diagnostics/RESULTS_2026-07-08_smoke3.md.
+- STATE: 1827034 (cond_local) still the main event; its eval must now report blowup horizon +
+  inj/τ growth alongside per-(member,dt) rel-L2. Truth refs cached for reuse (--load-refs).
+
 ## 2026-07-08 — session 3 (global work order: driver rework, first cond_local submission, smokes)
 - TASK A (54b734e, ACCEPTED by Sanaa): rollout_aposteriori truth = RK4 @ dT/K (imports
   rollout_fine); coef = dT³ / coef4 = dT⁴ ALL arms (no (1−1/K^n)); K = truth refinement only.

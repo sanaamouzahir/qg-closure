@@ -32,7 +32,8 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt                                     # noqa: E402
 
-COLORS = {'bare': 'C0', 'r3only': 'C1', 'closure': 'C3'}
+COLORS = {'bare': 'C0', 'r3only': 'C1', 'r3anal': 'C2', 'closure': 'C3',
+          'closure2': 'C4'}
 
 
 def main():
@@ -56,7 +57,7 @@ def main():
         jpath = npz_path.with_suffix('.json')
         meta = json.loads(jpath.read_text()) if jpath.exists() else {}
         run_tag = npz_path.stem.replace('rollout_apost_', '')
-        arms = [a for a in ('bare', 'r3only', 'closure')
+        arms = [a for a in ('bare', 'r3only', 'r3anal', 'closure', 'closure2')
                 if f'{a}_t' in d.files]
         Delta_T = float(meta.get('Delta_T', 0.0))
         tau = float(meta.get('tau_eddy', np.nan))
