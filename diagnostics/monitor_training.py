@@ -366,33 +366,58 @@ def send_email(subject, body, to, run_dir, notify_qsub=True):
     return 'outbox-only'
 
 
-def build_body(kind, msg, run_dir, branch, job_id, card, orders, rows, idxs, next_block):
+def _indent_block(text, pad='    '):
+    return '\n'.join(pad + ln if ln.strip() else ln for ln in text.splitlines())
+
+
+def _numbered(items, pad='    '):
+    """Sanaa's email convention: indented 'N. ' points with a blank line
+    between every point."""
+    out = []
+    for i, it in enumerate(items, 1):
+        body = _indent_block(it, pad + '   ').lstrip()
+        out.append(f"{pad}{i}. {body}")
+    return '\n\n'.join(out)
+
+
+def build_body(kind, msg, run_dir, branch, job_id, card, orders, rows, idxs, next_items):
+    """Body layout per Sanaa's convention (2026-07-08): PARAMETERS OF THE RUN
+    first; BOLD + CAPITAL section titles; indented, numbered, blank-line-
+    separated points; highlight what matters."""
     medians = card_medians(card, orders) if card else None
     recent = sorted(set((idxs or []) + list(range(max(0, len(rows) - 6), len(rows)))))
     table = fmt_rows(rows, recent, orders, medians) if rows else '(no epochs parsed yet)'
-    return (param_header(run_dir, branch, job_id, card)
-            + f"\n\nverdict: {kind}\n{msg}\n\nper-order table (recent + offending epochs):\n"
-            + table + "\n\nNEXT:\n" + next_block + "\n")
+    hdr_items = [ln for ln in param_header(run_dir, branch, job_id, card).splitlines()
+                 if ln.strip()]
+    return ('**PARAMETERS OF THE RUN**\n\n'
+            + _numbered(hdr_items) + '\n\n\n'
+            + f'**VERDICT: {kind}**\n\n'
+            + _indent_block(msg) + '\n\n\n'
+            + '**PER-ORDER TABLE (RECENT + OFFENDING EPOCHS)**\n\n'
+            + _indent_block(table) + '\n\n\n'
+            + '**NEXT**\n\n'
+            + _numbered(next_items) + '\n')
 
 
 def next_for(kind, run_dir):
     if kind == 'EXPLODE':
-        return ("- per I14: qdel + diagnose + resubmit under the same template "
-                "(branch authority; not BLOCKED). Attach this table to the ACTED email.")
+        return ["per I14: **QDEL + DIAGNOSE + RESUBMIT** under the same template "
+                "(branch authority; not BLOCKED). Attach this table to the ACTED email."]
     if kind == 'ORDER-INVERSION':
-        return ("- (recommended) per-member median-vs-mean before trusting any pooled number:\n"
-                f"    python diagnostics/diagnose_error_distribution.py --ckpt {run_dir}/last.pt\n"
-                "  attach its table to the follow-up (I18c); loss-level triggers are insufficient.\n"
-                "- if median ~ card level but mean >> median: unfloored-eval artifact -> F1 metric "
-                "fix (floored/median eval), qdel+resubmit per I14 if best-selection is corrupted.\n"
-                "- escalate [QG][BLOCKED] to Fable SAME DAY if unresolved in one cycle (I19).")
+        return ["(RECOMMENDED) per-member MEDIAN-vs-MEAN before trusting any pooled number:\n"
+                f"python diagnostics/diagnose_error_distribution.py --ckpt {run_dir}/last.pt\n"
+                "attach its table to the follow-up (I18c); loss-level triggers are insufficient.",
+                "if median ~ card level but mean >> median: unfloored-eval artifact -> F1 "
+                "metric fix (floored/median eval); qdel+resubmit per I14 if best-selection "
+                "is corrupted.",
+                "escalate **[QG][BLOCKED] to Fable SAME DAY** if unresolved in one cycle (I19)."]
     if kind == 'DONE':
-        return ("- eval per-root breakdown (eval_deriv_by_root.py) before quoting the pooled val;\n"
-                "- compare best/last vs the baseline card plateau in the LANDED email.")
+        return ["eval per-root breakdown (eval_deriv_by_root.py) BEFORE quoting the pooled val.",
+                "compare best/last vs the baseline card plateau in the LANDED email."]
     if kind == 'FAIL':
-        return ("- read the log tail below, fix, resubmit per I14; if the cause is outside the "
-                "branch, [QG][BLOCKED] to Fable.")
-    return "- no action needed; next cadence email in --cadence epochs."
+        return ["read the log tail above, fix, resubmit per I14; if the cause is outside "
+                "the branch, **[QG][BLOCKED]** to Fable."]
+    return ["no action needed; next cadence email in --cadence epochs."]
 
 
 # ----------------------------------------------------------------------- main
