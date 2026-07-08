@@ -76,14 +76,28 @@ def sigma_hat(om0: torch.Tensor, om1: torch.Tensor, dt: torch.Tensor,
     sigma_hat(kappa); shell_index (Ny, Nx_r) for broadcasting back to modes.
     """
     B, Ny, Nx = om0.shape
-    c = _CACHE.get(Ny, Nx, Lx, Ly, om0.device, om0.dtype)
-    sh, n_sh = c['shell'], c['n_sh']
     f0 = torch.fft.rfft2(om0)
     fd = torch.fft.rfft2(om0 - om1)
+    return sigma_hat_spec(f0, fd, dt, Lx, Ly, Ny, Nx)
+
+
+def sigma_hat_spec(f0: torch.Tensor, fd: torch.Tensor, dt: torch.Tensor,
+                   Lx: float, Ly: float, Ny: int, Nx: int
+                   ) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    sigma_hat from PRECOMPUTED half-plane (rfft2-layout) spectra -- shell
+    reduction only, ZERO FFTs. f0 ~ rfft2(om0), fd ~ rfft2(om0 - om1).
+    Any GLOBAL spectral normalization (e.g. the solver's norm='forward')
+    cancels exactly in the per-shell Ed/E0 ratio, so a stepper's own spectral
+    states feed in directly (fd = qh0 - qh_m1 by FFT linearity).
+    """
+    B = f0.shape[0]
+    c = _CACHE.get(Ny, Nx, Lx, Ly, f0.device, f0.real.dtype)
+    sh, n_sh = c['shell'], c['n_sh']
     e0 = (f0.real ** 2 + f0.imag ** 2).reshape(B, -1)
     ed = (fd.real ** 2 + fd.imag ** 2).reshape(B, -1)
     idx = sh.reshape(-1).expand(B, -1)
-    E0 = torch.zeros(B, n_sh, dtype=om0.dtype, device=om0.device)
+    E0 = torch.zeros(B, n_sh, dtype=e0.dtype, device=f0.device)
     Ed = torch.zeros_like(E0)
     E0.scatter_add_(1, idx, e0)
     Ed.scatter_add_(1, idx, ed)

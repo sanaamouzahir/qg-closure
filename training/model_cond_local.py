@@ -14,6 +14,11 @@ The ONLY spectral touch is the once-per-forward sigma-hat context
 (rfft2(omega_0), rfft2(omega_0 - omega_m1)); gradients, Jacobians and the mix
 are exactly the control's local ops. There is no other FFT anywhere in this
 model -- asserted at runtime (self._ctx_calls == 1 per forward).
+At ROLLOUT even those 2 rFFTs vanish: a spectral stepper already holds
+qh_curr/qh_minus, so the driver computes the context via
+context_feats_from_spectral (shell reduction only) and passes it as
+forward(..., cond_feats=...) -- the cond_local NN is then conv-only,
+zero transforms per step.
 
 Design (binding, from the 2026-07-07 work order; theory: F_loc family +
 sigma-hat estimator, error_analysis_full.tex sec. 7 -- the arcsin-debiased
@@ -62,7 +67,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from model_deriv_closure import CheapDerivClosureNet
-from cond_grad import sigma_hat
+from cond_grad import sigma_hat, sigma_hat_spec
 
 
 REL_SHELLS = (0.15, 0.30, 0.50, 0.70, 0.85)
@@ -129,6 +134,16 @@ class CondLocalDerivClosureNet(CheapDerivClosureNet):
         self._ctx_calls = 0                  # per-forward context counter
 
     # ------------------------------------------------------------------ #
+    @staticmethod
+    def _feats_from_sig(sig, dt_vec):
+        """Shell select + feature build shared by both context paths."""
+        n_sh = sig.shape[1]
+        idx = torch.tensor([min(int(round(r * (n_sh - 1))), n_sh - 1)
+                            for r in REL_SHELLS],
+                           device=sig.device, dtype=torch.long)
+        x = sig.index_select(1, idx) * dt_vec.view(-1, 1)  # dimensionless
+        return torch.cat([x, torch.log1p(x)], dim=1)
+
     def _context_feats(self, om0, om1, dt_vec, Lx, Ly):
         """The ONE spectral touch: sigma-hat at fixed relative shells.
 
@@ -137,12 +152,16 @@ class CondLocalDerivClosureNet(CheapDerivClosureNet):
         """
         self._ctx_calls += 1
         sig, _ = sigma_hat(om0, om1, dt_vec, Lx, Ly)      # (B, n_sh)
-        n_sh = sig.shape[1]
-        idx = torch.tensor([min(int(round(r * (n_sh - 1))), n_sh - 1)
-                            for r in REL_SHELLS],
-                           device=sig.device, dtype=torch.long)
-        x = sig.index_select(1, idx) * dt_vec.view(-1, 1)  # dimensionless
-        return torch.cat([x, torch.log1p(x)], dim=1)
+        return self._feats_from_sig(sig, dt_vec)
+
+    def context_feats_from_spectral(self, qh0, qh_diff, dt_vec, Lx, Ly, Ny, Nx):
+        """Rollout-side context: sigma-hat from a stepper's OWN spectral
+        states (rfft half-plane layout, any global norm -- it cancels in the
+        shell ratio). Shell reduction only, ZERO FFTs. qh_diff = qh0 - qh_m1
+        (== rfft2(om0 - om1) by linearity, to round-off). Pass the result as
+        forward(..., cond_feats=...) to skip the internal 2-rFFT context."""
+        sig, _ = sigma_hat_spec(qh0, qh_diff, dt_vec, Lx, Ly, Ny, Nx)
+        return self._feats_from_sig(sig, dt_vec)
 
     @staticmethod
     def _uniform_spacing(v, default: torch.Tensor, name: str) -> float:
@@ -178,7 +197,8 @@ class CondLocalDerivClosureNet(CheapDerivClosureNet):
 
     # ------------------------------------------------------------------ #
     def forward(self, x: torch.Tensor, dt: torch.Tensor = None,
-                dx: torch.Tensor = None, dy: torch.Tensor = None) -> torch.Tensor:
+                dx: torch.Tensor = None, dy: torch.Tensor = None,
+                cond_feats: torch.Tensor = None) -> torch.Tensor:
         nt = self.n_time
         no = self.n_ord
         omega_stack = x[:, :nt]
@@ -203,12 +223,17 @@ class CondLocalDerivClosureNet(CheapDerivClosureNet):
                 dt_vec = dt_vec.expand(B)
         else:
             dt_vec = torch.full((B,), float(dt), device=x.device, dtype=x.dtype)
-        Lx = Nx * self._uniform_spacing(dx, self.grad.dx0, 'dx')
-        Ly = Ny * self._uniform_spacing(dy, self.grad.dy0, 'dy')
-        # sigma-hat reads the two newest PHYSICAL omega marks (raw channels).
-        feats = self._context_feats(x[:, 0], x[:, 1], dt_vec, Lx, Ly)
-        assert self._ctx_calls == 1, \
-            f"context computed {self._ctx_calls}x per forward (must be exactly 1)"
+        if cond_feats is not None:
+            # rollout path: context precomputed by context_feats_from_spectral
+            # from the stepper's spectral qh states (zero FFTs this forward).
+            feats = cond_feats
+        else:
+            Lx = Nx * self._uniform_spacing(dx, self.grad.dx0, 'dx')
+            Ly = Ny * self._uniform_spacing(dy, self.grad.dy0, 'dy')
+            # sigma-hat reads the two newest PHYSICAL omega marks (raw channels).
+            feats = self._context_feats(x[:, 0], x[:, 1], dt_vec, Lx, Ly)
+            assert self._ctx_calls == 1, \
+                f"context computed {self._ctx_calls}x per forward (must be exactly 1)"
 
         # ---- tap deltas, analytic per-channel dT^(S-k) scaling ---- #
         delta = self.cond(feats.to(self.cond.head.weight.dtype))  # (B,2no,2,W)
@@ -261,3 +286,21 @@ if __name__ == '__main__':
     print(f"zero-init |ctrl - cond_local|_max = {d:.3e} (must be exactly 0.0)")
     print(f"new conditioning params = {new} (< 10k budget)")
     assert d == 0.0
+
+    # spectral-context path == internal 2-rFFT path (rollout equivalence).
+    # Kick the head off zero-init so the feats actually influence the output,
+    # and feed a solver-style norm='forward' spectrum (the global scale must
+    # cancel in the shell ratio).
+    with torch.no_grad():
+        cond.cond.head.weight.normal_(0.0, 1.0)
+        cond.cond.head.bias.normal_(0.0, 1.0)
+        Lx = float(dxs[0]) * Nx
+        qh0 = torch.fft.rfftn(x[:, 0], dim=(-2, -1), norm='forward')
+        qh1 = torch.fft.rfftn(x[:, 1], dim=(-2, -1), norm='forward')
+        feats_spec = cond.context_feats_from_spectral(qh0, qh0 - qh1, dt,
+                                                      Lx, Lx, Ny, Nx)
+        y_int = cond(x, dt=dt, dx=dxs, dy=dxs)
+        y_ext = cond(x, dt=dt, dx=dxs, dy=dxs, cond_feats=feats_spec)
+    r = float((y_int - y_ext).abs().max() / y_int.abs().max().clamp_min(1e-30))
+    print(f"spectral-context vs internal-context forward: max rel = {r:.3e}")
+    assert r < 1e-10

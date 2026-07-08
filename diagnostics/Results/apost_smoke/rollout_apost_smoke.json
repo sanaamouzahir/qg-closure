@@ -34,55 +34,55 @@
     9,
     12
   ],
-  "t_truth": 0.18886661529541016,
-  "bare_walltime": 0.019660472869873047,
+  "t_truth": 1.112525224685669,
+  "bare_walltime": 0.017427444458007812,
   "bare_cfl_max": 0.15172158945204178,
   "bare_blowup_step": null,
   "bare_verdict": "STABLE",
-  "r3only_walltime": 0.017262697219848633,
-  "r3only_cfl_max": 0.1517215893861711,
+  "r3only_walltime": 0.01736593246459961,
+  "r3only_cfl_max": 0.151721589386006,
   "r3only_blowup_step": null,
   "r3only_verdict": "STABLE",
-  "closure_walltime": 8.408849239349365,
-  "closure_cfl_max": 0.15172165436018847,
+  "closure_walltime": 0.0865473747253418,
+  "closure_cfl_max": 0.1517216551280651,
   "closure_blowup_step": null,
   "closure_verdict": "STABLE",
   "error_table": [
     {
       "t": 0.0,
-      "relL2_bare": 0.0,
-      "relL2_r3only": 0.0,
-      "relL2_closure": 0.0
+      "relL2_bare": 3.2026476036501135e-16,
+      "relL2_r3only": 3.2026476036501135e-16,
+      "relL2_closure": 3.2026476036501135e-16
     },
     {
       "t": 0.015,
-      "relL2_bare": 6.394296683575081e-09,
-      "relL2_r3only": 6.159862192569806e-09,
-      "relL2_closure": 8.092098100161001e-08
+      "relL2_bare": 5.520975299292246e-09,
+      "relL2_r3only": 5.246339448902482e-09,
+      "relL2_closure": 8.113718717550926e-08
     },
     {
       "t": 0.03,
-      "relL2_bare": 1.1166848651001607e-08,
-      "relL2_r3only": 1.0627752025563795e-08,
-      "relL2_closure": 3.911842562305065e-07
+      "relL2_bare": 1.0670862890783584e-08,
+      "relL2_r3only": 1.0102839690034313e-08,
+      "relL2_closure": 3.9405542716768526e-07
     },
     {
       "t": 0.045,
-      "relL2_bare": 1.622454848208586e-08,
-      "relL2_r3only": 1.5390219362310916e-08,
-      "relL2_closure": 2.6799037158321086e-06
+      "relL2_bare": 1.5884378458547993e-08,
+      "relL2_r3only": 1.5027518518406477e-08,
+      "relL2_closure": 2.708527294730165e-06
     },
     {
       "t": 0.06,
-      "relL2_bare": 2.1357358695472448e-08,
-      "relL2_r3only": 2.023241711969149e-08,
-      "relL2_closure": 2.1774650278386557e-05
+      "relL2_bare": 2.1105790523239925e-08,
+      "relL2_r3only": 1.996186035829837e-08,
+      "relL2_closure": 2.207535597526632e-05
     }
   ],
   "final_relL2": {
-    "bare": 2.1357358695472448e-08,
-    "r3only": 2.023241711969149e-08,
-    "closure": 2.1774650278386557e-05
+    "bare": 2.1105790523239925e-08,
+    "r3only": 1.996186035829837e-08,
+    "closure": 2.207535597526632e-05
   },
-  "improvement_x": 0.000980835899654916
+  "improvement_x": 0.0009560792834728139
 }

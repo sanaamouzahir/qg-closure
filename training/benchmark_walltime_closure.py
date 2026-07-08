@@ -4,8 +4,9 @@ benchmark_walltime_closure.py -- 3b: comp-time extension of benchmark_walltime.p
 Measures REAL per-step walltime and walltime-to-horizon for the a-posteriori
 configurations, on the same grid/physics as a given sweep root:
 
-  fine_ref   : AB2CN2 at h = Delta_T/K       (the reference the closure replaces;
-               time-to-horizon = ms/step * M * K)
+  fine_ref   : RK4 at h = Delta_T/K          (the truth leg the closure replaces
+               -- rollout_timed_pareto.rollout_fine, matching the RK4 truth of
+               rollout_aposteriori; time-to-horizon = ms/step * M * K)
   bare       : AB2CN2 at Delta_T
   closure:<ckpt-name>
              : AB2CN2 + trained closure (inference decomposition, from
@@ -60,16 +61,16 @@ sys.path.insert(0, str(_find_training_dir()))
 
 import rollout_aposteriori as ra                                    # noqa: E402
 from rollout_timed_pareto import N_spectral, _dealias_mul, build_L_hat, \
-    build_forcing, psi_from_omega, _sync                            # noqa: E402
+    build_forcing, psi_from_omega, rollout_fine, _sync              # noqa: E402
 from rollout_perfect_closure import analytic_n_derivs_hat           # noqa: E402
 
 
-def time_r3_analytic(omega_stack, Delta_T, K, n_steps, derivative, L_hat,
+def time_r3_analytic(omega_stack, Delta_T, n_steps, derivative, L_hat,
                      F_hat, device):
     """Coarse AB2CN2 + full analytic R3 (implicit L^3 fold + explicit L^2 N +
     chain-rule L Ndot - 5 Nddot). The no-NN full-R3 arm."""
     from qg.solver.opt.basis import to_spectral
-    coef = (Delta_T ** 3) * (1.0 - 1.0 / (K ** 2))
+    coef = Delta_T ** 3          # RK4 truth -> full Taylor defect, no (1-1/K^2)
     c12 = coef / 12.0
     denom = 1.0 - 0.5 * Delta_T * L_hat + c12 * (L_hat ** 3)
     L2 = L_hat ** 2
@@ -140,6 +141,7 @@ def main():
     Delta_T = args.Delta_T or float(manifest['Delta_T'])
     K, M = int(args.K), int(args.horizon_steps)
     ra._DX, ra._DY = Lx / Nx, Ly / Ny
+    ra._LX, ra._LY = Lx, Ly            # sigma-hat shell cache (cond_local ckpts)
 
     from qg.solver.grid.cartesian import CartesianGrid
     from qg.solver.opt.derivative import Derivative
@@ -171,14 +173,11 @@ def main():
 
     results = {}
 
-    # ---- fine reference ---- #
+    # ---- fine reference: RK4 (rollout_fine warms up internally, untimed) ---- #
     om2, _ = stack_for(2)
-    print(f'[3b] fine_ref: {args.fine_bench_steps} timed fine steps ...')
-    _, t_warm = ra.run_truth(om2[0], om2[1], Delta_T / K, 3, [],
-                             derivative, L_hat, F_hat, device)
-    _, t_fine = ra.run_truth(om2[0], om2[1], Delta_T / K,
-                             args.fine_bench_steps, [],
-                             derivative, L_hat, F_hat, device)
+    print(f'[3b] fine_ref: {args.fine_bench_steps} timed fine RK4 steps ...')
+    _, t_fine = rollout_fine(om2[0], Delta_T / K, args.fine_bench_steps, [],
+                             derivative, L_hat, F_phys, device)
     ms_fine = 1e3 * t_fine / args.fine_bench_steps
     results['fine_ref'] = dict(ms_per_step=ms_fine,
                                steps_to_horizon=M * K,
@@ -187,9 +186,8 @@ def main():
     # ---- bare + r3_analytic ---- #
     om7, ps7 = stack_for(min(7, n_all))
     for arm in ('bare',):
-        ra.run_arm(arm, om7, ps7, Delta_T, K, 3, [], derivative, L_hat,
-                   F_hat, device, scalars_every=10 ** 9)          # warmup
-        r = ra.run_arm(arm, om7, ps7, Delta_T, K, args.bench_steps, [],
+        # run_arm warms up internally (3 untimed steps on cloned state)
+        r = ra.run_arm(arm, om7, ps7, Delta_T, args.bench_steps, [],
                        derivative, L_hat, F_hat, device,
                        scalars_every=10 ** 9)
         ms = 1e3 * r['walltime'] / args.bench_steps
@@ -197,7 +195,7 @@ def main():
                             s_to_horizon=ms * M / 1e3)
         print(f'[3b] {arm}: {ms:.3f} ms/step')
 
-    ms_r3 = 1e3 * time_r3_analytic(om7, Delta_T, K, args.bench_steps,
+    ms_r3 = 1e3 * time_r3_analytic(om7, Delta_T, args.bench_steps,
                                    derivative, L_hat, F_hat, device)
     results['r3_analytic'] = dict(ms_per_step=ms_r3, steps_to_horizon=M,
                                   s_to_horizon=ms_r3 * M / 1e3)
@@ -212,10 +210,8 @@ def main():
                         + ['psi_0'] + [f'psi_m{k}' for k in range(1, n_snap)])
         omS, psS = stack_for(n_snap)
         label = f'closure:{ck.parent.name}({name})'
-        ra.run_arm('closure', omS, psS, Delta_T, K, 3, [], derivative, L_hat,
-                   F_hat, device, model=model, input_fields=input_fields,
-                   scalars_every=10 ** 9)                          # warmup
-        r = ra.run_arm('closure', omS, psS, Delta_T, K, args.bench_steps, [],
+        # run_arm warms up internally (3 untimed steps on cloned state)
+        r = ra.run_arm('closure', omS, psS, Delta_T, args.bench_steps, [],
                        derivative, L_hat, F_hat, device, model=model,
                        input_fields=input_fields, scalars_every=10 ** 9)
         ms = 1e3 * r['walltime'] / args.bench_steps

@@ -3,9 +3,10 @@ rollout_aposteriori.py -- the unified a-posteriori driver for the trained closur
 
 One driver, four arms from a SHARED developed-flow IC:
 
-  truth    : AB2CN2 at h = Delta_T / K       (the scheme's better-resolved self --
-             the deliverable's target per the "emulate the SAME scheme at h/K"
-             framing; NOT RK4, so the (1 - 1/K^2) factor applies to the closure)
+  truth    : RK4 at h = Delta_T / K  (fine reference -- rollout_timed_pareto's
+             rollout_fine, IMPORTED: single-step RK4, no stencil bootstrap,
+             F_phys PHYSICAL in the RK4 rhs, warmup excluded from timing,
+             non-finite guard at checkpoints)
   bare     : AB2CN2 at Delta_T, no closure
   r3only   : AB2CN2 at Delta_T + ANALYTIC R3 pieces only (L^3 w implicit,
              L^2 N explicit) -- no NN
@@ -16,8 +17,23 @@ One driver, four arms from a SHARED developed-flow IC:
                  explicit : analytic -(coef/12) L^2 N(w_n),
                  explicit : NN  -coef * f_NN,  f_NN = (1/12)(L Ndot - 5 Nddot)
                             from the trained [Ndot, Nddot, N3dot] heads
-             with coef = Delta_T^3 (1 - 1/K^2).  Optional partial R4 via --r4
-             (uses the N3dot head; coefficients per rollout_timed_pareto).
+             with coef = Delta_T^3: the RK4 truth is the exact flow, so the
+             target is the FULL Taylor defect -- NO (1 - 1/K^2) factor (that
+             factor belongs to an AB2CN2-at-h/K truth only). Applied
+             identically in the r3only arm; --r4 uses coef4 = Delta_T^4.
+             K keeps its role as the truth refinement factor ONLY.
+             Reference implementation for both the scheme and the
+             coefficient: rollout_timed_pareto.py.
+
+FFT budget per coarse step (ported from rollout_timed_pareto): bare/r3only = 5
+(minimal N eval, N kept SPECTRAL, no round trips); closure = 8 = the same 5
++ 1 psi iFFT (INPUT-STACK INFRASTRUCTURE -- bare only avoids it by never
+needing psi as a field) + 2 NN-output FFTs (Ndot, Nddot -> spectral correction
+assembly; the only genuine NN overhead). The cond_local NN itself is conv-only
+(ZERO transforms): its sigma-hat context is computed from the stepper's OWN
+spectral qh_curr/qh_minus (shell reduction only, zero extra FFTs) and passed
+via cond_feats. E/Z scalar series are Parseval reductions in spectral space
+(zero FFTs; cross-checked against the physical formulas at the IC).
 
 Adapted from rollout_multistep_comparison.py (error-accumulation framing),
 rollout_load_truth_compare.py (shared-truth reuse) and rollout_perfect_closure.py
@@ -81,8 +97,8 @@ sys.path.insert(0, str(_find_training_dir()))
 
 # physics primitives -- bit-identical to the validated pareto/perfect legs
 from rollout_timed_pareto import (                                  # noqa: E402
-    N_spectral, _dealias_mul, build_L_hat, rk4_step,
-    build_forcing, psi_from_omega, assemble_inputs, _sync)
+    N_spectral, N_spectral_fields, _dealias_mul, build_L_hat, rk4_step,
+    rollout_fine, build_forcing, psi_from_omega, assemble_inputs, _sync)
 from model_deriv_closure import build_model                         # noqa: E402
 
 
@@ -133,13 +149,29 @@ def load_deriv_model(ckpt_path: Path, manifest, dt_rollout, device,
 # scalar diagnostics                                                           #
 # --------------------------------------------------------------------------- #
 
-def scalars_from_qh(qh, derivative):
-    """(E, Z) domain means from spectral omega -- cheap reductions."""
-    from qg.solver.opt.basis import to_physical
-    om = to_physical(qh)
-    psi = to_physical(derivative.inv_laplacian * qh)
-    Z = 0.5 * float((om ** 2).mean())
-    E = 0.5 * float((-psi * om).mean())      # E = 0.5 <|grad psi|^2> = -0.5 <psi omega>
+def _parseval_weight(qh, Nx):
+    """Hermitian double-count weights for the rfft half-plane: interior kx
+    columns stand for +-kx pairs (weight 2); kx=0 and (even Nx) Nyquist are
+    self-conjugate (weight 1). With the solver's norm='forward' convention,
+    <f^2> == sum(w |fh|^2)."""
+    w = torch.full((qh.shape[-1],), 2.0, dtype=torch.float64, device=qh.device)
+    w[0] = 1.0
+    if Nx % 2 == 0:
+        w[-1] = 1.0
+    return w
+
+
+def scalars_from_qh(qh, derivative, w_par):
+    """(E, Z) domain means from spectral omega -- Parseval reductions, ZERO
+    FFTs (was 2 iFFTs/step). Z = 0.5<w^2> = 0.5 sum w_par |qh|^2;
+    E = 0.5<|grad psi|^2> = -0.5<psi w> = 0.5 sum w_par (-inv_lap) |qh|^2.
+    Cross-checked against the physical-space formulas at the IC in main()."""
+    il = derivative.inv_laplacian
+    if torch.is_complex(il):
+        il = il.real
+    e = qh.real ** 2 + qh.imag ** 2
+    Z = 0.5 * float((e * w_par).sum())
+    E = 0.5 * float((e * (-il) * w_par).sum())
     return E, Z
 
 
@@ -159,34 +191,45 @@ def rel_l2(a, b):
 # rollout arms                                                                 #
 # --------------------------------------------------------------------------- #
 
-def run_arm(arm, omega_stack, psi_stack, Delta_T, K, n_steps, cp_steps,
+def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
             derivative, L_hat, F_hat, device, model=None, input_fields=None,
             dealias_nn=True, include_r4=False, blowup_factor=10.0,
             scalars_every=1):
     """One arm of the comparison. arm in {'bare','r3only','closure'}.
 
     Returns dict: fields {step: ndarray}, scalars (t, E, Z arrays),
-    cfl_max, blowup (None or step), walltime.
+    cfl_max, blowup (None or step), walltime (3-step warmup EXCLUDED).
+
+    FFT budget per step: bare/r3only 5 (N_spectral, N kept spectral),
+    closure 8 (N_spectral_fields hands back omega/psi physical for the
+    stencil + checkpoint dump, + 2 NN-output FFTs). E/Z are Parseval
+    reductions (zero FFTs); the cond_local sigma-hat context is a shell
+    reduction of the stepper's own spectral states (zero FFTs).
     """
     from qg.solver.opt.basis import to_spectral, to_physical
-    coef = (Delta_T ** 3) * (1.0 - 1.0 / (K ** 2))   # AB2CN2 truth at h/K
+    # truth = RK4 (exact flow) -> the target is the FULL Taylor defect:
+    # coef = DT^3, coef4 = DT^4, NO (1-1/K^n) factors (those belong to an
+    # AB2CN2-at-h/K truth). Applied identically to r3only and closure.
+    coef = Delta_T ** 3
+    coef4 = Delta_T ** 4
     c12 = coef / 12.0
     denom_bare = 1.0 - 0.5 * Delta_T * L_hat
-    # implicit fold: the -(c12) L^3 w term evaluated at w_{n+1} moves to the LHS
-    denom_clos = denom_bare + c12 * (L_hat ** 3)
+    # precompute L_hat powers once (step-invariant; pure hoist)
     L2 = L_hat ** 2
+    L3 = L2 * L_hat
     L4 = L2 * L2
+    # implicit fold: the -(c12) L^3 w term evaluated at w_{n+1} moves to the LHS
+    denom_clos = denom_bare + c12 * L3
     with_closure = arm in ('r3only', 'closure')
     denom = denom_clos if with_closure else denom_bare
+    Nyg, Nxg = omega_stack[0].shape[-2], omega_stack[0].shape[-1]
+    is_cond = (arm == 'closure'
+               and hasattr(model, 'context_feats_from_spectral'))
+    dt_v = torch.full((1,), Delta_T, device=device, dtype=torch.float64)
+    dx_v = torch.full((1,), _DX, device=device, dtype=torch.float64)
+    dy_v = torch.full((1,), _DY, device=device, dtype=torch.float64)
 
-    qh_n = to_spectral(omega_stack[0])
-    qh_m1 = to_spectral(omega_stack[1])
-    Nh_n = N_spectral(qh_n, derivative, F_hat)
-    Nh_m1 = N_spectral(qh_m1, derivative, F_hat)
-    om = [s.clone() for s in omega_stack]
-    ps = [s.clone() for s in psi_stack]
-
-    def one_step(qh_curr, Nh_curr, Nh_minus, om_hist, ps_hist):
+    def one_step(qh_curr, qh_minus, Nh_curr, Nh_minus, om_hist, ps_hist):
         AB2_Nh = 1.5 * Nh_curr - 0.5 * Nh_minus
         rhs = qh_curr + Delta_T * (0.5 * L_hat * qh_curr + AB2_Nh)
         if with_closure:
@@ -197,22 +240,26 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, K, n_steps, cp_steps,
             # dt/dx/dy passed explicitly = the exact training call signature.
             x = assemble_inputs(input_fields, om_hist, ps_hist,
                                 torch.float64, device)
-            dt_v = torch.full((1,), Delta_T, device=device, dtype=torch.float64)
-            dx_v = torch.full((1,), _DX, device=device, dtype=torch.float64)
-            dy_v = torch.full((1,), _DY, device=device, dtype=torch.float64)
+            kw = {}
+            if is_cond:
+                # sigma-hat context from the stepper's OWN spectral states --
+                # shell reduction only, ZERO extra FFTs (the solver's
+                # norm='forward' scaling cancels in the per-shell ratio).
+                kw['cond_feats'] = model.context_feats_from_spectral(
+                    qh_curr, qh_curr - qh_minus, dt_v, _LX, _LY, Nyg, Nxg)
             with torch.no_grad():
-                yhat = model(x, dt=dt_v, dx=dx_v, dy=dy_v).to(torch.float64)
-            Ndot_h = to_spectral(yhat[:, 0:1][0])
-            Nddot_h = to_spectral(yhat[:, 1:2][0])
+                yhat = model(x, dt=dt_v, dx=dx_v, dy=dy_v,
+                             **kw).to(torch.float64)
+            Ndot_h = to_spectral(yhat[:, 0:1][0])            # 1 FFT
+            Nddot_h = to_spectral(yhat[:, 1:2][0])           # 1 FFT
             f_nn = (1.0 / 12.0) * (L_hat * Ndot_h - 5.0 * Nddot_h)
             if dealias_nn:
                 f_nn = _dealias_mul(f_nn, derivative)
             rhs = rhs - coef * f_nn
             if include_r4:
-                N3dot_h = to_spectral(yhat[:, 2:3][0])
-                coef4 = (Delta_T ** 4) * (1.0 - 1.0 / (K ** 3))
+                N3dot_h = to_spectral(yhat[:, 2:3][0])       # +1 FFT (--r4 only)
                 e_r4 = -coef4 * (1.0 / 24.0) * (2.0 * L4 * qh_curr
-                                                + 2.0 * (L_hat ** 3) * Nh_curr
+                                                + 2.0 * L3 * Nh_curr
                                                 + 2.0 * L2 * Ndot_h
                                                 - 4.0 * L_hat * Nddot_h
                                                 + N3dot_h)
@@ -220,29 +267,56 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, K, n_steps, cp_steps,
                     e_r4 = _dealias_mul(e_r4, derivative)
                 rhs = rhs + e_r4
         qh_new = rhs / denom
-        return qh_new
+        if arm == 'closure':
+            # the new N eval hands back omega/psi PHYSICAL -> reused for the
+            # stencil and the checkpoint dump; neither is iFFT'd a second time.
+            Nh_new, om_new, ps_new = N_spectral_fields(qh_new, derivative,
+                                                       F_hat)
+            return qh_new, Nh_new, om_new, ps_new
+        return qh_new, N_spectral(qh_new, derivative, F_hat), None, None
+
+    qh_curr = to_spectral(omega_stack[0])
+    qh_minus = to_spectral(omega_stack[1])
+    Nh_curr = N_spectral(qh_curr, derivative, F_hat)
+    Nh_minus = N_spectral(qh_minus, derivative, F_hat)
+    om = [s.clone() for s in omega_stack]
+    ps = [s.clone() for s in psi_stack]
+    w_par = _parseval_weight(qh_curr, Nxg)
+
+    # warmup (untimed) -- exercises the same code path on cloned state,
+    # then discards it (lazy-init / cuFFT-plan costs stay out of walltime)
+    qc, qm = qh_curr.clone(), qh_minus.clone()
+    Nc, Nm = Nh_curr.clone(), Nh_minus.clone()
+    om_w, ps_w = list(om), list(ps)
+    for _ in range(3):
+        qn, Nn, on, pn = one_step(qc, qm, Nc, Nm, om_w, ps_w)
+        if arm == 'closure':
+            om_w = [on] + om_w[:-1]
+            ps_w = [pn] + ps_w[:-1]
+        qm, qc = qc, qn
+        Nm, Nc = Nc, Nn
 
     fields = {}
     cps = set(cp_steps)
     ts, Es, Zs = [], [], []
     cfl_max = 0.0
     blowup = None
-    E0, Z0 = scalars_from_qh(qh_n, derivative)
+    E0, Z0 = scalars_from_qh(qh_curr, derivative, w_par)
     if 0 in cps:
-        fields[0] = to_physical(qh_n)[0].cpu().numpy()
+        fields[0] = to_physical(qh_curr)[0].cpu().numpy()
     ts.append(0.0); Es.append(E0); Zs.append(Z0)
 
     _sync(device); t0 = time.time()
     for s in range(1, n_steps + 1):
-        qh_new = one_step(qh_n, Nh_n, Nh_m1, om, ps)
-        Nh_m1, Nh_n, qh_n = Nh_n, N_spectral(qh_new, derivative, F_hat), qh_new
+        qh_new, Nh_new, om_new, ps_new = one_step(qh_curr, qh_minus,
+                                                  Nh_curr, Nh_minus, om, ps)
+        qh_minus, qh_curr = qh_curr, qh_new
+        Nh_minus, Nh_curr = Nh_curr, Nh_new
         if arm == 'closure':
-            om_new = to_physical(qh_n)
-            ps_new = to_physical(derivative.inv_laplacian * qh_n)
             om = [om_new] + om[:-1]        # newest-first history for the stencil
             ps = [ps_new] + ps[:-1]
         if s % scalars_every == 0 or s in cps or s == n_steps:
-            E, Z = scalars_from_qh(qh_n, derivative)
+            E, Z = scalars_from_qh(qh_curr, derivative, w_par)
             ts.append(s * Delta_T); Es.append(E); Zs.append(Z)
             if (not np.isfinite(Z)) or Z > blowup_factor * max(Z0, 1e-30):
                 blowup = s
@@ -250,8 +324,15 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, K, n_steps, cp_steps,
                       f'(Z={Z:.3e} vs Z0={Z0:.3e}) -- stopping arm.')
                 break
         if s in cps:
-            fields[s] = to_physical(qh_n)[0].cpu().numpy()
-            cfl_max = max(cfl_max, cfl_from_qh(qh_n, derivative,
+            arr = (om_new if arm == 'closure'
+                   else to_physical(qh_curr))[0].cpu().numpy()
+            fields[s] = arr
+            if not np.isfinite(np.sqrt(np.mean(arr ** 2))):   # non-finite guard
+                blowup = blowup if blowup is not None else s
+                print(f'      [{arm}] non-finite field at step {s} '
+                      f'-- stopping arm.')
+                break
+            cfl_max = max(cfl_max, cfl_from_qh(qh_curr, derivative,
                                                Delta_T, _DX, _DY))
     _sync(device)
     return dict(fields=fields, t=np.asarray(ts), E=np.asarray(Es),
@@ -259,41 +340,14 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, K, n_steps, cp_steps,
                 walltime=time.time() - t0)
 
 
-def run_truth(omega_0, omega_m1, h, n_fine, cp_fine, derivative, L_hat, F_hat,
-              device):
-    """AB2CN2 at the fine step h = Delta_T/K -- the scheme's better-resolved self."""
-    from qg.solver.opt.basis import to_spectral, to_physical
-    qh_n = to_spectral(omega_0)
-    qh_m1 = to_spectral(omega_m1)
-    denom = 1.0 - 0.5 * h * L_hat
-    Nh_n = N_spectral(qh_n, derivative, F_hat)
-    Nh_m1 = N_spectral(qh_m1, derivative, F_hat)
-    out = {}
-    cps = set(cp_fine)
-    if 0 in cps:
-        out[0] = to_physical(qh_n)[0].cpu().numpy()
-    _sync(device); t0 = time.time()
-    for s in range(1, n_fine + 1):
-        qh_new = (qh_n + h * (0.5 * L_hat * qh_n
-                              + (1.5 * Nh_n - 0.5 * Nh_m1))) / denom
-        Nh_m1, Nh_n, qh_n = Nh_n, N_spectral(qh_new, derivative, F_hat), qh_new
-        if s in cps:
-            arr = to_physical(qh_n)[0].cpu().numpy()
-            out[s] = arr
-            if not np.isfinite(np.sqrt(np.mean(arr ** 2))):
-                print(f'      [truth] non-finite at fine step {s} -- stopping.')
-                break
-    _sync(device)
-    return out, time.time() - t0
-
-
 # --------------------------------------------------------------------------- #
 
 _DX = _DY = None     # module-level grid spacings set in main (used by arms)
+_LX = _LY = None     # domain lengths (sigma-hat shell cache key)
 
 
 def main():
-    global _DX, _DY
+    global _DX, _DY, _LX, _LY
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--root-dir', type=Path, required=True,
@@ -308,7 +362,8 @@ def main():
     p.add_argument('--Delta-T', type=float, default=None,
                    help='rollout coarse step (default: manifest Delta_T)')
     p.add_argument('--K', type=int, default=100,
-                   help='fine substeps per coarse step for the truth arm')
+                   help='fine RK4 substeps per coarse step -- truth refinement '
+                        'factor ONLY (does NOT enter the closure coefficient)')
     p.add_argument('--horizon-turnovers', type=float, default=10.0,
                    help='horizon in eddy turnovers (tau_eddy = 1/omega_rms(IC))')
     p.add_argument('--tau-eddy', type=float, default=None,
@@ -354,12 +409,14 @@ def main():
     K = int(args.K)
     h_fine = Delta_T / K
     _DX, _DY = Lx / Nx, Ly / Ny
+    _LX, _LY = Lx, Ly
     if manifest.get('mask') or manifest.get('scenario', '') in ('flow_past_cylinder',):
         sys.exit('masked/obstacle scenario: fixed-PHYSICAL-eta handling not '
                  'wired in this driver yet (charter 5.2); refusing.')
     print(f'[apost] grid {Ny}x{Nx} L={Lx:.4f}  nu={nu} mu={mu} beta={beta}')
-    print(f'[apost] Delta_T={Delta_T}  K={K}  h_fine={h_fine:.3e}  '
-          f'coef=DT^3(1-1/K^2)={(Delta_T**3)*(1-1/K**2):.6e}')
+    print(f'[apost] Delta_T={Delta_T}  K={K} (truth refinement only)  '
+          f'h_fine={h_fine:.3e}  coef=DT^3={Delta_T**3:.6e} '
+          f'(RK4 truth -> full Taylor defect, no (1-1/K^2))')
 
     from qg.solver.grid.cartesian import CartesianGrid
     from qg.solver.opt.derivative import Derivative
@@ -416,6 +473,19 @@ def main():
         print(f'[apost] IC: restart {args.restart_ic} + {(n_snap-1)} Delta_T '
               f'ultrafine warmup marks (RK4 @ {h_uf:.2e})')
 
+    # ---- one-time Parseval E/Z sanity vs the physical-space formulas ---- #
+    qh0 = to_spectral(omega_stack[0])
+    E_s, Z_s = scalars_from_qh(qh0, derivative, _parseval_weight(qh0, Nx))
+    om0p = to_physical(qh0)
+    ps0p = to_physical(derivative.inv_laplacian * qh0)
+    E_p = 0.5 * float((-ps0p * om0p).mean())
+    Z_p = 0.5 * float((om0p ** 2).mean())
+    if (abs(Z_s - Z_p) > 1e-9 * max(abs(Z_p), 1e-30)
+            or abs(E_s - E_p) > 1e-9 * max(abs(E_p), 1e-30)):
+        sys.exit(f'[apost] Parseval E/Z mismatch: spectral ({E_s:.6e}, {Z_s:.6e}) '
+                 f'vs physical ({E_p:.6e}, {Z_p:.6e}) -- norm convention changed?')
+    print(f'[apost] E/Z Parseval check OK: E={E_s:.6e} Z={Z_s:.6e}')
+
     # ---- horizon ---- #
     om_rms = float(torch.sqrt((omega_stack[0] ** 2).mean()))
     tau_eddy = args.tau_eddy or 1.0 / om_rms
@@ -438,10 +508,12 @@ def main():
     truth_cp = None
     if not args.no_truth:
         cp_fine = [s * K for s in cp]
-        print(f'[apost] truth: {M*K} AB2CN2 steps @ h={h_fine:.3e} ...')
-        truth_cp, t_truth = run_truth(omega_stack[0], omega_stack[1], h_fine,
-                                      M * K, cp_fine, derivative, L_hat,
-                                      F_hat, device)
+        print(f'[apost] truth: {M*K} RK4 steps @ h={h_fine:.3e} '
+              f'(rollout_timed_pareto.rollout_fine; single-step, F_phys '
+              f'physical, warmup untimed) ...')
+        truth_cp, t_truth = rollout_fine(omega_stack[0], h_fine, M * K,
+                                         cp_fine, derivative, L_hat,
+                                         F_phys, device)
         results['t_truth'] = t_truth
         npz_payload['truth_stack'] = np.stack(
             [np.asarray(truth_cp[s * K], np.float32) for s in cp
@@ -453,7 +525,7 @@ def main():
     arm_out = {}
     for arm in arms:
         print(f'[apost] arm={arm}: {M} coarse steps ...')
-        r = run_arm(arm, omega_stack, psi_stack, Delta_T, K, M, cp,
+        r = run_arm(arm, omega_stack, psi_stack, Delta_T, M, cp,
                     derivative, L_hat, F_hat, device,
                     model=model, input_fields=input_fields,
                     dealias_nn=args.dealias_nn, include_r4=args.r4,
