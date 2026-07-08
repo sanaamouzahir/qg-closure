@@ -2,6 +2,71 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-08 — session 5 (ORDER 1 resumption after supervisor disconnect)
+- Triage job 1827252 (diagnostics/diagnose_condlocal_triage.py, 42 roots, best.pt of incident
+  1827034 vs fresh physics-init "zero", --max-per-root 48 --d2) COMPLETED 21:14Z; evidence
+  committed as diagnostics/triage_condlocal_D1.csv.
+- D1 VERDICT: REAL BREAKAGE (not an unfloored-eval artifact). med≈mean and raw≈floored on
+  every root; best.pt median Ndot > 1 on 16/42 roots. Pooled med-of-root-medians, best vs
+  zero: Ndot 0.284 vs 0.196, Nddot 0.132 vs 0.257, N3dot 0.562 vs 0.327. Structure: FRC-only
+  Ndot blowup scaling ~dt^-3 (FRC Ndot med best/zero = 18.6x @5e-3, 2.4x @1e-2, 1.1x @1.5e-2;
+  DEC improves, 0.5-0.7x) => wrong ΔT power in cond_local's m=1 (Ndot) head conditioning,
+  anchored at the largest dt. N3dot best WORSE than zero on 27/42 roots (global, not DEC-512
+  quirk). Nddot is the one order training genuinely improved (0.26 -> 0.13).
+- D2 VERDICT: ALIGNED, all 10 probed TASK-0c members — recompute-from-ch0 relerr <= 9.5e-14
+  (mostly bit-exact 0); ch1 off-by-one probe clearly distinct (2e-2..8.7e-1); psi0-consistency
+  ~3e-8 == float32-disk quantization (sanctioned). No finalize_partial_build off-by-one.
+- D3 VERDICT: CLEAN — zero-init raw medians uniform across all four grid identities
+  (Ndot 0.16-0.23, Nddot 0.24-0.27); no per-sample dx-rescale bug. (256²/4π N3dot 0.73 is the
+  DEC-loRe/base small-target tail, not a grid effect.)
+- Secondary finding (floor-audit): regime[6:9] stored member-medians are pre-filter low-row
+  estimates and are 21x-46,343x too SMALL on FRC-b0/b05/b075/b1 => the 0.1-floor is inert for
+  those members and their val splits still contain ~100-2000x-under-median target samples.
+  Candidate follow-up: recompute regime[6:9] post-filter (not done this session).
+- F1 fix (training/train_deriv.py): confirmed val/best-selection ALREADY uses the floored
+  denominator (same as loss) — the suspected unfloored-val corruption does not exist. Added
+  per-order MEDIAN (same floored denominator) computed over all val samples, printed each
+  epoch next to the floored-mean and APPENDED to log.csv as val_med_{Ndot,Nddot,N3dot} after
+  elapsed_s (existing columns/positions preserved). New helper relative_l2_persample();
+  run_epoch now returns (mean, per-order mean, per-order median). CPU smoke PASSED: 1 epoch,
+  DEC-loRe sweep_dT_5em3 (FRC-256 killed — 1263 samples too slow on CPU), f64, params=3,700,
+  ep0 print "[mean: Ndot=4.537e-01 ...] [med: Ndot=4.578e-01 ...]", TEST line + log.csv
+  epoch/test rows carry val_med_{Ndot,Nddot,N3dot}. (DEC-loRe N3dot ~18-20 = that member's
+  known small-target tail, matches triage zero-init 24.8 — not a regression.)
+- F2 authority sits with the GLOBAL supervisor. Branch verdict reported: job 1827216 reruns
+  the incident config unfixed and will reproduce the dt^-3 Ndot divergence (incident last.pt
+  ep6 val 3.476 > ep0); recommend qdel 1827216/1827217 and fix the cond_local Ndot-head ΔT
+  conditioning first. Hygiene control 1827225/1827226 unaffected — keep running.
+- No pushes, no emails (global supervisor consolidates).
+
+## 2026-07-08 — session 4c (I16 playbook run: STEP-1 no-bug, ladder, control reframe, resubmits)
+- STEP 1 (bug hunt) — NO BUG: (a) lte_smoke3a_val_closure.csv rel_Ndot/Nddot(t=0) =
+  0.117/0.172 (a sign-flip reads ~2.0); (b) NEW diagnostics/diagnose_head_sign.py (DECISIONS.md):
+  signed corr per head on 3 val samples = +0.9935/+0.9851/+0.8543 → SIGN-OK; (c) inj/τ crosses 1
+  at step 4→5 (3a_val), blowup at 12 ≈ crossover+7 (same +7 in 3b: cross 3→4, blow 11).
+- Sanaa's addendum ADOPTED: ckpt is the CONTROL; rel_Nddot(0)=0.172 == the 0.19 pooled plateau
+  (per-tier gap vs kf4's raw floor 0.031 = the (ii) compromise). NO ANOMALY. Ladder reframed as
+  characterizing the control (paper "before" leg). Tomorrow's cond_local eval: run the t=0 LTE
+  row FIRST as a regression detector — acceptance rel_Nddot(0) ∈ 0.023–0.05 on kf4@1.5e-2/IC837;
+  ~0.17 ⇒ training regression, FLAG before any rollout conclusion.
+- Driver: --nn-kcut (R1) / --nn-gamma (R2) / --nn-clip (R3) added; closure-reviewer G3 PASS
+  (F1 ladder crash-masking fixed; F2/F3 informational). LTE rms_inj stays RAW by design.
+- Ladder run 1 (1827104): all rungs crashed — apost_smoke3 npz/csv/json WORKING COPIES were
+  externally deleted ~15:30–16:26 (committed csv/json restored via checkout-index from 1035414;
+  refs npz regenerating). Ladder rerun = 1827220 (refs regen + crash-abort fix).
+- Queue wipe explained: Sanaa qdel'ed the deriv7_con* trio (qstat truncates all three names to
+  'deriv7_con' — looked like duplicates; 1827034 exit 137 at ep5/300). freeW 1825543 also gone
+  (ep65, best val 0.291) — other branch's call, NOT resubmitted here. RESUBMITTED (I14, single
+  instances, DISTINCT names): condlocal_train=1827216 (+condlocal_mon 1827217 hold; live
+  watchdog dropped — it caused the duplicate confusion). Naming convention adopted: trainer and
+  monitor names must differ in the first 10 chars (qstat truncation).
+- Hygiene ablation (Sanaa PROPOSE, decided GO): first submit 1827218 died 13 s in — MY flag
+  error (train_deriv.py has no --model; exit 2 argparse, pre-dates any qdel). Corrected
+  resubmit: hygiene_train=1827225 (+hygiene_mon 1827226), 17 control roots minus Re25k@1.5e-2,
+  unconditioned, --rel-floor 0.1, run deriv7_hygiene. Predicted plateau ~0.05 pooled.
+- CHARTER v1.2 (I16 anomaly playbook, I17 one-document rule) appended to SUPERVISOR_BRIEF;
+  DECISIONS.md created (I17 bootstrap).
+
 ## 2026-07-08 — session 4b (CHARTER v1.1 retrofit, per Sanaa's [QG][GLOBAL] directive)
 - NOTE: the verbatim amendment text (I12–I15, 6.1–6.3, git-visible status) is EMAIL-ONLY — not
   in any committed tree or checkout. Operational form encoded in SUPERVISOR_BRIEF.md §CHARTER
