@@ -66,9 +66,23 @@ class DerivMemberDataset(Dataset):
         # flow), so per-sample relative errors/gradients explode there even
         # after quiescent-window filtering. The floor caps their leverage
         # without dropping the samples. Estimated from <=128 sampled rows.
+        # POST-FILTER (incident 1827034): sample the KEPT indices (union of
+        # split.npz splits), never raw packed rows — filter_quiescent_windows
+        # edits only split.npz, so packed rows still contain the quiescent
+        # windows; on late-developing members (FRC-b0/b05/b075/b1) a raw-row
+        # median lands 21x–46,343x below the developed-flow median, the floor
+        # never binds, and the near-zero-target samples poison the optimizer
+        # (prediction-shrinking collapse, rule 16).
         tgt_mm = np.load(self.root / 'packed' / 'deriv_anal_f64.npy', mmap_mode='r')
-        _pick = np.linspace(0, tgt_mm.shape[0] - 1,
-                            min(128, tgt_mm.shape[0]), dtype=int)
+        _arrs = [sp[k] for k in ('train_idx', 'val_idx', 'test_idx') if k in sp]
+        _kept = np.unique(np.concatenate(_arrs)) if _arrs else np.array([], dtype=int)
+        if len(_kept) == 0:
+            # fully-filtered member: fall back to raw rows so loader
+            # construction never crashes (ConcatDerivDataset skips len==0
+            # members AFTER init).
+            _kept = np.arange(tgt_mm.shape[0])
+        _pick = _kept[np.linspace(0, len(_kept) - 1,
+                                  min(128, len(_kept)), dtype=int)]
         _norms = np.array([[np.linalg.norm(tgt_mm[i, c]) for c in range(3)]
                            for i in _pick])                      # (P, 3)
         self.tnorm_median = np.median(_norms, axis=0)            # (3,)

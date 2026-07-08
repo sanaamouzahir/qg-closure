@@ -118,7 +118,7 @@ def main():
     # a grad_kernel width mismatch dropped by strict=False) would leave both
     # models at FD-init and make the equality gate vacuous.
     bad = [k for k in missing
-           if not (k.startswith('cond.') or k in ('k_of_channel', 'dt0_cond'))]
+           if not (k.startswith('cond.') or k in ('k_of_channel', 'dt0_cond', 'dt_ref_cond'))]
     assert not bad, f'missing SHARED weights (gate would be vacuous): {bad}'
     n_new = sum(pp.numel() for pp in cond.cond.parameters())
     print(f'[condlocal-init] shared weights copied; conditioning params={n_new}')

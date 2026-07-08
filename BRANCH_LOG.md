@@ -2,6 +2,33 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-08 — session 6 (global supervisor: incident ROOT CAUSE + fixes + resubmission)
+- ROOT CAUSE (revises session-5's "wrong dT power in the m=1 head" attribution): the
+  conditioning path was numerically DEAD in the incident ckpt — head weights O(1e-1) x
+  amp dT^(S-k) <= 5e-8 => ~1e-9 relative contribution; the Ndot damage lives in the BASE
+  path (mix max|w| 3 -> 3.59 (best) / 4.06 (last), stencils drifted). Poison mechanism:
+  deriv_dataset.py sampled floor medians from RAW packed rows, but the quiescent filter
+  edits only split.npz -> on late-developing members (FRC-b0/b05/b075/b1) the median
+  landed on quiescent rows, floors 21x-46,343x too small, floor inert, rule-16
+  prediction-distortion of the shared base path. The dt^-3-looking FRC-Ndot signature is
+  the base-path distortion surfacing where targets are relatively smallest, not an amp law.
+- FIXES ([fable-authored]): (1) deriv_dataset floor median from the UNION of split.npz
+  kept indices (+ empty-split fallback); (2) cond_local amp = (dT/dT_ref)^(S-k),
+  DT_REF_COND=1.5e-2 — Adam-visible modulation at the anchor dt, identical scaling LAW,
+  fixes the dead-path defect; (3) amp = 0 on k=0 channels (eps_0 = 0, pure-noise DOF
+  removed); (4) triage loader strict=False whitelisting dt_ref_cond (old ckpts);
+  (5) init-gate whitelist dt_ref_cond; (6) monitor emails now follow Sanaa's format
+  convention (PARAMETERS first, bold-caps titles, indented numbered spaced points).
+- GATES: model self-smoke ALL PASS (zero-init exactly 0.0; spectral-context 7.7e-17;
+  L-invariance 0.0; mixed-dx 7.9e-17); G1 OVERALL PASS (FRC-256@5e-3, kf4@1e-2,
+  DEC-512@1e-2, b05@1e-2: A worst rel 0.0, B cond==ctrl medians); post-fix floors sane
+  (b05 Ndot 8.77e3, b0 2.59e4 vs FRC-256 8.03e3, kf4 6.49e3); G4 closure-reviewer PASS
+  (both recommendations applied); G5 monitor-script PASS.
+- RESUBMISSION (I18 three-job unit): run deriv7_cond_local_v2 (T1, 41 roots, same config;
+  new run-name preserves the incident run dir). Job ids in the [QG][SUBMIT][log] email.
+- NOT touched: session-4c uncommitted work (rollout_aposteriori R1-R3 flags, sge log
+  rewiring leftovers, SUPERVISOR_BRIEF) — needs its own G3/G5 before its own submissions.
+
 ## 2026-07-08 — session 5 (ORDER 1 resumption after supervisor disconnect)
 - Triage job 1827252 (diagnostics/diagnose_condlocal_triage.py, 42 roots, best.pt of incident
   1827034 vs fresh physics-init "zero", --max-per-root 48 --d2) COMPLETED 21:14Z; evidence

@@ -30,15 +30,25 @@ estimator is reused VERBATIM from cond_grad.sigma_hat):
     (dimensionless unit-spacing Parameters, per-sample 1/dx,1/dy at forward).
   * Conditioning = tap modulation, per channel k (time-order), per direction d:
 
-        taps^(k)_d = taps_base^(k)_d + dT^(S-k) * Delta_taps_theta(features)
+        taps^(k)_d = taps_base^(k)_d
+                     + (dT/dT_ref)^(S-k) * Delta_taps_theta(features),  k >= 1
+        (k = 0: no modulation -- eps_0 = 0, the undifferenced mark carries no
+         time-FD error to absorb)
 
-    with S = n_time = 7 and the dT^(S-k) EXACT per-channel scaling applied
-    analytically (k = the time-order of the differentiated field; the Wiener
-    analysis gives delta* ~ -ik C_m (dT sigma(kappa))^(S-k), so the analytic
-    dT power is factored out and the network only learns the sigma-dependent
-    dimensionless profile). Delta_taps lives in the same DIMENSIONLESS
-    unit-spacing space as the base stencils (the per-sample 1/dx scaling is
-    applied after the sum, exactly as for the base).
+    with S = n_time = 7, dT_ref = 1.5e-2 (the sweep anchor) and the
+    (dT/dT_ref)^(S-k) per-channel scaling applied analytically (k = the
+    time-order of the differentiated field; the Wiener analysis gives
+    delta* ~ -ik C_m (dT sigma(kappa))^(S-k), so the analytic dT power is
+    factored out and the network only learns the sigma-dependent profile).
+    The dT_ref normalization is load-bearing (2026-07-08 incident postmortem):
+    the raw dT^(S-k) amplitude is 1e-11..1e-16 in absolute units, which made
+    the whole conditioning path numerically DEAD (verified on the 1827034
+    ckpt: max contribution ~1e-9 relative with O(1e-1) trained head weights).
+    Normalizing by dT_ref^(S-k) preserves the exact scaling LAW across the
+    sweep and puts Delta_taps at the physical scale of the correction at the
+    anchor dt. Delta_taps lives in the same DIMENSIONLESS unit-spacing space
+    as the base stencils (the per-sample 1/dx scaling is applied after the
+    sum, exactly as for the base).
   * Delta_taps_theta: shared 2-layer tanh trunk + one zero-init linear head
     emitting 15 taps per (channel, direction) -- 2*n_ord channels x 2
     directions x width taps. Zero-init final layer => at init the modulation
@@ -73,6 +83,7 @@ from cond_grad import sigma_hat, sigma_hat_spec
 
 
 REL_SHELLS = (0.15, 0.30, 0.50, 0.70, 0.85)
+DT_REF_COND = 1.5e-2   # sweep-anchor dt for the (dT/dT_ref)^(S-k) amplitude
 
 
 class TapModulator(nn.Module):
@@ -123,15 +134,29 @@ class CondLocalDerivClosureNet(CheapDerivClosureNet):
                          grad_kernel=grad_kernel, dt=dt, dx=dx, dy=dy,
                          physics_init=physics_init,
                          hidden_channels=hidden_channels, depth=depth)
-        self.S = n_time                      # dT^(S-k) analytic power, S = 7
+        self.S = n_time                      # (dT/dT_ref)^(S-k) analytic power, S = 7
         self.width = grad_kernel
         # channels of the grad stage: [omega^(0..n_ord-1), psi^(0..n_ord-1)]
         self.cond = TapModulator(n_feats=2 * len(REL_SHELLS),
                                  n_channels=2 * self.n_ord,
                                  width=grad_kernel, hidden=cond_hidden)
-        # per-channel time-order k (omega block then psi block) for dT^(S-k)
+        # per-channel time-order k (omega block then psi block) for the
+        # (dT/dT_ref)^(S-k) amplitude. Two fixes vs the 1827034-era raw
+        # dT^(S-k) (incident postmortem, 2026-07-08):
+        #   * NORMALIZED by dT_ref (largest sweep dt): raw dT^(S-k) is
+        #     1e-11..1e-16 in absolute units, so the modulation could never
+        #     influence the output with O(1e-1) head weights — the entire
+        #     conditioning path was numerically DEAD (verified on the incident
+        #     ckpt: contribution ~1e-9 relative). Dividing by dT_ref^(S-k)
+        #     keeps the exact dT-scaling LAW across the sweep while letting
+        #     Delta_taps live at the physical scale of the correction at the
+        #     anchor dt — Adam-visible, dimensionless.
+        #   * k=0 channels get amp = 0 exactly: eps_0 = 0 (the undifferenced
+        #     mark has no time-FD error to absorb); a k=0 modulation is a
+        #     pure-noise degree of freedom.
         k_of_channel = torch.arange(self.n_ord).repeat(2).to(torch.float64)
         self.register_buffer('k_of_channel', k_of_channel)
+        self.register_buffer('dt_ref_cond', torch.tensor(float(DT_REF_COND)))
         self.register_buffer('dt0_cond', torch.tensor(float(dt)))
         self._ctx_calls = 0                  # per-forward context counter
 
@@ -249,10 +274,13 @@ class CondLocalDerivClosureNet(CheapDerivClosureNet):
             assert self._ctx_calls == 1, \
                 f"context computed {self._ctx_calls}x per forward (must be exactly 1)"
 
-        # ---- tap deltas, analytic per-channel dT^(S-k) scaling ---- #
+        # ---- tap deltas, analytic per-channel (dT/dT_ref)^(S-k) scaling ---- #
         delta = self.cond(feats.to(self.cond.head.weight.dtype))  # (B,2no,2,W)
-        amp = dt_vec.view(B, 1).to(delta.dtype) ** \
-            (self.S - self.k_of_channel.to(delta.dtype)).view(1, -1)  # (B,2no)
+        kvec = self.k_of_channel.to(delta.dtype)
+        amp = (dt_vec.view(B, 1).to(delta.dtype)
+               / self.dt_ref_cond.to(delta.dtype)) ** \
+            (self.S - kvec).view(1, -1)                            # (B,2no)
+        amp = amp * (kvec > 0).to(delta.dtype).view(1, -1)         # eps_0 = 0
         delta = delta * amp.view(B, 2 * no, 1, 1)
 
         # ---- gradients: control base path + zero-init modulation path ---- #

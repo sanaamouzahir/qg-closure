@@ -175,7 +175,12 @@ def main():
         m.eval()
         return m
 
-    m_best = fresh(); m_best.load_state_dict(ck['model']); m_best.eval()
+    # strict=False: pre-dt_ref_cond ckpts (e.g. incident 1827034) lack the
+    # buffer added 2026-07-08; anything else missing is a real error.
+    m_best = fresh()
+    _miss, _unexp = m_best.load_state_dict(ck['model'], strict=False)
+    assert not _unexp and set(_miss) <= {'dt_ref_cond'}, (_miss, _unexp)
+    m_best.eval()
     m_zero = fresh()
 
     proj = build_projections(mans, dev)
