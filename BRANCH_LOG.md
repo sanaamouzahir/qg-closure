@@ -2,6 +2,22 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-08 — AMENDMENT 02 received + committed (global supervisor); CP-1 BLOCKED on missing theory doc
+- AMENDMENT 02 committed verbatim: docs/briefs/AMENDMENT_02_workflow.md. Precedence now
+  Amendment 02 > Amendment 01 > charter. Adopted immediately: CYLINDER-ONLY scope (all
+  FPC-cape items SUSPENDED, not cancelled); f64 solve / f32-at-write storage; dt_save
+  0.25 t.u. (save_rate 1000), MOD-const runs 0.27 (save_rate 1080); scalars every 10
+  steps; §3 ABSOLUTE rule: no .py execution on the login/frontend node (qsub/qlogin
+  only; submit-only shell scripts exempt; violations are FLAG-level).
+- BLOCKER: the accompanying theory document `Supervisor_simulation.md` was NOT attached
+  and exists nowhere on the filesystem (searched QG_ROOT, all worktrees, docs/, home).
+  Amendment 02 gates ALL planning (CP-1 included) on reading it in full — audits A/B,
+  the commensurability rates, the §7.1 tables, and the §9 storage rule all reference
+  its sections. [QG][FLAG][SGS-CLOSURE] sent; per the choreography the team WAITS.
+- NOT started (correctly, per the gate): CP-1 plan, audit_decorrelation.py,
+  audit_resolution.py, storage re-estimate. Phase A artifacts + Gate-1 hold state
+  unchanged (see session entries below).
+
 ## 2026-07-08 — charter adoption record + I18 tooling (written by global supervisor)
 - CHARTER v1.1 is CANONICAL ON MAIN (2056b46; merged into this branch as 5cc2e82
   2026-07-08). The email-appended v1.1 text is superseded by the file; canonical wins on
