@@ -62,6 +62,8 @@ train_deriv.py --model cond_local. Same CLI surface as cheap_deriv
 
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -163,18 +165,26 @@ class CondLocalDerivClosureNet(CheapDerivClosureNet):
         sig, _ = sigma_hat_spec(qh0, qh_diff, dt_vec, Lx, Ly, Ny, Nx)
         return self._feats_from_sig(sig, dt_vec)
 
-    @staticmethod
-    def _uniform_spacing(v, default: torch.Tensor, name: str) -> float:
-        if v is None:
-            return float(default)
-        if torch.is_tensor(v):
-            v = v.reshape(-1)
-            if v.numel() > 1 and float(v.max() - v.min()) >= 1e-12:
-                raise ValueError(
-                    f"cond_local needs a grid-uniform batch: {name} spans "
-                    f"[{float(v.min()):.6e}, {float(v.max()):.6e}]")
-            return float(v[0])
-        return float(v)
+    def _assert_square(self, dx, dy, Ny: int, Nx: int):
+        """Per-sample squareness guard (Lx_i == Ly_i), replacing the old
+        grid-uniform-batch guard. The sigma-hat shells are MODE-INDEX shells
+        for square domains -- kmag ~ 1/L cancels exactly in
+        shell = round(kmag * Lx / 2pi) -- so the context features are
+        L-invariant per sample and mixed-dx batches (same SHAPE, different
+        domain L: the multigrid trap, hit by the 41-root pool where 512^2/2pi
+        DEC members batch with 512^2/4pi FRC members) are exact. Anisotropic
+        (Lx != Ly) samples would break the shell binning and are refused,
+        matching the project-wide isotropy guard."""
+        dxv = self.grad.dx0 if dx is None else dx
+        dyv = self.grad.dy0 if dy is None else dy
+        dxv = dxv.reshape(-1) if torch.is_tensor(dxv) else torch.tensor([float(dxv)])
+        dyv = dyv.reshape(-1) if torch.is_tensor(dyv) else torch.tensor([float(dyv)])
+        ratio = (dxv * Nx) / (dyv.to(dxv.device, dxv.dtype) * Ny)
+        if float((ratio - 1.0).abs().max()) > 1e-9:
+            raise ValueError(
+                f"cond_local sigma-hat context needs SQUARE domains "
+                f"(Lx_i == Ly_i); got Lx/Ly in "
+                f"[{float(ratio.min()):.6e}, {float(ratio.max()):.6e}]")
 
     def _mod_grads(self, allf, delta_taps, dx, dy):
         """Per-sample 1D modulation convs (grouped conv over B*C).
@@ -228,10 +238,14 @@ class CondLocalDerivClosureNet(CheapDerivClosureNet):
             # from the stepper's spectral qh states (zero FFTs this forward).
             feats = cond_feats
         else:
-            Lx = Nx * self._uniform_spacing(dx, self.grad.dx0, 'dx')
-            Ly = Ny * self._uniform_spacing(dy, self.grad.dy0, 'dy')
-            # sigma-hat reads the two newest PHYSICAL omega marks (raw channels).
-            feats = self._context_feats(x[:, 0], x[:, 1], dt_vec, Lx, Ly)
+            # sigma-hat reads the two newest PHYSICAL omega marks (raw
+            # channels). Shells are L-invariant for square domains (see
+            # _assert_square), so a CANONICAL L = 2pi serves every sample in
+            # a mixed-dx batch -- bit-identical to the per-domain L on any
+            # batch the old grid-uniform guard would have admitted.
+            self._assert_square(dx, dy, Ny, Nx)
+            feats = self._context_feats(x[:, 0], x[:, 1], dt_vec,
+                                        2.0 * math.pi, 2.0 * math.pi)
             assert self._ctx_calls == 1, \
                 f"context computed {self._ctx_calls}x per forward (must be exactly 1)"
 
@@ -304,3 +318,27 @@ if __name__ == '__main__':
     r = float((y_int - y_ext).abs().max() / y_int.abs().max().clamp_min(1e-30))
     print(f"spectral-context vs internal-context forward: max rel = {r:.3e}")
     assert r < 1e-10
+
+    # L-invariance of the context (square domains: shells are mode-index
+    # shells, kmag ~ 1/L cancels in the binning) -- the fact that makes
+    # mixed-dx batches (the multigrid trap) exact.
+    with torch.no_grad():
+        fA = cond._context_feats(x[:, 0], x[:, 1], dt, 4 * math.pi, 4 * math.pi)
+        fB = cond._context_feats(x[:, 0], x[:, 1], dt, 2 * math.pi, 2 * math.pi)
+    dL = float((fA - fB).abs().max())
+    print(f"context feats L=4pi vs L=2pi: max|diff| = {dL:.3e}")
+    assert dL == 0.0
+
+    # mixed-dx batch (512^2/4pi with 512^2/2pi in ONE batch -- what the
+    # 41-root pool produces) == the two single-sample forwards.
+    with torch.no_grad():
+        dx_mix = torch.tensor([4 * math.pi / Nx, 2 * math.pi / Nx],
+                              dtype=torch.float64)
+        y_mix = cond(x, dt=dt, dx=dx_mix, dy=dx_mix)
+        y_one = torch.cat([cond(x[0:1], dt=dt[0:1], dx=dx_mix[0:1],
+                                dy=dx_mix[0:1]),
+                           cond(x[1:2], dt=dt[1:2], dx=dx_mix[1:2],
+                                dy=dx_mix[1:2])])
+    dm = float((y_mix - y_one).abs().max() / y_one.abs().max().clamp_min(1e-30))
+    print(f"mixed-dx batch vs per-sample forwards: max rel = {dm:.3e}")
+    assert dm < 1e-12
