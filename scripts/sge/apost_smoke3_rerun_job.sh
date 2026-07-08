@@ -3,7 +3,8 @@
 #$ -q ibgpu.q
 #$ -l gpu=1
 #$ -j y
-#$ -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/training/logs/apost_smoke3.log
+#$ -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.log
+#$ -e /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.err
 #$ -cwd
 #$ -m ea
 #$ -M sanaamz@mit.edu

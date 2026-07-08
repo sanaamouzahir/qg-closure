@@ -66,7 +66,7 @@ fi
 # Instead, we just call train_v2_annealing.py directly through a small inline
 # qsub.  This avoids editing train_v2.sh.
 
-LOG_DIR="$QG_DIR/logs"
+LOG_DIR="$QG_ROOT/qg-wiener-conditioning/logs"
 mkdir -p "$LOG_DIR"
 JOB_LOG="$LOG_DIR/${JOBNAME}.log"
 
@@ -78,12 +78,12 @@ PY_ARGS=(
     --target-field   f_NN_target
     --batch-size     4
     --epochs         200
-    --lr             3e-4
-    --weight-decay   1e-4
+    --lr             3.0e-4
+    --weight-decay   1.0e-4
     --lr-schedule    simulated_annealing
     --warm-restart-T0     20
     --warm-restart-Tmult  2
-    --lr-min         1e-6
+    --lr-min         1.0e-6
     --sa-damping     0.7
     --hidden-channels 64
     --kernel         3
@@ -119,6 +119,7 @@ qsub -N "$JOBNAME" \
      -o "$JOB_LOG" -e "$JOB_LOG" -j y -V \
      -wd "$TRAINING_DIR" \
      -q "ibgpu.q" -l "gpu=1" \
+     -m ea -M "${QG_NOTIFY_EMAIL:-sanaamz@mit.edu}" \
      "$TMP_JOB"
 
 echo

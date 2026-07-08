@@ -21,7 +21,7 @@ done
 QG_ROOT=/gdata/projects/ml_scope/Closure_modeling/QG-closure
 VENV=$QG_ROOT/qg-env
 QG_DIR=$QG_ROOT/qg-simple-package-stable/src/qg
-LOG_DIR=$QG_DIR/logs
+LOG_DIR=/gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs
 
 # Resolve SCRIPT next to this shell script (works whether invoked from
 # plotting/trainvD/ or anywhere else).
@@ -54,7 +54,8 @@ cat > "$JOB_SCRIPT" <<EOF
 #\$ -q ibgpu.q
 #\$ -l gpu=1
 #\$ -j y
-#\$ -o $LOG_DIR/${JOBNAME}.log
+#\$ -o $LOG_DIR/\$JOB_NAME.\$JOB_ID.log
+#\$ -e $LOG_DIR/\$JOB_NAME.\$JOB_ID.err
 #\$ -cwd
 
 source $VENV/bin/activate
@@ -65,4 +66,4 @@ EOF
 chmod +x "$JOB_SCRIPT"
 echo "[rollout] submitting $JOBNAME ..."
 qsub "$JOB_SCRIPT"
-echo "[rollout] log: $LOG_DIR/${JOBNAME}.log"
+echo "[rollout] log: $LOG_DIR/${JOBNAME}.*.log"

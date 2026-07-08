@@ -5,12 +5,12 @@
 #   qsub -N <jobname> -o <stdout.log> -e <stderr.log> [scheduler-flags] qg_job.sh <args...>
 #
 # All <args...> are passed verbatim to run_qg.py. Examples:
-#   qsub -N cape_512 -o logs/cape_512.log -e logs/cape_512.err -j y \
-#        -l h_vmem=16G -q ibfdr.q \
+#   qsub -N cape_512 -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/cape_512.log -e /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/cape_512.err -j y \
+#        -q ibfdr.q \
 #        qg_job.sh scenario=flow_past_cape qg.grid.Nx=512 qg.grid.Ny=512 \
 #                  qg.time.T=20 hydra.run.dir=outputs/cape_v3_512_T20
 #
-#   qsub -N cape_gpu -o logs/cape_gpu.log -e logs/cape_gpu.err -j y \
+#   qsub -N cape_gpu -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/cape_gpu.log -e /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/cape_gpu.err -j y \
 #        -l gpu=1 -q ibgpu.q \
 #        qg_job.sh scenario=flow_past_cape qg.grid.Nx=1024 qg.grid.Ny=1024 \
 #                  +qg.grid.device=cuda qg.time.T=20 hydra.run.dir=outputs/cape_v3_1024_gpu
@@ -20,6 +20,8 @@
 #$ -S /bin/bash
 #$ -cwd                      # run in submission dir
 #$ -V                        # inherit environment
+#$ -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.log
+#$ -e /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.err
 
 set -e
 

@@ -134,13 +134,22 @@ def main():
             if cur['val'] < best_val:
                 best_val, best_ep = cur['val'], cur_ep
 
-            # EXPLODE
+            # EXPLODE -- action path per CHARTER v1.1 I14: the branch
+            # supervisor qdels the run, diagnoses, and RESUBMITS under its
+            # own authority (qdel+resubmit rights). Do NOT park it as
+            # [QG][BLOCKED]; BLOCKED is only for what the branch cannot fix.
             for key in ('train', 'val'):
                 if cur[key] != cur[key] or cur[key] in (float('inf'), float('-inf')):
-                    sys.exit(verdict('EXPLODE', f"ep{cur_ep} {key}={cur[key]} (NaN/Inf)."))
+                    sys.exit(verdict('EXPLODE', f"ep{cur_ep} {key}={cur[key]} "
+                                                "(NaN/Inf). ACTION per I14: "
+                                                "qdel + diagnose + resubmit "
+                                                "(branch authority; not BLOCKED)."))
             if cur['val'] > EXPLODE_ABS or (ep0 and cur['val'] > EXPLODE_REL * ep0['val']):
                 sys.exit(verdict('EXPLODE', f"ep{cur_ep} val={cur['val']:.3e} "
-                                            f"(ep0 {ep0['val']:.3e}); blow-up."))
+                                            f"(ep0 {ep0['val']:.3e}); blow-up. "
+                                            "ACTION per I14: qdel + diagnose + "
+                                            "resubmit (branch authority; not "
+                                            "BLOCKED)."))
             # LR-SANITY
             if cur_ep >= LR_CHECK_EP and ep0 and cur['train'] > ep0['train']:
                 sys.exit(verdict('LR-SANITY', f"ep{cur_ep} train={cur['train']:.3e} > "

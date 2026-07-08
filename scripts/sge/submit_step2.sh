@@ -58,7 +58,7 @@ while [ $# -gt 0 ]; do
 done
 
 mkdir -p "$OUT_DIR"
-LOG_DIR="$QG_DIR/logs"
+LOG_DIR="$QG_ROOT/qg-wiener-conditioning/logs"
 mkdir -p "$LOG_DIR"
 
 # Inject the default csv only if the user didn't pass one explicitly AND it exists
@@ -132,8 +132,7 @@ else
         -j y
         -cwd
         -V
-        -q "ibamd.q"
-        -l "h_vmem=2G"   # 3 snapshots only; tiny memory footprint
+        -q "ibfdr.q"
     )
 
     qsub "${QSUB_FLAGS[@]}" "$JOB_SCRIPT" "${PYTHON_ARGS[@]}"

@@ -55,7 +55,7 @@ while [ $# -gt 0 ]; do
 done
 
 mkdir -p "$OUT_DIR"
-LOG_DIR="$QG_DIR/logs"
+LOG_DIR="$QG_ROOT/qg-wiener-conditioning/logs"
 mkdir -p "$LOG_DIR"
 
 # ---- Sanity check the sweep root ------------------------------------------ #
@@ -127,8 +127,7 @@ else
         -j y
         -cwd
         -V
-        -q "ibamd.q"
-        -l "h_vmem=4G"
+        -q "ibfdr.q"
     )
 
     qsub "${QSUB_FLAGS[@]}" "$JOB_SCRIPT" "${PYTHON_ARGS[@]}"

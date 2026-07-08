@@ -1,6 +1,7 @@
 #!/bin/bash
 # train_delta_job.sh - SGE worker for train_delta.py (hybrid delta closure)
-#$ -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/logs/$JOB_NAME.$JOB_ID.log
+#$ -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.log
+#$ -e /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.err
 #$ -j y
 set -e
 QG_ROOT=/gdata/projects/ml_scope/Closure_modeling/QG-closure

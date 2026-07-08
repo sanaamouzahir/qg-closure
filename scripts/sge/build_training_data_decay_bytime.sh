@@ -75,7 +75,7 @@ if [ ! -f "$SOURCE_OMEGA" ]; then
 fi
 
 mkdir -p "$OUT_DIR"
-LOG_DIR="$QG_DIR/logs"
+LOG_DIR="$QG_ROOT/qg-wiener-conditioning/logs"
 mkdir -p "$LOG_DIR"
 
 # ---- Banner --------------------------------------------------------------- #

@@ -36,7 +36,7 @@ QG_ROOT=/gdata/projects/ml_scope/Closure_modeling/QG-closure
 VENV=$QG_ROOT/qg-env
 QG_DIR=$QG_ROOT/qg-simple-package-stable/src/qg
 SCRIPT_DIR=$QG_DIR/training
-LOG_DIR=$QG_DIR/logs
+LOG_DIR=/gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs
 PY=build_training_data_mmap.py
 
 ENSEMBLE_DIR=$QG_DIR/outputs/Step_size_resolution_closure_ensemble
@@ -207,7 +207,8 @@ submit_or_run() {  # $1=member
 #\$ -q ibgpu.q
 #\$ -l gpu=1
 #\$ -j y
-#\$ -o $LOG_DIR/${jobname}.log
+#\$ -o $LOG_DIR/\$JOB_NAME.\$JOB_ID.log
+#\$ -e $LOG_DIR/\$JOB_NAME.\$JOB_ID.err
 #\$ -cwd
 set -e
 source $VENV/bin/activate
@@ -237,5 +238,5 @@ done
 if [[ "$DRY_RUN" == "1" ]]; then
     echo "[ensemble-build] dry run complete -- nothing submitted."
 else
-    echo "[ensemble-build] submitted; logs in $LOG_DIR/${JOBNAME_PREFIX}_<member>.log"
+    echo "[ensemble-build] submitted; logs in $LOG_DIR/${JOBNAME_PREFIX}_<member>.*.log"
 fi

@@ -46,7 +46,7 @@ fi
 shift
 
 QG_ROOT=/gdata/projects/ml_scope/Closure_modeling/QG-closure
-LOG_DIR="$QG_ROOT/qg-simple-package-stable/src/qg/logs"
+LOG_DIR="$QG_ROOT/qg-wiener-conditioning/logs"
 mkdir -p "$LOG_DIR"
 
 LOG="$LOG_DIR/${JOBNAME}.log"
@@ -59,6 +59,8 @@ QSUB_FLAGS=(
     -j y                  # merge stderr into stdout
     -cwd
     -V
+    -m ea
+    -M "${QG_NOTIFY_EMAIL:-sanaamz@mit.edu}"
 )
 
 if [ "$USE_GPU" -eq 1 ]; then
@@ -67,10 +69,8 @@ if [ "$USE_GPU" -eq 1 ]; then
     QSUB_FLAGS+=(-q ibgpu.q)
     QSUB_FLAGS+=(-l "gpu=1")
 else
-    # CPU job. ibfdr.q is one of the CPU queues we've used; remove if your
-    # cluster doesn't have it (then SGE picks any default queue).
-    QSUB_FLAGS+=(-q "ibfdr.q,ibamd.q")
-    QSUB_FLAGS+=(-l "h_vmem=16G")
+    # CPU job (hard rule: the amd queue and per-job vmem requests are forbidden).
+    QSUB_FLAGS+=(-q "ibfdr.q")
 fi
 
 echo "Submitting job '$JOBNAME'"

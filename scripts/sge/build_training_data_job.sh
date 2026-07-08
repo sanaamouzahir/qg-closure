@@ -2,6 +2,8 @@
 # build_training_data_job.sh - SGE worker for build_training_data.py
 # Args: forwarded verbatim to build_training_data.py.
 
+#$ -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.log
+#$ -e /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.err
 set -e
 
 QG_ROOT=/gdata/projects/ml_scope/Closure_modeling/QG-closure

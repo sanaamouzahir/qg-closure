@@ -8,8 +8,8 @@
 # All <args...> are passed verbatim to compute_pi_ff.py.
 #
 # Example (single):
-#   qsub -N pi_beta0p0 -o logs/pi_beta0p0.log -e logs/pi_beta0p0.err -j y \
-#        -l gpu=0 -q ibgpu.q \
+#   qsub -N pi_beta0p0 -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/pi_beta0p0.log -e /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/pi_beta0p0.err -j y \
+#        -l gpu=1 -q ibgpu.q \
 #        compute_pi_ff_job.sh outputs/cape_sweep/beta_0p0 --scale 2 --alpha 1.5 --device cuda
 #
 # This script handles:
@@ -21,6 +21,8 @@
 #$ -S /bin/bash
 #$ -cwd
 #$ -V
+#$ -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.log
+#$ -e /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.err
 
 set -e
 

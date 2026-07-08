@@ -80,3 +80,21 @@ Body: ≤10 lines, numbers first, no prose.
 - `PROPOSE` body: hypothesis / why / cost / kill criterion (4 lines).
 - `BLOCKED` body: what's stuck + what Sanaa must do.
 If categorization is unclear: use `FLAG`, line 1 `categorization uncertain`.
+
+## CHARTER v1.1 adoption (2026-07-08, from Sanaa's [QG][GLOBAL] directive — operational form;
+## the verbatim amendment text I12–I15 / 6.1–6.3 was email-appended and is NOT yet in the repo)
+- **Autonomy update (supersedes "ask-gated qsub" above and the 07-07 per-step GO):** Sanaa
+  2026-07-08: act autonomously, report after. Submit via sge-checker → qsub, then report
+  (job id, what, cost). Lead with cost/duration on multi-day runs so she can kill early.
+- **I14 (qdel+resubmit rights):** on monitor EXPLODE, the branch supervisor qdels, diagnoses,
+  and resubmits under its OWN authority. `BLOCKED` is only for what the branch cannot fix.
+  monitor_training.py's EXPLODE verdict now names this action path.
+- **I15 (K rule):** deployment evaluations at **K ≥ 100** (this branch runs tighter:
+  h_fine = ΔT/K ≤ 1e-5 for accuracy tables — driver warns above 2.5e-5). Anything at
+  smaller K is a SMOKE and must be labeled `SMOKE` in every table it appears in.
+- **6.1 email format (from the directive; verbatim spec pending):** parameter header FIRST
+  (member/ΔT/K/IC/ckpt/job-id as applicable), `NEXT:` block LAST, in every email. Applies
+  from the next email onward; nothing old resent.
+- **Log wiring:** every SGE .sh writes `#$ -o/-e` to this branch's `logs/` as
+  `$JOB_NAME.$JOB_ID.log|.err` (qg-free-time-fd pattern). sge-checker audits this.
+- **Ledgers:** BRANCH_LOG.md + diagnostics/RESULTS_*.md committed AND pushed same-day.

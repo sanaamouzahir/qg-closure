@@ -38,7 +38,7 @@ QSUB=(qsub -q ibgpu.q -l gpu=1 -N deriv7_cond -j y
   --model cond_deriv
   --sweep-roots "${ROOTS[@]}"
   --n-snapshots 7 --out-orders 3
-  --epochs 300 --lr 5e-5 --batch-size 4 --compute-dtype float64
+  --epochs 300 --lr 5.0e-5 --batch-size 4 --compute-dtype float64
   --rel-floor 0.1
   --run-name deriv7_cond)
 

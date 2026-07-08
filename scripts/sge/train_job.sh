@@ -1,5 +1,7 @@
 #!/bin/bash
 # train_job.sh - SGE worker for train.py
+#$ -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.log
+#$ -e /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.err
 set -e
 QG_ROOT=/gdata/projects/ml_scope/Closure_modeling/QG-closure
 source "$QG_ROOT/qg-env/bin/activate"

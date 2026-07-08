@@ -56,7 +56,7 @@ while [ $# -gt 0 ]; do
 done
 
 mkdir -p "$OUT_DIR"
-LOG_DIR="$QG_DIR/logs"
+LOG_DIR="$QG_ROOT/qg-wiener-conditioning/logs"
 mkdir -p "$LOG_DIR"
 
 # ---- Sanity check the sweep root ------------------------------------------ #
@@ -137,8 +137,7 @@ if [ "$DO_CONVERT" -eq 1 ]; then
             -j y
             -cwd
             -V
-            -q "ibamd.q"
-            -l "h_vmem=6G"
+            -q "ibfdr.q"
         )
 
         CONVERT_QSUB_OUT=$(qsub -terse "${CONVERT_QSUB_FLAGS[@]}" \

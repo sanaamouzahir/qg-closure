@@ -15,7 +15,7 @@ set -e
 QG_ROOT=/gdata/projects/ml_scope/Closure_modeling/QG-closure
 QG_DIR="$QG_ROOT/qg-simple-package-stable/src/qg"
 TRAINING_DIR="$QG_DIR/training"
-LOG_DIR="$QG_DIR/logs"
+LOG_DIR="$QG_ROOT/qg-wiener-conditioning/logs"
 mkdir -p "$LOG_DIR"
 
 JOBNAME="build_td_decay_fixD_v2_K1000_dealiased_f64"

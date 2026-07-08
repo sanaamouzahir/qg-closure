@@ -4,6 +4,8 @@
 # SGE worker that runs prepare_npz_for_mmap.py.
 # Lives next to step1 in Convergence_studies/.
 
+#$ -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.log
+#$ -e /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.err
 set -e
 
 QG_ROOT=/gdata/projects/ml_scope/Closure_modeling/QG-closure

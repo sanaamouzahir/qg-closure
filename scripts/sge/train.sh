@@ -24,7 +24,7 @@ while [ $# -gt 0 ]; do
         *)              EXTRA_ARGS+=("$1"); shift ;;
     esac
 done
-LOG_DIR="$QG_DIR/logs"
+LOG_DIR="$QG_ROOT/qg-wiener-conditioning/logs"
 mkdir -p "$LOG_DIR"
 PYTHON_ARGS=("${EXTRA_ARGS[@]}")
 if [ "$INTERACTIVE" -eq 1 ]; then
@@ -47,6 +47,8 @@ QSUB_FLAGS=(
     -wd "$SCRIPT_DIR"
     -q "ibgpu.q"
     -l "gpu=1"
+    -m ea
+    -M "${QG_NOTIFY_EMAIL:-sanaamz@mit.edu}"
 )
 echo "submitting train.py ($JOBNAME) -> $JOB_LOG"
 echo "  workdir: $SCRIPT_DIR"

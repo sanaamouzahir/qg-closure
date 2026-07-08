@@ -2,6 +2,30 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-08 — session 4b (CHARTER v1.1 retrofit, per Sanaa's [QG][GLOBAL] directive)
+- NOTE: the verbatim amendment text (I12–I15, 6.1–6.3, git-visible status) is EMAIL-ONLY — not
+  in any committed tree or checkout. Operational form encoded in SUPERVISOR_BRIEF.md §CHARTER
+  v1.1 adoption; needs the real file landed on main (global supervisor) to replace it.
+- logs/: branch-root `logs/` created; ALL 45 scripts/sge/*.sh rewired — `#$ -o/-e` (or qsub-arg
+  `-o/-e`) → `qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.log|.err` (free-time-fd pattern).
+  33 modified, 12 legitimately untouched. bash -n all-pass; sge-checker full-dir audit run.
+- sge-checker also caught PRE-EXISTING hard-rule violations in legacy wrappers — fixed: forbidden
+  CPU queue + per-job vmem requests removed (submit_qg, submit_step1/2/3, submit_pi_ff → ibfdr.q),
+  gpu=0→gpu=1 (submit_pi_ff + compute_pi_ff comment), missing -m ea -M added (submit_qg, train,
+  train_v2, train_decay_fixD_v2_annealing, train_deriv_condlocal_job), 5e-5→5.0e-5-style float
+  tokens (submit_deriv7_cond, train_decay_fixD_v2_annealing), stale forbidden-token comment
+  examples scrubbed (qg_job.sh).
+- I14: monitor_training.py EXPLODE verdicts now print "ACTION per I14: qdel + diagnose +
+  resubmit (branch authority; not BLOCKED)".
+- I15: this branch already tighter than K≥100 (h_fine ≤1e-5 rule + driver warning; smoke3 used
+  K=1500/500/1000). Nothing queued at K<100. All smoke tables carry the smoke label in the name.
+- Item 3 (SUBMIT emails for running jobs): NO-OP — 1827034/35/36 emailed (session 3),
+  1825543/44 emailed (free-time-fd BRANCH_LOG line 13).
+- Deferred to global: 7 sweep wrappers (submit_beta_sweep, submit_cyl_sweep_v4, ...) delegate to
+  package-stable submitters OUTSIDE this worktree — their jobs still log to the old dir until
+  those external copies are retrofitted or SUBMIT_SCRIPT is repointed. Charter decision needed.
+- Ledgers pushed same-day (BRANCH_LOG + diagnostics/RESULTS_*; logs/ stays gitignored).
+
 ## 2026-07-08 — session 4 (Sanaa's smoke-2 checks: r3only verified, K fixed, blowup ISOLATED)
 - Sanaa's directives: (1) check r3only≈bare, (2) add full-analytic-LTE diagnostic, (3) triple-check
   developed flow / ΔT³·(1/12)·L prefactors / signs, (4) K=20 too coarse — truth must be ~analytic.

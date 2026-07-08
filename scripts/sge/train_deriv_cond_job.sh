@@ -11,7 +11,8 @@
 # Submit (GPU rule: exactly -q ibgpu.q -l gpu=1; never -l h_vmem, never ibamd.q):
 #   qsub -q ibgpu.q -l gpu=1 -N deriv7_cond \
 #        scripts/sge/train_deriv_cond_job.sh --model cond_deriv <args...>
-#$ -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/logs/$JOB_NAME.$JOB_ID.log
+#$ -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.log
+#$ -e /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.err
 set -e
 QG_ROOT=/gdata/projects/ml_scope/Closure_modeling/QG-closure
 source "$QG_ROOT/qg-env/bin/activate"

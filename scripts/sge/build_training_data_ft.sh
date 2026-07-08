@@ -30,7 +30,7 @@ QG_ROOT=/gdata/projects/ml_scope/Closure_modeling/QG-closure
 VENV=$QG_ROOT/qg-env
 QG_DIR=$QG_ROOT/qg-simple-package-stable/src/qg
 SCRIPT_DIR=$QG_DIR/training
-LOG_DIR=$QG_DIR/logs
+LOG_DIR=/gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs
 PY=build_training_data_mmap.py
 
 # ---- Source data (20-member forced ensemble, dt=1e-5) --------------------- #
@@ -110,7 +110,8 @@ cat > "$JOB_SCRIPT" <<EOF
 #\$ -q ibgpu.q
 #\$ -l gpu=1
 #\$ -j y
-#\$ -o $LOG_DIR/${JOBNAME}.log
+#\$ -o $LOG_DIR/\$JOB_NAME.\$JOB_ID.log
+#\$ -e $LOG_DIR/\$JOB_NAME.\$JOB_ID.err
 #\$ -cwd
 set -e
 source $VENV/bin/activate
@@ -124,5 +125,5 @@ echo "[ft-build] done $(date -u +%FT%TZ)"
 EOF
 chmod +x "$JOB_SCRIPT"
 echo "[ft-build] submitting $JOBNAME"
-echo "[ft-build] log: $LOG_DIR/${JOBNAME}.log"
+echo "[ft-build] log: $LOG_DIR/${JOBNAME}.*.log"
 qsub "$JOB_SCRIPT"

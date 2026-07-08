@@ -43,7 +43,7 @@ fi
 shift
 
 QG_ROOT=/gdata/projects/ml_scope/Closure_modeling/QG-closure
-LOG_DIR="$QG_ROOT/qg-simple-package-stable/src/qg/logs"
+LOG_DIR="$QG_ROOT/qg-wiener-conditioning/logs"
 mkdir -p "$LOG_DIR"
 export PYTHONDONTWRITEBYTECODE=1
 LOG="$LOG_DIR/${JOBNAME}.log"
@@ -60,10 +60,9 @@ QSUB_FLAGS=(
 
 if [ "$USE_GPU" -eq 1 ]; then
     QSUB_FLAGS+=(-q ibgpu.q)
-    QSUB_FLAGS+=(-l "gpu=0")
+    QSUB_FLAGS+=(-l "gpu=1")
 else
-    QSUB_FLAGS+=(-q "ibamd.q")
-    QSUB_FLAGS+=(-l "h_vmem=32G")
+    QSUB_FLAGS+=(-q "ibfdr.q")
 fi
 
 echo "Submitting job '$JOBNAME'"

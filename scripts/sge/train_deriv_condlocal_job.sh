@@ -44,7 +44,10 @@
 # The new8 members' sweeps (FRC-b0..b1, DEC-*) can be APPENDED once their
 # slice->resplit->filter chain lands and filter_quiescent_windows has run
 # (rule: never train on unfiltered roots).
-#$ -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/logs/$JOB_NAME.$JOB_ID.log
+#$ -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.log
+#$ -e /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.err
+#$ -m ea
+#$ -M sanaamz@mit.edu
 set -e
 QG_ROOT=/gdata/projects/ml_scope/Closure_modeling/QG-closure
 source "$QG_ROOT/qg-env/bin/activate"

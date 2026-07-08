@@ -9,6 +9,8 @@
 # Lives at:
 #   /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/Convergence_studies/Decaying_Turbulence/Step3/
 
+#$ -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.log
+#$ -e /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.err
 set -e
 
 # ---- Environment ---------------------------------------------------------- #

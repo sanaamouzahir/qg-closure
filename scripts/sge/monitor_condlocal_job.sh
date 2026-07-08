@@ -7,7 +7,8 @@
 #   qsub -q all.q -N deriv7_cond_local_mon -hold_jid <trainid> \
 #        -m ea -M $QG_NOTIFY_EMAIL scripts/sge/monitor_condlocal_job.sh \
 #        --job-id <trainid> --log <trainlog> --run-dir <run_dir> --poll 30
-#$ -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/logs/$JOB_NAME.$JOB_ID.log
+#$ -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.log
+#$ -e /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/$JOB_NAME.$JOB_ID.err
 set -e
 QG_ROOT=/gdata/projects/ml_scope/Closure_modeling/QG-closure
 source "$QG_ROOT/qg-env/bin/activate"
