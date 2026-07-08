@@ -1,0 +1,44 @@
+{
+  "template": "T1",
+  "family": "train_deriv (deriv7_<variant>: cond_local, freeW, lean-stencil S-sweep, hygiene)",
+  "authored": "2026-07-08, Fable, per CHARTER v1.3 I18d; incident 1827034 is the proof case",
+  "config": "lr 5e-5, 300 ep, --rel-floor 0.1, f64, batch 4, filtered splits, pool per I6",
+
+  "physics_init_median": {"Ndot": 0.19, "Nddot": 0.26, "N3dot": 0.33},
+  "expected_ordering": ["Ndot", "Nddot", "N3dot"],
+  "inversion_factor": 1.5,
+  "inversion_min_epoch": 2,
+
+  "control_run": "deriv7_filtered_lr5e-5 (2026-07-03, S=7 multigrid, 18 filtered roots)",
+  "control_ep0_11": {
+    "columns": ["epoch", "val_relL2", "best_val", "val_Ndot", "val_Nddot", "val_N3dot"],
+    "rows": [
+      [0, 2.383, 2.383, 6.182, 0.281, 0.686],
+      [1, 0.665, 0.665, 1.002, 0.304, 0.688],
+      [2, 0.743, 0.665, 1.282, 0.269, 0.679],
+      [3, 1.202, 0.665, 2.648, 0.278, 0.680],
+      [4, 0.804, 0.665, 1.429, 0.304, 0.678],
+      [5, 2.602, 0.665, 6.852, 0.275, 0.679],
+      [6, 3.285, 0.665, 8.897, 0.276, 0.682],
+      [7, 1.341, 0.665, 3.059, 0.279, 0.684],
+      [8, 0.413, 0.413, 0.282, 0.273, 0.683],
+      [9, 0.473, 0.413, 0.457, 0.274, 0.687],
+      [10, 1.165, 0.413, 2.532, 0.274, 0.688],
+      [11, 0.905, 0.413, 1.741, 0.278, 0.696]
+    ]
+  },
+  "plateau": {
+    "val_Nddot": "~0.27 stable from ep0 (the rollout-ceiling metric; the number to watch)",
+    "pooled_convention": "the '0.19 plateau' quoted in ledgers is the floored/median Nddot convention; pooled-val includes near/past-wall samples and reads O(0.1-1)",
+    "best_val_ep11": 0.413
+  },
+
+  "known_metric_caveat": "PRE-F1: the control's own val_Ndot POOLED MEAN oscillates 0.28-8.9 over ep0-11 while its MEDIAN sits ~0.2 -- a few near-zero-denominator val samples dominate the unfloored eval mean. Until the F1 fix (eval denominator floored like the loss, or per-order MEDIAN reported alongside), ORDER-INVERSION will fire on val_Ndot for ANY run of this family, INCLUDING a healthy one. That firing is intentional: it forces the F1 metric fix into the resubmission rather than letting best-ckpt selection ride a broken number. POST-F1: recalibrate this card's control rows from the first F1-metric control run, then inversion firings are real.",
+
+  "notes": [
+    "medians 0.19/0.26/0.33 = healthy-window physics-init (width-15 spatial gap), diagnostics/RESULTS_2026-07-03.md",
+    "S=4 lock reference (0.026/0.031/0.043) is dt=1e-3 single-grid -- NOT comparable to S=7 sweep vals",
+    "epoch walltime ~590-600 s on ibgpu (control); first val row lands ~16 min after epoch loop start",
+    "per-run acceptance is separate from this card (e.g. cond_local: rel_Nddot(t=0) on kf4@1.5e-2 in 0.023-0.05 at eval time)"
+  ]
+}
