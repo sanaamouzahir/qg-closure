@@ -2,6 +2,40 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-08 — session 3 (global work order: driver rework, first cond_local submission, smokes)
+- TASK A (54b734e, ACCEPTED by Sanaa): rollout_aposteriori truth = RK4 @ dT/K (imports
+  rollout_fine); coef = dT³ / coef4 = dT⁴ ALL arms (no (1−1/K^n)); K = truth refinement only.
+  Minimal-FFT step (bare 5 / closure 8 via N_spectral_fields), untimed warmup (old 8.4s closure
+  smoke walltime was lazy-init), Parseval E/Z (zero FFTs, IC guard). σ̂-from-stepper:
+  cond_grad.sigma_hat_spec + cond_local forward(cond_feats=...) — zero extra FFTs, training
+  path bit-identical. Reviewer caught 3b calling the deleted API → ported. Smoke re-PASS.
+- TASK B: deriv7_cond_local submitted (41 roots = 17 control + new8×3, minus Re25k@1.5e-2).
+  Job 1826982 CRASHED 4 min in — the MULTIGRID TRAP: 512²/2π (DEC-512) batched with 512²/4π
+  (FRC); cond_local's grid-uniform-batch σ̂ guard threw. FIX (b1cee46): shells are mode-index
+  shells for square domains (kmag~1/L cancels) → per-sample squareness guard + canonical-L
+  context; bit-identical (init gate re-PASS exact 0.0; mixed-dx real-data batch == per-sample
+  to 0.0). RESUBMITTED as 1827034 (13:52, -j y this time); monitors 1827035 (-hold_jid) +
+  1827036 (live watchdog). cond_deriv has the same guard flaw — not fixed (dead instrument).
+- SMOKES 2a/2b/2c + val-IC (b6989c8): closure (deriv7_filtered ckpt) beats bare EARLY on
+  developed ICs — 7.7–8.2× kf4@1.5e-2, 4.0–4.3× b2@5e-3 — then BLOWS UP step ~11–12 (Z 10²–10³×);
+  r3only stable ≈ bare. kf4@1e-2: no blowup ≤16 steps, crossover by t=0.16 → divergence rate
+  grows with dT. Yesterday's b2 smoke IC (row 0) is DROPPED by the quiescent filter from every
+  split — pathological zonal state, explains bare 2e-8. VAL-row reruns match train-row (no
+  leakage). --diag: NN = ~100% of correction mass, 5·N̈ = 99.3–99.7% (low-ν members, no viscous
+  sink). physics-sanity: MIXED leaning physical (NN-noise feedback vs NN-kick-on-marginal-AB2 at
+  CFL 0.85 not separable yet; its discriminator = --restart-ic dT sweep at fixed physical horizon,
+  needs GO). NEW METRIC for the cond eval: blowup horizon alongside rel-L2.
+- D ITEMS 1–6 all approved & LANDED (b6989c8): --save/load-refs, --pareto (reviewer MAJOR: bare
+  dtb leg needs RK4 back-step seed, else dt¹ startup floor flatters the closure; same flaw exists
+  in rollout_timed_pareto's sweep — flagged, not fixed there), --profile-step (+3b flag),
+  σ̂(κ,t) checkpoint CSVs, --freeze-sigma, --ckpt2/'closure2'. improvement_x per closure arm.
+- Emails: LANDED (Task A), PROPOSE (D costs) → all approved, SUBMIT (1826982), RESUBMIT
+  (1827034), LANDED (smokes), LANDED (D items). NEW EMAIL FORMAT per Sanaa (ADHD-friendly:
+  CAPS+bold titles, indented spaced numbered points) — saved to agent memory.
+- STATE: 1827034 running (~800s/epoch expected, ~2.8 days). Watch val_Nddot; success bar:
+  kf4@1.5e-2 ≤0.023, FRC-256@1.5e-2 ≤0.037, FRC-256@1e-2 ≤0.0055, pooled ~0.04–0.05 vs 0.19.
+  Tomorrow: eval via the ONE driver (cached truth + live/frozen-σ̂/control legs + drift CSVs).
+
 ## 2026-07-06 — session 1 (cond_deriv integration + acceptance, branch supervisor)
 - Synced origin/main into the worktree (merge 0866cc0): brought in `Theoretical_guarantees/`
   {cond_grad.py, conditioned_parameterization_note.md, THEORETICAL_GUARANTEES.md, checks}.
