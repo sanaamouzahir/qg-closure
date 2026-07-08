@@ -2,6 +2,16 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-08 — Supervisor_simulation.md delivered + committed; CP-1 plan emailed (global supervisor)
+- Blocker resolved: Sanaa delivered the theory doc; committed verbatim as
+  docs/briefs/Supervisor_simulation.md next to AMENDMENT_02_workflow.md. Read in full.
+- CP-1 plan emailed ([QG][PROPOSE][SGS-CLOSURE]): module list (audit_decorrelation.py,
+  audit_resolution.py, shedding_tracker.py, diagnostics_wake.py + batch wrappers),
+  per-module outlines with the exact theory-doc quantity each measurement compares
+  against, authoring order, §3-compliant execution plan, storage estimate. WAITING for
+  approval — no diagnostics/audit code authored until CP-1 clears (choreography).
+- Gate-1 smokes remain HELD (unchanged); Phase A artifacts unchanged.
+
 ## 2026-07-08 — AMENDMENT 02 received + committed (global supervisor); CP-1 BLOCKED on missing theory doc
 - AMENDMENT 02 committed verbatim: docs/briefs/AMENDMENT_02_workflow.md. Precedence now
   Amendment 02 > Amendment 01 > charter. Adopted immediately: CYLINDER-ONLY scope (all
