@@ -2,6 +2,22 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-09 — GATE D-1 RULED: PASS WITH FINDINGS; St estimator fix SHIPPED (resumed session)
+- Sanaa (chat, ~17:35 EDT): Gate D-1 = **PASS WITH FINDINGS**; Cd/Cl-low deferred with explicit
+  trigger (low Cd persisting at higher-Re cases ⇒ investigate); **Welch/zero-x St computation
+  APPROVED**; FPC-const re-confirmed. Recorded in DECISIONS (698c59f).
+- St fix implemented in shedding_tracker.py: gate + headline St from Welch peak (zero-x
+  cross-check); Hilbert retained ONLY for phase/T_sh(t) exports, its St kept as
+  st_inlet_hilbert_deprecated; new keys St_inlet_welch / St_inlet_zero_crossing / St_cyl_welch
+  in yaml+npz; NO existing key renamed/removed (st_verdict_gate1.py + gate1_overlays.py read
+  raw scalars.npz only — verified untouched). G4 review PASS (1 LOW cosmetic: unguarded U_med
+  divisor, pre-existing style; NaN-safe downstream).
+- Smokes (all.q, §3-compliant): selftest 1828698 **12/12 PASS** (2 new St checks, err <3e-5);
+  gd1 re-analysis 1828699 → shedding_v2_welchSt: **st_measured_inlet 0.19157, zero-x 0.19078,
+  st_pass TRUE** (Hilbert-deprecated 0.15941 recorded). Gate D-1 CLOSED as pass-with-findings.
+- Findings carried forward: Cd 1.136 / rmsCl 0.257 low (suspects: penalty-force
+  under-prediction, wake re-entry); watch Cd at the higher-Re Phase-B cases per the trigger.
+
 ## 2026-07-09 — GATE D-1 LANDED + VETTED; [QG][GATE-D1][SGS] SENT; awaiting ruling (resumed session)
 - Chain 1828396/1828397/1828398 landed 17:00 EDT (~45 min GPU, 221.5 it/s). Wake DEVELOPED:
   16 shedding cycles in t 250–1500, drag line at 2.0018×f_sh, third harmonic absent — the

@@ -286,6 +286,16 @@ def analyze(data, outdir, batch=0, t_min=30.0, st_ref=0.21, band=None,
     St_cyl_median = float(np.nanmedian(St_cyl_t[core]))
     f_qs_t = st_ref * U_inlet / D                 # quasi-steady prediction
 
+    # Scalar St for gating/reporting uses the SPECTRAL line (Welch peak;
+    # zero-crossing cross-check): the Hilbert instantaneous-f median biases
+    # low under amplitude modulation (retrograde phase slips, Gate D-1
+    # postmortem 2026-07-09). Hilbert stays for phase/T_sh(t) exports only.
+    U_cyl_med = float(np.nanmedian(U_cyl))
+    St_inlet_welch = float(f_sh * D / U_med) if np.isfinite(f_sh) else np.nan
+    St_inlet_zc = float(f_zc * D / U_med) if np.isfinite(f_zc) else np.nan
+    St_cyl_welch = (float(f_sh * D / U_cyl_med)
+                    if np.isfinite(f_sh) and U_cyl_med > 0 else np.nan)
+
     # ---- theory comparisons (Supervisor_simulation.md S1, S3.1) ----------- #
     T_sh_theory = D * D / (st_ref * nu * Re_med)  # T_sh(Re) at the run's Re
     lo, hi = THEORY['f_sh_range']
@@ -312,10 +322,15 @@ def analyze(data, outdir, batch=0, t_min=30.0, st_ref=0.21, band=None,
             phase_advance_cycles=float((phi[-1] - phi[0]) / (2.0 * np.pi)),
             smooth_T=float(T_sh_exp)),
         'strouhal': dict(
+            St_inlet_welch=St_inlet_welch,
+            St_inlet_zero_crossing=St_inlet_zc,
+            St_cyl_welch=St_cyl_welch,
+            st_estimator='welch_peak (zero-crossing cross-check); Hilbert '
+                         'medians kept below for reference only',
             St_inlet_median=St_inlet_median, St_cyl_median=St_cyl_median,
             St_ref=float(st_ref),
             Re_inlet_median=Re_med, Re_cyl_median=float(np.nanmedian(Re_cyl)),
-            U_inlet_median=U_med, U_cyl_median=float(np.nanmedian(U_cyl))),
+            U_inlet_median=U_med, U_cyl_median=U_cyl_med),
         'theory_comparison': {
             'f_sh_range_S1': dict(theory=[lo, hi], measured=f_sh,
                                   in_range=bool(lo <= f_sh <= hi)),
@@ -324,8 +339,10 @@ def analyze(data, outdir, batch=0, t_min=30.0, st_ref=0.21, band=None,
                                       ratio=float(T_sh_median / T_sh_theory)),
             'T_sh_reference_table_S1': {int(k): float(v) for k, v in
                                         THEORY['T_sh_table'].items()},
-            'St_vs_ref': dict(theory=float(st_ref), measured=St_inlet_median,
-                              ratio=float(St_inlet_median / st_ref)),
+            'St_vs_ref': dict(theory=float(st_ref), measured=St_inlet_welch,
+                              ratio=(float(St_inlet_welch / st_ref)
+                                     if np.isfinite(St_inlet_welch) else np.nan),
+                              estimator='welch_peak'),
             'no_aliasing_S3_1': dict(
                 f_nyq_snapshots=fN_snap,
                 f_nyq_scalars=float(0.5 * fs),
@@ -339,9 +356,13 @@ def analyze(data, outdir, batch=0, t_min=30.0, st_ref=0.21, band=None,
     if gate_d1:
         g = GATE_D1_LIT
         summary['gate_d1'] = dict(
-            st_measured_inlet=St_inlet_median,
+            st_measured_inlet=St_inlet_welch,
+            st_estimator='welch_peak',
+            st_inlet_zero_crossing=St_inlet_zc,
+            st_inlet_hilbert_deprecated=St_inlet_median,
             st_canonical_Re200=list(g['st_range']),
-            st_pass=bool(g['st_range'][0] * 0.95 <= St_inlet_median
+            st_pass=bool(np.isfinite(St_inlet_welch)
+                         and g['st_range'][0] * 0.95 <= St_inlet_welch
                          <= g['st_range'][1] * 1.05),
             cd_mean_inst=float(np.nanmean(cd_inst)),
             cd_mean_canonical=list(g['cd_mean_range']),
@@ -360,6 +381,9 @@ def analyze(data, outdir, batch=0, t_min=30.0, st_ref=0.21, band=None,
         P_cd_mid=P_cd_mid, P_probe_v0=P_pv0,
         f_sh_peak=np.float64(f_sh), f_sh_median=np.float64(f_sh_median),
         T_sh_median=np.float64(T_sh_median),
+        St_inlet_welch=np.float64(St_inlet_welch),
+        St_inlet_zero_crossing=np.float64(St_inlet_zc),
+        St_cyl_welch=np.float64(St_cyl_welch),
         St_inlet_median=np.float64(St_inlet_median),
         St_cyl_median=np.float64(St_cyl_median),
         n_edge=np.int64(n_edge),
@@ -485,6 +509,10 @@ def selftest():
         s['hilbert']['phase_advance_cycles'], 0.01)
     add('St median (U_inlet)', f0 * 1.256637 / 2.0,
         s['strouhal']['St_inlet_median'], 0.01)
+    add('St welch (U_inlet)', f0 * 1.256637 / 2.0,
+        s['strouhal']['St_inlet_welch'], 0.01)
+    add('St zero-x (U_inlet)', f0 * 1.256637 / 2.0,
+        s['strouhal']['St_inlet_zero_crossing'], 0.01)
     ok3 = s['welch']['third_harmonic_present']
     checks.append(('third harmonic present', True, ok3, 0.0, bool(ok3)))
 
