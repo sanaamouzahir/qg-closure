@@ -2,6 +2,35 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-09 — session 7 (branch supervisor: apost matrix + dealias/FFT audit; Sanaa away, green light)
+- TASK 0 (dealias/FFT triple-check of rollout_aposteriori.py): NO train/inference bug — f_NN
+  end-projected before the IMEX step with the IDENTICAL Derivative.alias_mask training uses.
+  CONVENTION CORRECTION: the solver mask is RADIAL, k_cut=sqrt(2)*(2/3)*k_max = mode radius
+  241.36 at 512^2 (derivative.py:30-32), NOT square per-axis 170. The 170.7<|k|<=241.4 annulus
+  is above the alias-safe N/3 radius -> quadratic products ALIAS exactly where the blow-up
+  seeds (184-240). Solver-level, self-consistent everywhere; fixing it = RED (solver convention).
+- Ran job 1828239 `apmx0709`: 2 ckpt (UNCOND deriv7_filtered_lr5e-5 ep8 / COND
+  deriv7_cond_local_v2 FROZEN ep63) x 2 variant (full / new --drop-nddot) x 3 dT, kf4 IC837,
+  M=16, gamma=1, no remediation. 1.5e-2 truth REUSED (ladderrefs); 1e-2/1p5 K per h_fine=1e-5.
+- RESULT (full table: diagnostics/RESULTS_2026-07-09_apost_matrix.md +
+  Results/apost_ladder_20260709/ladder_matrix_summary.csv; ONE npz per case, intermediates
+  deleted per Sanaa's output discipline): N-ddot term is the sole destabilizer (all dropnddot
+  arms stable, all blow-ups have it) but also the sole value (dropnddot = 1.0x everywhere).
+  COND does NOT fix the tail natively: blows EARLIER at 1.5e-2 (step 7 vs 12), blows at 1e-2
+  (step 13) where UNCOND survives; at 5e-3 COND 0.72x vs UNCOND 0.06x final and up to ~17x
+  transient gain before the corner-band feedback overtakes.
+- t=0 LTE row (job 1828240, post-hoc — protocol wanted it first): COND rel_Nddot(t=0)=0.136,
+  outside 0.023-0.05 acceptance => COND rows labeled MID-TRAINING (ep63/300, val agrees; not
+  a wiring regression). After 1 closure step COND rel_Nddot 0.447 vs UNCOND 0.208 (advantage
+  inverts on self-generated history).
+- Commits: 6077fa3 (--drop-nddot, consolidate_apost_cases.py, apost_matrix_job.sh) + ledgers.
+- Emails: [QG][WIENER][SUBMIT] (params + TASK0 verdict), [QG][WIENER][LANDED] (12-case table).
+- Decided next: (a) let 1827306 finish, rerun COND legs from the converged ckpt; (b) the tail
+  fix is not conditioning — candidates: alias-safe corner treatment of f_NN (kcut at the TRUE
+  2/3 radius 170.7 = principled, not remediation), or R4 rollout-aware fine-tune; (c) formalize
+  the Wiener doc before the next model change.
+
+
 ## 2026-07-08 — session 6 (global supervisor: incident ROOT CAUSE + fixes + resubmission)
 - ROOT CAUSE (revises session-5's "wrong dT power in the m=1 head" attribution): the
   conditioning path was numerically DEAD in the incident ckpt — head weights O(1e-1) x
