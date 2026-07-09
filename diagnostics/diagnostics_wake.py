@@ -700,6 +700,14 @@ def run(args):
         zp = np.load(p)
         pt = np.asarray(zp['times'], dtype=np.float64)
         zp.close()
+        pshape, _ = npz_field_shape(p, 'pi_ff')
+        p_frames = pshape[-3] if len(pshape) >= 3 else len(pt)
+        if p_frames == len(pt) + 1:
+            # same IC-frame-vs-times layout as omega_FR (audit_A postmortem)
+            pt = np.concatenate(([0.0], pt))
+        elif p_frames != len(pt):
+            raise ValueError(f'pi_ff frames={p_frames} vs times={len(pt)} '
+                             f'in {p}: unrecognized layout')
         keep_p = (pt >= args.t_min) & (pt <= t_max)
         phi_p, _ = snapshot_phases(pt, shed)
         acc_p = accumulate(stream_snapshots(p, 'pi_ff'), keep_p,
