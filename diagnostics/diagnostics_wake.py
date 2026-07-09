@@ -205,11 +205,17 @@ def load_shedding(path):
         return None
     z = np.load(path)
     out = {}
-    for k in ('phi_t', 'T_sh_t', 'f_sh_t', 't'):
-        if k in z.files:
-            out[k] = np.asarray(z[k], dtype=np.float64).ravel()
+    # shedding_tracker.py exports 'phi' (and f_sh_t/T_sh_t/t); accept both the
+    # documented 'phi_t' and the actual 'phi' (interface drift found 2026-07-09)
+    aliases = {'phi_t': ('phi_t', 'phi'), 'T_sh_t': ('T_sh_t',),
+               'f_sh_t': ('f_sh_t',), 't': ('t',)}
+    for k, names in aliases.items():
+        for name in names:
+            if name in z.files:
+                out[k] = np.asarray(z[name], dtype=np.float64).ravel()
+                break
     if 'phi_t' not in out or 't' not in out:
-        warn(f"{path}: missing phi_t/t keys; treating as absent")
+        warn(f"{path}: missing phi_t/phi/t keys; treating as absent")
         return None
     order = np.argsort(out['t'])
     for k in out:
@@ -614,6 +620,16 @@ def run(args):
     times = np.asarray(z_small['times'], dtype=np.float64)
     chi = np.asarray(z_small['chi_obs'], dtype=np.float64) if 'chi_obs' in z_small.files else None
     shape, _ = npz_field_shape(fr_npz, 'omega_FR')
+    n_frames = shape[-3] if len(shape) >= 3 else len(times)
+    if n_frames == len(times) + 1:
+        # solver packaging: field stack carries the IC frame at t=0, the
+        # times array only the saved marks (audit_A postmortem 2026-07-09)
+        times = np.concatenate(([0.0], times))
+        print(f'[wake] times aligned: prepended t=0 IC mark '
+              f'({n_frames} frames vs {len(times) - 1} saved times)')
+    elif n_frames != len(times):
+        raise ValueError(f'omega_FR frames={n_frames} vs times={len(times)}: '
+                         'unrecognized layout')
     Ny, Nx = shape[-2], shape[-1]
     dx, dy = Lx / Nx, Ly / Ny
     extent = [0, Lx, 0, Ly]
