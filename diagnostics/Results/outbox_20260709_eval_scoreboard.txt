@@ -1,0 +1,23 @@
+**PER-ROOT EVAL LANDED (jobs 1828724-26): CONDITIONING ADVANTAGE IS REAL ON EQUAL DATA; SUCCESS BARS NOT MET; ONE NEW PATHOLOGY**
+
+**EQUAL-DATA VERDICT (17 shared roots, Nddot rel-L2, cond ep63 vs hygiene ep107)**
+
+    1. kf4: 0.058 / 0.065 / 0.057  vs  0.085 / 0.088 / 0.086  (dT 1e-2 / 1.5e-2 / 5e-3)
+
+    2. FRC-256: 0.064 / 0.087 / 0.062  vs  0.084 / 0.094 / 0.084
+
+    3. b2, b25, combo: cond better at ALL dT (e.g. b2@1.5e-2 0.466 vs 0.596)
+
+    4. SOLE exception: Re25k@1e-2 (0.197 vs 0.180). N3dot better still (kf4 0.10-0.19 vs 0.33).
+
+**BUT**
+
+    1. Success bars NOT met: kf4@1.5e-2 Nddot 0.065 vs bar 0.023-0.05; FRC-256@1e-2 0.064 vs 0.0055. Training was killed at plateau ep78; the bars assumed convergence.
+
+    2. NEW pathology: DEC-loRe N3dot per-root mean 8.50@5e-3, 2.01@1e-2 (Ndot/Nddot healthy) — suspect within-root small-denominator poisoning (rule 16); median check queued as the next a-priori ladder item. FRC-b0@1.5e-2 broadly bad (Nddot 0.947).
+
+    3. Regression PASS: control CSV reproduced to ~1e-10 (patch clean).
+
+**FILES**
+
+    1. eval_by_root_val.csv next to each ckpt; RESULTS.md (living doc) updated; commit 53a84d7 + follow-up.

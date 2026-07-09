@@ -45,9 +45,18 @@ smoke dirs hold the pre-discipline litter, apost_smoke3 alone ~67 csv/json).
 | deriv7_hygiene (17 control roots) | ep112/300 | ep107 | 0.24953 | 0.0594 / 0.1780 / 0.5112 | — |
 | control deriv7_filtered_floor0.1 | done | — | ~0.19 pooled | Nddot ~0.186 | — |
 
-Nddot 0.138 (cond) vs 0.186 (control) is NOT equal-data (41 vs 17 roots incl. DEC);
-per-root eval (eval_deriv_by_root.py) REQUIRED before any scoreboard claim — NOT RUN
-yet on the final ckpts. Hygiene ablation did not move the Nddot ceiling (0.178≈0.186).
+**PER-ROOT EVAL DONE (jobs 1828724-26, 2026-07-09 18:30): the conditioning advantage
+is REAL on equal data.** On the 17 shared roots, cond_v2 ep63 beats hygiene ep107 on
+Nddot nearly uniformly (~20-40%): kf4 0.058/0.065/0.057 vs 0.085/0.088/0.086
+(1e-2/1.5e-2/5e-3); FRC-256 0.064/0.087/0.062 vs 0.084/0.094/0.084; b2/b25/combo all
+better; sole exception Re25k@1e-2 (0.197 vs 0.180). N3dot better still (kf4 0.10-0.19
+vs 0.33). BUT the theoretical success bars are NOT met: kf4@1.5e-2 Nddot 0.065 vs bar
+0.023-0.05; FRC-256@1e-2 0.064 vs 0.0055. Pathologies: DEC-loRe N3dot exploded per-root
+means (8.50@5e-3, 2.01@1e-2; Ndot/Nddot healthy) — suspect within-root small-denominator
+poisoning (rule 16: needs median check); FRC-b0@1.5e-2 broadly bad (Nddot 0.947).
+Regression: control CSV reproduced to ~1e-10 rel (GPU reduction noise) — --model auto
+patch clean. CSVs: eval_by_root_val.csv next to each ckpt.
+Hygiene ablation did not move the Nddot ceiling (0.178≈0.186).
 
 ## Latest findings (sessions 7b–7e, 2026-07-09)
 
