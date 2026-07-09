@@ -76,14 +76,19 @@ extra_overrides_for () {
         table_const)
             echo "+qg.bc.inlet_table=$CONST_TABLE"
             ;;
+        # +qg.diag.out MUST be per-case and inside the run dir: hydra does
+        # NOT chdir, so the recorder's default relative 'scalars.npz'
+        # resolves against the launch cwd ($QG_DIR) — wrong location AND one
+        # shared scalars.npz(.tmp) across concurrent cases (os.replace race;
+        # killed jobs 1828237/38, poisoned 1828236's output; 2026-07-09).
         const_rec)
-            echo "+qg.bc.inlet_table=$CONST_TABLE +qg.diag.scalar_rate=10"
+            echo "+qg.bc.inlet_table=$CONST_TABLE +qg.diag.scalar_rate=10 +qg.diag.out=$QG_DIR/$RUN_ROOT/const_rec/scalars.npz"
             ;;
         sine)
-            echo "+qg.bc.inlet_table=$SINE_TABLE +qg.diag.scalar_rate=10"
+            echo "+qg.bc.inlet_table=$SINE_TABLE +qg.diag.scalar_rate=10 +qg.diag.out=$QG_DIR/$RUN_ROOT/sine/scalars.npz"
             ;;
         ou)
-            echo "+qg.bc.inlet_table=$OU_TABLE +qg.diag.scalar_rate=10"
+            echo "+qg.bc.inlet_table=$OU_TABLE +qg.diag.scalar_rate=10 +qg.diag.out=$QG_DIR/$RUN_ROOT/ou/scalars.npz"
             ;;
         *)
             echo "ERROR: unknown case id '$1'" >&2
