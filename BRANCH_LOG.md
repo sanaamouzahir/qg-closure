@@ -2,6 +2,28 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-09 — session 7c (Sanaa order: kill plateaued trainings + final report)
+- qdel EXACTLY 1827225 (hygiene_train) + 1827306 (condlocal_train) at 15:05:58 EDT after
+  qstat -j identity verification. Reason: plateaued, ordered by Sanaa. GPU slots freed for
+  SGS Phase-B (expected).
+- Final states (ckpts/configs/logs verified intact before AND after):
+  deriv7_hygiene: killed ep112/300 (~22 h); best ep107 pooled 0.24953, Ndot 0.0594 /
+  Nddot 0.1780 / N3dot 0.5112; no new best ep108-112, Nddot flat ~0.178 (= control 0.186
+  ballpark — hygiene ablation did not move the ceiling).
+  deriv7_cond_local_v2: killed ep78/300 (~21 h); best ep63 pooled 0.21389, Ndot 0.0744 /
+  Nddot 0.1378 / N3dot 0.4296 (medians 0.0536/0.0929/0.1784); 15 epochs (64-78) no new
+  best. Nddot 0.138 vs control 0.186 is NOT equal-data (41-root pool incl. DEC vs 17) —
+  per-root eval before any scoreboard claim. best.pt == frozen_eval_20260709 (today's
+  matrix ckpt) byte-identical.
+- Monitor topology: FINALIZE monF_hyg (1827288) fired+mailed; monF_cond2 (1827308) fired,
+  delivery failed on-node -> verdict RELAYED manually from outbox; stale hygiene_mon
+  (1827226) died on old CLI (exit 2, superseded); LIVE monL_hyg/monL_cond2 self-exited
+  15:07:24. No monitor qdel needed.
+- Emails: [QG][LANDED][WIENER] kill report (full metrics tables inline) + relayed
+  [QG][MONITOR] cond_local_v2 postmortem. Outbox copies: diagnostics/Results/outbox_20260709_kill/.
+- Next: per-root eval of both final ckpts; annulus-fix PROPOSE pending Sanaa.
+
+
 ## 2026-07-09 — session 7b (Sanaa rulings: f_NN-only projection + analytic arms; job 1828315)
 - Rulings: solver mask RED/untouched; remediate on the correction alone. Implemented
   --nn-project-radius (df2297a): R3 correction projected to |k| <= (2/3)min(kmax) = 170.67
