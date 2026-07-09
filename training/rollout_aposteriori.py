@@ -231,7 +231,8 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
             derivative, L_hat, F_hat, device, model=None, input_fields=None,
             dealias_nn=True, include_r4=False, blowup_factor=10.0,
             scalars_every=1, freeze_sigma=False, sigma_log=None,
-            lte_log=None, profile_step=0):
+            lte_log=None, profile_step=0,
+            nn_kcut=None, nn_gamma=1.0, nn_clip=None, drop_nddot=False):
     """One arm of the comparison. arm in {'bare','r3only','r3anal',
     'closure','closure2'} ('closure2' = a second checkpoint through the
     identical code path, e.g. the control vs the conditioned model;
@@ -258,6 +259,22 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
         NOTE: the shell reduction is non-zero COMPUTE inside the timed loop
         (at checkpoint steps only, ~sub-percent of the arm walltime);
         headline benchmarks (3b) run with sigma_log=None.
+    nn_kcut : float or None -- remediation R1 (anomaly-playbook ladder): keep
+        f_NN only for |k| <= nn_kcut * (2/3-dealias cut). The NN's high-k
+        tail is its noisiest band and seeds the history-contamination loop.
+    nn_gamma : float -- remediation R2: under-relax, rhs -= coef*gamma*f_NN
+        (bounded accuracy factor traded for feedback margin). Default 1.0.
+    nn_clip : float or None -- remediation R3: pointwise-clip the PHYSICAL
+        f_NN at nn_clip * rms(f_NN) (kills outlier pixels that seed CFL
+        spikes; +2 FFTs/step), then re-dealias.
+        All three act on the R3 f_NN of closure arms ONLY (r3anal/r3only
+        untouched; --r4 NN terms untouched). The --track-lte rms_inj stays
+        the RAW (un-remediated) NN error by design.
+    drop_nddot : ablation arm -- assemble the R3 correction WITHOUT the
+        -5*Nddot contribution: f = (1/12) L*Ndot only (all other terms --
+        implicit L^3 w, explicit L^2 N, L*Ndot -- kept). Applied to BOTH the
+        NN (closure/closure2) and the analytic (r3anal) sources so the arms
+        stay comparable; --r4 terms (when enabled) keep their own Nddot use.
     lte_log : optional list; at every checkpoint step the FULL ANALYTIC LTE
         at the arm's CURRENT state is computed (chain-rule Ndot/Nddot,
         ~50 FFTs/checkpoint) and its per-term rms appended; closure arms
@@ -289,6 +306,15 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
     denom = denom_clos if with_closure else denom_bare
     Nyg, Nxg = omega_stack[0].shape[-2], omega_stack[0].shape[-1]
     is_cond = is_clos and hasattr(model, 'context_feats_from_spectral')
+    kcut_mask = None
+    if is_clos and nn_kcut is not None:
+        # mode-index shells (isotropic square grids): dealias keeps
+        # |k_index| <= N//3; R1 keeps kappa <= alpha * that cut.
+        kx2 = (-(derivative.dx ** 2)).real
+        ky2 = (-(derivative.dy ** 2)).real
+        kmag = torch.sqrt(kx2 + ky2)
+        dk = 2.0 * np.pi / _LX
+        kcut_mask = (kmag <= float(nn_kcut) * (Nxg // 3) * dk).to(torch.float64)
     dt_v = torch.full((1,), Delta_T, device=device, dtype=torch.float64)
     dx_v = torch.full((1,), _DX, device=device, dtype=torch.float64)
     dy_v = torch.full((1,), _DY, device=device, dtype=torch.float64)
@@ -315,7 +341,8 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
             prof.mark('anal_derivs')
             Nd = analytic_n_derivs_hat(qh_curr, derivative, L_hat, F_hat,
                                        max_order=3 if include_r4 else 2)
-            f_anal = (1.0 / 12.0) * (L_hat * Nd[1] - 5.0 * Nd[2])
+            f_anal = ((1.0 / 12.0) * (L_hat * Nd[1]) if drop_nddot
+                      else (1.0 / 12.0) * (L_hat * Nd[1] - 5.0 * Nd[2]))
             prof.mark('dealias')
             if dealias_nn:
                 f_anal = _dealias_mul(f_anal, derivative)
@@ -360,12 +387,19 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
             Ndot_h = to_spectral(yhat[:, 0:1][0])            # 1 FFT
             Nddot_h = to_spectral(yhat[:, 1:2][0])           # 1 FFT
             prof.mark('f_NN')
-            f_nn = (1.0 / 12.0) * (L_hat * Ndot_h - 5.0 * Nddot_h)
+            f_nn = ((1.0 / 12.0) * (L_hat * Ndot_h) if drop_nddot
+                    else (1.0 / 12.0) * (L_hat * Ndot_h - 5.0 * Nddot_h))
+            if nn_clip is not None:                          # R3: +2 FFTs
+                fp = to_physical(f_nn)
+                s = float(nn_clip) * torch.sqrt((fp ** 2).mean())
+                f_nn = to_spectral(fp.clamp(-s, s))
             prof.mark('dealias')
             if dealias_nn:
                 f_nn = _dealias_mul(f_nn, derivative)
+            if kcut_mask is not None:                        # R1
+                f_nn = f_nn * kcut_mask
             prof.mark('combine')
-            rhs = rhs - coef * f_nn
+            rhs = rhs - coef * float(nn_gamma) * f_nn        # R2: gamma=1 default
             if include_r4:
                 prof.mark('r4')
                 N3dot_h = to_spectral(yhat[:, 2:3][0])       # +1 FFT (--r4 only)
@@ -672,6 +706,20 @@ def main():
                    help='write sigma_hat(kappa,t) at closure-arm checkpoints '
                         'to sigma_hat_<tag>_<arm>.csv (zero extra FFTs; the '
                         'a-posteriori r2-drift measurement)')
+    p.add_argument('--nn-kcut', type=float, default=None, metavar='ALPHA',
+                   help='R1 remediation: keep f_NN only for |k| <= ALPHA x '
+                        'the 2/3-dealias cut (closure arms only)')
+    p.add_argument('--nn-gamma', type=float, default=1.0,
+                   help='R2 remediation: under-relax the NN correction, '
+                        'rhs -= coef*GAMMA*f_NN (default 1.0 = off)')
+    p.add_argument('--nn-clip', type=float, default=None, metavar='C',
+                   help='R3 remediation: pointwise-clip physical f_NN at '
+                        'C x rms(f_NN), then re-dealias (+2 FFTs/step)')
+    p.add_argument('--drop-nddot', action='store_true',
+                   help='ablation: assemble the R3 correction WITHOUT the '
+                        '-5*Nddot term (f = (1/12) L*Ndot only; implicit '
+                        'L^3 w and explicit L^2 N kept). Applies to the NN '
+                        '(closure/closure2) AND analytic (r3anal) sources.')
     p.add_argument('--track-lte', action='store_true',
                    help='at every checkpoint, compute the FULL ANALYTIC LTE '
                         'at each arm\'s current state (chain-rule Ndot/Nddot) '
@@ -736,6 +784,14 @@ def main():
     print(f'[apost] Delta_T={Delta_T}  K={K} (truth refinement only)  '
           f'h_fine={h_fine:.3e}  coef=DT^3={Delta_T**3:.6e} '
           f'(RK4 truth -> full Taylor defect, no (1-1/K^2))')
+    if (args.nn_kcut is not None or args.nn_gamma != 1.0
+            or args.nn_clip is not None):
+        print(f'[apost] NN remediation active: kcut={args.nn_kcut}  '
+              f'gamma={args.nn_gamma}  clip={args.nn_clip} '
+              f'(closure arms, R3 f_NN only)')
+    if args.drop_nddot:
+        print('[apost] ABLATION: --drop-nddot -- R3 assembled WITHOUT the '
+              '-5*Nddot term (closure/closure2/r3anal)')
     if not args.no_truth and h_fine > 2.5e-5:
         print(f'[apost] WARNING: h_fine={h_fine:.3e} > 2.5e-5 -- the RK4 '
               f'truth is NOT a stand-in for the analytic flow at closure-'
@@ -938,7 +994,9 @@ def main():
                     blowup_factor=args.blowup_factor,
                     scalars_every=args.scalars_every,
                     freeze_sigma=args.freeze_sigma, sigma_log=sig_rows,
-                    lte_log=lte_rows, profile_step=args.profile_step)
+                    lte_log=lte_rows, profile_step=args.profile_step,
+                    nn_kcut=args.nn_kcut, nn_gamma=args.nn_gamma,
+                    nn_clip=args.nn_clip, drop_nddot=args.drop_nddot)
         arm_out[arm] = r
         if lte_rows:
             lte_csv = out_dir / f'lte_{args.tag}_{arm}.csv'

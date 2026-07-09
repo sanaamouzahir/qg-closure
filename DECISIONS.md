@@ -18,3 +18,6 @@ extending an existing document is the default.
   GPU pass: no existing probe combines best-vs-zero-init eval, raw-vs-floored median/mean per
   root, the ch0/ch1 target-alignment recompute (D2), and grid-split init medians (D3);
   diagnose_error_distribution.py covers only the D1 slice on one model.
+2026-07-09 | GREEN | new file diagnostics/consolidate_apost_cases.py (I17 reason: Sanaa's explicit 2026-07-09 output-discipline order -- one npz per (ckpt,variant,dT) case, intermediates deleted; no existing doc covers post-run consolidation) | py_compile PASS | pending-commit
+2026-07-09 | GREEN | frozen eval copy training_runs/deriv7_cond_local_v2/frozen_eval_20260709/best.pt (epoch 63, val 0.2139) -- job 1827306 still writes best.pt; eval runs on the frozen copy | load-smoke PASS (cond_local, 10564 params) | n/a
+2026-07-09 | YELLOW | --drop-nddot ablation flag in rollout_aposteriori.py (variant B of Sanaa's 07-09 matrix); + apost_matrix_job.sh (2x2x3 matrix, gamma=1, no remediation) | compile+ckpt-load PASS; sge-checker pending | pending-commit
