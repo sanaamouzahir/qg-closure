@@ -84,3 +84,61 @@ everywhere except inside a blow-up cascade).
 - After ONE closure step on its own state: COND rel_Nddot 0.447 vs UNCOND 0.208; rms_inj
   flips (COND 1.37e-4 > UNCOND 6.17e-5). The cond model's advantage inverts as soon as its
   own corner-band-polluted history feeds back — mechanism for the earlier blow-up (step 7 vs 12).
+
+---
+
+# PART 2 (same day) — alias-safe projection matrix + ANALYTIC closure arms (job 1828315)
+
+Sanaa rulings executed: solver mask UNTOUCHED (RED held); new `--nn-project-radius`
+(commit df2297a) projects the R3 CORRECTION alone onto |k| <= (2/3)*min(kx_max,ky_max)
+(mode radius 170.67 at 512^2). Same member/IC/horizon; ALL truth refs reused. COND =
+frozen ep63 (1827306 still running, best.pt unchanged since freeze — best_val plateau).
+18 cases in diagnostics/Results/apost_ladder_20260709_p170/ (one npz each + summary CSV).
+
+## Analytic closure (r3anal: EXACT chain-rule Ndot/Nddot, no NN — Sanaa's question)
+
+| variant | dT | blowup | final relL2 (bare) | impr | corner drift |
+|---|---|---|---|---|---|
+| analytic, std dealias | 1.5e-2 | none | 2.868e-4 (3.803e-2) | **132.6x** | 0.040 |
+| analytic, std dealias | 1e-2   | none | 4.974e-5 (1.748e-3) | **35.1x** | 0.030 |
+| analytic, std dealias | 5e-3   | none | 2.935e-6 (2.095e-4) | **71.4x** | 0.023 |
+| analytic + proj170    | 1.5e-2 | none | 3.757e-2            | 1.01x | 2.884 |
+| analytic + proj170    | 1e-2   | none | 1.244e-3            | 1.40x | 0.041 |
+| analytic + proj170    | 5e-3   | none | 1.457e-4            | 1.44x | 0.024 |
+
+**Verdicts.** (1) The analytic closure is STABLE and hugely accurate at ALL dT incl.
+1.5e-2 — the instability is 100% NN-SPECIFIC, not intrinsic to the scheme or to the
+aliasing annulus. The exact Nddot actively REGULATES the corner band (drift 0.04 vs
+2.9 for the un-corrected drop arms at 1.5e-2). (2) Projecting the correction out of
+the annulus destroys nearly ALL of its value (132.6x -> 1.01x at 1.5e-2): the
+170.7-241.4 band is where the R3 correction's mass and benefit live (L^k weighting).
+The annulus is simultaneously the value band and the NN-feedback band.
+
+## NN matrix WITH the 170.67 projection (vs Part-1 unprojected in parens)
+
+| ckpt | variant | dT | blowup | final relL2 | impr |
+|---|---|---|---|---|---|
+| uncond | full+proj | 1.5e-2 | none* | 1.543e+0 | 0.02x (was: blowup s12) |
+| cond   | full+proj | 1.5e-2 | s8   | —        | (was: blowup s7) |
+| uncond | full+proj | 1e-2   | none | 2.178e-3 | 0.80x (was 0.16x) |
+| cond   | full+proj | 1e-2   | s16  | —        | (was: blowup s13) |
+| uncond | full+proj | 5e-3   | none | 3.472e-3 | 0.06x (was 0.06x) |
+| cond   | full+proj | 5e-3   | none | 9.562e-4 | 0.22x (was 0.72x) |
+| both   | dropnddot+proj | all | none | = bare | 1.00x (unchanged) |
+
+*no formal Z-blowup but rel-L2 1.54 and low-band drift 5.6 = accuracy collapse in
+slow motion.
+
+**Verdict.** The projection is NOT the fix: it delays/softens the feedback (cond
+blowup 13->16 at 1e-2; uncond 0.16x->0.80x) but never beats bare, and at 5e-3 it
+HURTS cond (0.72x->0.22x) because it amputates the band where the correction works.
+Combined with the analytic rows: the NN must get the annulus RIGHT (its ~14-17%
+Nddot error there feeds back), not be excluded from it. Points to training-side
+fixes (rollout-aware/noise-injected fine-tune, annulus-weighted loss, or spectral
+conditioning of the head) over inference-time masking.
+
+## Upstream-fork note (independently verified on main the same day)
+derivative.py:30-32: k_cut = sqrt(2)*(2/3)*min(kmax) — RADIAL. The solver RETAINS
+the aliasing annulus (2/3)kmax < |k| <= 0.943 kmax. This is upstream fork code and
+is self-consistent with ALL training data; changing it means rebuilding data =
+flagged decision (RED), not an action.

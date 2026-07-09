@@ -2,6 +2,24 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-09 — session 7b (Sanaa rulings: f_NN-only projection + analytic arms; job 1828315)
+- Rulings: solver mask RED/untouched; remediate on the correction alone. Implemented
+  --nn-project-radius (df2297a): R3 correction projected to |k| <= (2/3)min(kmax) = 170.67
+  at 512^2 (f_NN of closure arms; f_anal when r3anal runs with it). r3anal sigma logging added.
+- ANALYTIC ANSWER (r3anal, exact derivs): STABLE at all 3 dT with 132.6x / 35.1x / 71.4x
+  improvement over bare (1.5e-2/1e-2/5e-3) — the instability is 100% NN-specific, NOT the
+  scheme's and NOT intrinsic to the aliasing annulus; exact Nddot REGULATES the corner band.
+  Analytic+proj170 collapses to 1.01x/1.40x/1.44x => the annulus CARRIES the closure's value.
+- NN+proj170: not the fix. Softens feedback (cond blowup s13->s16 at 1e-2; uncond 0.16x->0.80x)
+  but never beats bare; at 5e-3 HURTS cond (0.72x->0.22x); uncond@1.5e-2 avoids formal blowup
+  yet rel-L2 1.54 (accuracy collapse). dropnddot+proj = 1.0x everywhere.
+- 18 cases: diagnostics/Results/apost_ladder_20260709_p170/ (one npz each + summary CSV).
+  RESULTS_2026-07-09_apost_matrix.md Part 2. COND still frozen ep63 (best.pt unchanged).
+- Email-format corrections adopted: [QG][SUBMIT|LANDED][WIENER] order; full tables INLINE.
+- Next: training-side fix for the annulus (rollout-aware fine-tune / annulus-weighted loss /
+  spectral head conditioning) — the inference-time mask family is exhausted as a fix.
+
+
 ## 2026-07-09 — session 7 (branch supervisor: apost matrix + dealias/FFT audit; Sanaa away, green light)
 - TASK 0 (dealias/FFT triple-check of rollout_aposteriori.py): NO train/inference bug — f_NN
   end-projected before the IMEX step with the IDENTICAL Derivative.alias_mask training uses.
