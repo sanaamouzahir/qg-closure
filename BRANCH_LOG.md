@@ -26,6 +26,31 @@ Running record. Supervisor updates this at the end of every session. Newest entr
   known-working mail node); body archived logs/outbox/2026-07-09_QG_SUBMIT_gate1_smokes.txt
   + copy in outputs/SGS_closure_gate1/outbox/.
 - Next in-session: babysit to completion, qacct x5, [QG][LANDED] email, log results here.
+- RESULTS (updated in-session):
+  * legacy 1828230 + table_const 1828231: exit 0, 328 s wallclock each, full DNS output.
+    **BIT-IDENTITY PASS AT BYTE LEVEL**: cmp legacy/table_const DNS.npy AND DNS_FR.npz
+    both bit-identical (stronger than the max|dw|=0.0 criterion; cmp is not a frontend
+    .py execution). The C.3 bit-identity arm of Gate-1 is green.
+  * Recorder arms (const_rec/sine/ou) took TWO more bugs, both now fixed git-visibly:
+    (BUG 1, attempt 2 = 1828232-34, exit 1 x3 at step 20000 = first flush,
+    flush_every 2000 x rate 10): np.savez appends '.npz' to any filename not ending in
+    it, so savez('scalars.npz.tmp') wrote 'scalars.npz.tmp.npz' and os.replace died
+    FileNotFoundError. Fix 585c0bd: write through an open file handle (live package +
+    solver_patches mirror, byte-exact cmp).
+    (BUG 2, attempt 3 of sine/ou = 1828237/38 exit 1, const_rec 1828236 exit 0 but
+    poisoned): hydra does NOT chdir — the recorder's default relative out
+    'scalars.npz' resolved against launch cwd $QG_DIR: wrong location AND one shared
+    scalars.npz(.tmp) across all concurrent recorder cases -> os.replace race (a
+    sibling consumes your tmp). const_rec "succeeded" as last-writer only; its run dir
+    had no scalars.npz. Fix d48fcae: submitter passes per-case
+    +qg.diag.out=$QG_DIR/outputs/SGS_closure_gate1/<id>/scalars.npz (solver untouched;
+    recorder already honored diag.out). PHASE-B RELEVANT: every future recorder run
+    MUST carry a per-run diag.out.
+  * Mixed-writer artifacts + const_rec run-1 quarantined (moved, never deleted;
+    DNS_FR.npz intact) to outputs/SGS_closure_gate1/quarantine_2026-07-09_shared_cwd_scalars/
+    with README.txt.
+  * Attempt 4 (recorder arms only): jobs 1828241 const_rec / 1828242 sine / 1828243 ou,
+    submitted 13:5x EDT. Outcome logged below/next entry.
 
 ## 2026-07-09 — session close: CP-1 module set COMPLETE, selftests green (branch supervisor)
 - Landed: 82832aa (CP-1 approval + ledger reconciliation), a58e1aa (modules 1-3),
