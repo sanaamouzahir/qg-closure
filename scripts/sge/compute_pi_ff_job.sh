@@ -42,8 +42,11 @@ export TORCH_EXTENSIONS_DIR="$QG_ROOT/cache/torch"
 export TRITON_CACHE_DIR="$QG_ROOT/cache/triton"
 export PYTORCH_KERNEL_CACHE_PATH="$QG_ROOT/cache/nvrtc"
 
-# ---- 2. Auto-pick an idle GPU when one is available -------------------- #
-if command -v nvidia-smi >/dev/null 2>&1; then
+# ---- 2. Auto-pick an idle GPU ONLY when SGE assigned none --------------- #
+# (sge-checker W1 2026-07-09: never clobber the scheduler's device grant)
+if [ -n "${CUDA_VISIBLE_DEVICES:-}" ] || [ -n "${SGE_HGR_gpu:-}" ]; then
+    echo "[pi_ff_job] using scheduler-assigned GPU(s): CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-} SGE_HGR_gpu=${SGE_HGR_gpu:-}"
+elif command -v nvidia-smi >/dev/null 2>&1; then
     IDLE_GPU=$(nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits \
         | sort -t',' -k2 -n | head -1 | awk -F',' '{gsub(/ /,""); print $1}')
     export CUDA_VISIBLE_DEVICES="$IDLE_GPU"
