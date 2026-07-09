@@ -1,0 +1,64 @@
+**ROLLOUT-IN-THE-LOSS: DESIGN PROPOSAL (YOUR TWO OPTIONS, COSTED) + DEC-loRe VERDICT + YOUR MASK RULING RECORDED**
+
+
+**YOUR RULINGS, RECORDED (DECISIONS + RESULTS.md)**
+
+    1. Mask: sqrt(2)*(2/3) aliasing is across the board -> comparisons fair, NO special-casing. Annulus-weighted-loss proposal withdrawn; 2/3-retrain items closed.
+
+    2. Consistency checks: my job, unprompted, same report. Recorded permanently.
+
+
+**THE KEY DATA FACT (GOOD NEWS): NO NEW DATA NEEDED**
+
+    1. The deep 28-mark builds ARE stored fine-solver trajectories: omega at 28 marks spaced 5e-3 per window, all 14 members.
+
+    2. So rollout-loss truth for dT = 5e-3 / 1e-2 / 1.5e-2 = every 1st / 2nd / 3rd mark -> up to 27 / 13 / 9 coarse steps of ground truth per window, already on disk.
+
+
+**OPTION A — FULL BACKPROP THROUGH THE SOLVER (BPTT)**
+
+    1. Loss = sum over m of rel-L2( omega_rollout(m steps, closure inside AB2CN2) vs stored fine omega at mark m ).
+
+    2. Solver is torch + autodifferentiable; IMEX linear solves are DIAGONAL in spectral space -> clean gradients; f64 throughout.
+
+    3. Memory: M x step activations at 512^2 -> needs gradient checkpointing beyond M ~ 4; walltime ~ M x current epoch (~10 min/ep now -> ~40-50 min/ep at M=4).
+
+    4. Risk: exploding gradients through near-unstable trajectories. Mitigation: horizon CURRICULUM (start M=1 == current LTE loss, grow to 8) + grad clipping.
+
+    5. BUILT-IN CONSISTENCY GATES (per your new rule): (a) zero-init NN -> unrolled solver must reproduce the bare solver BIT-EXACTLY; (b) M=1 limit must reproduce the current offline loss numbers (the 0.0646 == 0.0646 check, now automated).
+
+**OPTION B — x-dt ROLLOUT TERM, TRUNCATED GRADIENT (CHEAP VARIANT)**
+
+    1. Same unrolled loss, but gradients truncated to the last k steps (TBPTT) or teacher-forced states with stop-gradient.
+
+    2. ~1.2-2x current epoch cost, no checkpointing, no exploding-gradient risk.
+
+    3. Weaker signal: the NN never "feels" its own long-horizon feedback — precisely the failure mode we measured — so B may fix less of the annulus pumping than A. Worth having as the ablation arm.
+
+**RECOMMENDATION**
+
+    1. Build ONE trainer (train_deriv_rollout.py) with unroll horizon M and gradient mode {full, truncated} as flags -> A and B are the SAME code, A/B-able.
+
+    2. Warm-start from cond_local_v2 ep63 (best offline) AND from physics init (2-arm).
+
+    3. Smoke first: kf4 + FRC-256 subset, M curriculum 1->4, ~2-4 h GPU. Production (41 roots, M->8): ~2-3 days GPU — awaits your GO after the smoke report.
+
+    4. Success metric = the 4-arm table itself, rerun: cond+rollout-loss must survive 16 steps at 1.5e-2 and beat bare; offline Nddot allowed to degrade a little (the Wiener trade).
+
+
+**DEC-loRe N3dot VERDICT (jobs 1828765-66, landed)**
+
+    1. NOT a model bug, NOT bad-sample poisoning: median 9.33 ~ mean 8.5 -> the WHOLE root is bad on N3dot.
+
+    2. Cause: slow low-Re decaying flow -> the 7-lag omega stack barely changes (stack roughness ~1e-5, healthy flows ~1e-3, f32 floor ~1e-6) -> the deepest-cancellation N3dot input signal drowns in the float32 disk storage floor. The locked f32 caveat, realized.
+
+    3. Consequence: harmless for rollout (N3dot = 2.6% of the closure). If a clean N3dot number is ever needed for the paper: re-slice DEC-loRe at float64 (the sanctioned fix).
+
+
+**WHERE TO GO**
+
+    1. Living doc: qg-wiener-conditioning/diagnostics/RESULTS.md (rulings + verdicts folded in).
+
+    2. loRe distributions: qg-wiener-conditioning/logs/dg_loRe_{5em3,1em2}.*.log
+
+    3. This proposal + all today's email copies: qg-wiener-conditioning/diagnostics/Results/outbox_*.txt

@@ -102,9 +102,17 @@ by WHERE in k the residual sits, not its size. Analytic arm = the ceiling is rea
 
 ## Open items
 
-- Per-root eval of both final ckpts (the standing "before any scoreboard claim" gate).
-- Annulus-weighted loss proposal (λ~3 per-shell + rollout-aware injection) — design
-  only, PROPOSED, no training without Sanaa's GO.
+- **NEW DIRECTION (Sanaa ruling 2026-07-09): rollout in the loss.** Either full backprop
+  through the autodifferentiable solver, or an x-dt unrolled rollout-loss term. Design
+  proposal emailed ([QG][PROPOSE][WIENER] 2026-07-09); trainer build + smoke gates next;
+  production training awaits her GO.
+- **Mask ruling (same date): the sqrt2 aliasing is across the board — comparisons are
+  fair; do NOT special-case it.** Annulus-weighted loss WITHDRAWN; per-product-dealias
+  and 2/3-retrain items CLOSED.
+- DEC-loRe N3dot verdict: uniformly bad root (median 9.33 ≈ mean), stack roughness
+  ~1e-5 ≈ f32 floor territory — input-information-limited (slow flow + f32 disk),
+  NOT a model bug; harmless for rollout. Re-slice f64 only if a clean number is needed.
+- ~~Per-root eval of both final ckpts~~ DONE (see scoreboard above).
 - σ̂-drift CSV, frozen-σ̂ A/B, control-as-5th-arm, save-refs, pareto, profile-step —
   six D-item ports PROPOSED with costs, awaiting per-item GO.
 - Wiener filter theory formalization (iPad) before the next conditioned model.
