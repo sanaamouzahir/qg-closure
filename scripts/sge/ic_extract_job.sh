@@ -62,6 +62,13 @@ python -u - "$RUN_DIR" "$TIME_INDEX" "$OUT_BASE" <<'EOF'
 import sys, numpy as np
 run_dir, idx, base = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 t = np.load(f"{run_dir}/DNS_FR_times.npy")
+omega = np.load(f"{run_dir}/DNS_FR_omega.npy", mmap_mode="r")
+T = omega.shape[1]
+if T == len(t) + 1:
+    # fields carry the IC frame at t=0; times only the saved marks
+    t = np.concatenate(([0.0], t))
+elif T != len(t):
+    raise SystemExit(f"omega T={T} vs times {len(t)}: unrecognized layout")
 print(f"[ic_extract_job] extracted index {idx} -> t = {t[idx]:.6f} "
       f"(dt_save = {np.median(np.diff(t)):.6f}, T range [{t[0]}, {t[-1]}])")
 with open(f"{run_dir}/{base}_manifest.txt", "w") as fh:

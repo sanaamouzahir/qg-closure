@@ -354,6 +354,15 @@ def run_audit(args):
     for s in sorted(piff.keys()):
         entry = piff[s]
         times = entry['times']
+        pi_ff_T = int(entry['z']['pi_ff'].shape[1])
+        if pi_ff_T == len(times) + 1:
+            # solver packaging: fields carry the IC frame at t=0, the times
+            # array only the saved marks -- align by prepending t=0 (t_min
+            # masks the IC out of every window anyway)
+            times = np.concatenate(([0.0], times))
+        elif pi_ff_T != len(times):
+            raise ValueError(f'pi_ff T={pi_ff_T} vs times {len(times)}: '
+                             f'unrecognized layout in {entry["path"]}')
         tw = times >= args.t_min
         tt = times[tw]
         if snap_times is None:
