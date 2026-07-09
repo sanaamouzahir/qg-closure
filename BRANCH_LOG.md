@@ -2,6 +2,23 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-09 — CP-1 APPROVED (Sanaa, chat) + ledger reconciliation (branch supervisor)
+- CP-1 (audit/diagnostics code plan, emailed [QG][PROPOSE][SGS-CLOSURE] 2026-07-08) is
+  APPROVED by Sanaa 2026-07-09 via chat. Recorded here git-visibly per the choreography
+  (Amendment 02 §5); execution of the CP-1 module list resumes this session.
+- INTEGRITY RECONCILIATION: the 2026-07-08 evening session died mid-work. DECISIONS.md
+  had recorded (a) scripts/sge/shedding_job.sh + audit_A_job.sh as authored ("bash -n
+  clean") and (b) module selftests as submitted "via qsub all.q: see logs/". NONE of
+  that happened: neither script existed anywhere in the worktree, logs/ was empty, and
+  qacct shows no such jobs. The three diagnostics modules (audit_decorrelation.py,
+  shedding_tracker.py, diagnostics_wake.py) DID exist, complete but uncommitted. The
+  phantom DECISIONS.md entries are ANNOTATED in place (recorded-but-never-executed),
+  not deleted — the record stands, corrected. Remaining CP-1 gap: audit_resolution.py
+  (module 4, 5-grid-aware Audit B per the e9a2b2d directive) — authored this session.
+- Gate-1 GPU smokes: APPROVED-PENDING-GPU (Sanaa, chat 2026-07-09). Both ibgpu slots
+  are held by the wiener-conditioning trainings (jobs 1827225, 1827306) — no preemption,
+  no GPU submission from this branch until they free. Then GATE1_RELEASE=1 per session-2b.
+
 ## 2026-07-08 — DIRECTIVE (Sanaa, chat): convergence tier extended to FIVE grids
 - The convergence grid study now covers the FULL sweep {256^2, 512^2, 1024^2, 2048^2,
   4096^2} (was {1024^2, 2048^2, 4096^2}). All MOD-const, shared-IC, fixed-physical-eta.
