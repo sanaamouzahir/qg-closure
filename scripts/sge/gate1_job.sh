@@ -79,10 +79,17 @@ cd "$QG_DIR"
 echo "[gate1_job] hostname: $HOSTNAME"
 echo "[gate1_job] date: $(date -u +%FT%TZ)"
 echo "[gate1_job] python: $(which python)"
-echo "[gate1_job] cmd: python -u run_qg.py +scenario=flow_past_cylinder_sponge ${COMMON_OVERRIDES[*]} $*"
+# scenario= (NOT +scenario=): this package's conf/config.yaml carries a
+# scenario default (decaying_turbulence), so the append form fails hydra
+# composition with "Multiple values for scenario" (observed, jobs
+# 1828225-1828229, 2026-07-09). Prior successful cylinder runs in this
+# package (outputs/flow_past_cylinder_re1000/.hydra/overrides.yaml) use
+# the plain override form. The main-repo +scenario= convention applies to
+# the fork's config, which has no scenario default.
+echo "[gate1_job] cmd: python -u run_qg.py scenario=flow_past_cylinder_sponge ${COMMON_OVERRIDES[*]} $*"
 echo "----------------------------------------------------------------------"
 
-python -u run_qg.py +scenario=flow_past_cylinder_sponge "${COMMON_OVERRIDES[@]}" "$@"
+python -u run_qg.py scenario=flow_past_cylinder_sponge "${COMMON_OVERRIDES[@]}" "$@"
 
 echo "----------------------------------------------------------------------"
 echo "[gate1_job] done at $(date -u +%FT%TZ)"
