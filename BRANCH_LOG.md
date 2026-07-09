@@ -2,6 +2,31 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-09 — Gate-1 GPU smokes SUBMITTED (branch supervisor; Sanaa green light, chat)
+- Sanaa directive (chat, ~13:00 EDT): full green light to submit the held Gate-1 smokes on
+  any FREE ibgpu slot; wiener trainings 1827225/1827306 untouchable. qstat -F gpu showed
+  hc:gpu=6 free on ibgpu-compute-0-0 — submitted immediately, no queueing behind wiener.
+- Pre-submission fixes (sge-checker PASS on both): job names sgs_gate1_* -> g1_* (all five
+  collided in qstat's 10-char truncation; wrong-qdel hazard) = be2a0b0.
+- ATTEMPT 1 FAILED: jobs 1828225-29 died ~5 s in at hydra composition — "+scenario=" append
+  clashes with package-stable's scenario DEFAULT (decaying_turbulence in conf/config.yaml);
+  qacct exit_status=1 x5, no partial output. The main-repo "+scenario=" convention applies
+  to the fork's config (no scenario default), NOT to package-stable. Fix: plain
+  "scenario=flow_past_cylinder_sponge" (matches outputs/flow_past_cylinder_re1000's
+  overrides.yaml) = b0e455c.
+- ATTEMPT 2 RUNNING: 1828230 g1_legacy / 1828231 g1_table_const / 1828232 g1_const_rec /
+  1828233 g1_sine / 1828234 g1_ou, all r on ibgpu-compute-0-0 since 13:24 EDT, all picked
+  GPU 0 (idle-pick race; benign at 512^2, wiener GPUs carry memory so never selected).
+  ~205 it/s on 60000 steps => minutes-scale runs. Smokes are simulations, NOT training-class
+  — I18 three-job monitor unit does not apply (payload run_qg.py; sge-checker concurred).
+- CPU workers shedding_job.sh / audit_A_job.sh: NOT submitted — their inputs (scalars.npz
+  from recorder runs / FPC-const production) do not exist until the smokes land; selftests
+  already green 2026-07-09. Gate = data, not queue.
+- [QG][SUBMIT][SGS-CLOSURE] sent via mailx job 1828235 pinned to ibfdr-compute-0-0 (the
+  known-working mail node); body archived logs/outbox/2026-07-09_QG_SUBMIT_gate1_smokes.txt
+  + copy in outputs/SGS_closure_gate1/outbox/.
+- Next in-session: babysit to completion, qacct x5, [QG][LANDED] email, log results here.
+
 ## 2026-07-09 — session close: CP-1 module set COMPLETE, selftests green (branch supervisor)
 - Landed: 82832aa (CP-1 approval + ledger reconciliation), a58e1aa (modules 1-3),
   02a5c47 (audit_resolution.py + CPU workers shedding_job.sh/audit_A_job.sh;
