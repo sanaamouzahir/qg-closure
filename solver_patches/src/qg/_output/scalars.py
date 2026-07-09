@@ -269,7 +269,14 @@ class ScalarRecorder:
                        meta=json.dumps(self.meta))
         for k, v in self.d.items():
             payload[k] = v[:n]
+        # Write through an open file handle: np.savez APPENDS '.npz' to any
+        # str/Path filename not already ending in it, so savez('x.npz.tmp')
+        # silently writes 'x.npz.tmp.npz' and the os.replace below dies with
+        # FileNotFoundError at the first flush (observed: Gate-1 recorder
+        # arms, jobs 1828232-34, 2026-07-09, step 20000 = flush_every*rate).
+        # A file object is used verbatim; atomic-replace semantics preserved.
         tmp = self.out + '.tmp'
-        np.savez(tmp, **payload)
+        with open(tmp, 'wb') as fh:
+            np.savez(fh, **payload)
         os.replace(tmp, self.out)
         self._since_flush = 0
