@@ -2,6 +2,33 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-09 — session 7d (Sanaa full mandate: eps(k) profiles + dealias audit + the 2/3 world; job 1828403)
+- PART 1 (spectral_error_profile.py, 3 ckpts x 14 (member,dt) roots x 6 val samples): profile
+  is U-SHAPED — worst at LOW k (Nddot eps(30): cond 0.18 / control 0.45), min at k~100-200,
+  knee k=209 (cond) / 232 (control); annulus only x1.4-1.7 worse than mid a-priori. ep63
+  conditioning bends LOW k 2.7x, annulus only 1.4x (worse-than-control at b1/b2@1.5e-2).
+  rollout_unc (lr5e-5 ep8) uniformly weakest. Annulus-weighting proposal drafted (lambda~3
+  per-shell weight + rollout-aware injection) — design only, NO training launched.
+- PART 2 (dealias audit, file:line in RESULTS Part 3 section): solver = ONE mask per RHS SUM
+  (operator/__init__.py:48; jacobian patch unmasked internally); harness/targets = per-product
+  (2 per Jacobian; 20 masked products per [N..N3dot] anchor); model = ZERO internal, ONE
+  end-projection (train_deriv.py:229; == 16 per-product exactly, single quadratic level).
+  Correction to Sanaa's picture: intermediates w^(k),psi^(k) are NOT re-masked (diagonal
+  images, band-preserving — no mask needed). FOLD MATH: sqrt2 world folds land >= 0.114 kmax
+  (mode 29.3) INSIDE the ball, irremovable at any placement; strict 2/3 folds land >= (2/3)kmax
+  = removed exactly.
+- PART 3 (the 2/3 WORLD, whole harness + truth + IC under radial (2/3)min(kmax), new refs):
+  ANSWER = NO. Analytic stays stable/strong (23.6x/16.3x/9.5x; bare itself ~6x better —
+  the annulus was much of bare's error). NN gets WORSE than sqrt2 world: uncond blows even
+  at 5e-3 (s14), cond blows at all dT (s6/s7/s6). Train/eval mask mismatch dominates (stated
+  caveat) => aliasing per se is NOT the NN's problem; per-product-dealias design note NOT
+  triggered; clean test needs a mask-matched model (retrain on 2/3 data) or rollout-aware
+  fine-tune. Low-k: clean under analytic in 2/3 world; NN corrupts it via feedback, not alias.
+- 9 case npz + summary in Results/apost_ladder_20260709_third23/; profile npz in
+  Results/spectral_error_profile_20260709/. Emails: [QG][SUBMIT][WIENER] + [QG][LANDED][WIENER]
+  (full tables + Part-2 writeup inline, mailx from mseas).
+
+
 ## 2026-07-09 — session 7c (Sanaa order: kill plateaued trainings + final report)
 - qdel EXACTLY 1827225 (hygiene_train) + 1827306 (condlocal_train) at 15:05:58 EDT after
   qstat -j identity verification. Reason: plateaued, ordered by Sanaa. GPU slots freed for
