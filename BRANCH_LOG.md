@@ -49,8 +49,26 @@ Running record. Supervisor updates this at the end of every session. Newest entr
   * Mixed-writer artifacts + const_rec run-1 quarantined (moved, never deleted;
     DNS_FR.npz intact) to outputs/SGS_closure_gate1/quarantine_2026-07-09_shared_cwd_scalars/
     with README.txt.
-  * Attempt 4 (recorder arms only): jobs 1828241 const_rec / 1828242 sine / 1828243 ou,
-    submitted 13:5x EDT. Outcome logged below/next entry.
+  * Attempt 4 (recorder arms only): jobs 1828241 const_rec / 1828242 sine / 1828243 ou —
+    ALL exit 0 (272 s each), per-case scalars.npz (1.16 MB, 4000 rows) in each run dir,
+    no strays in $QG_DIR. **const_rec (recorder ON) is ALSO byte-identical to legacy**
+    (cmp DNS.npy + DNS_FR.npz) — recorder provably non-invasive. GATE-1 SMOKE MATRIX
+    FULLY GREEN: 5/5 cases landed, bit-identity byte-exact, recorder arms recording.
+  * Shedding tracker on the 3 recorder scalars (first real-data run, gate=data now
+    clear): jobs 1828244 shed_g1cr / 1828245 shed_g1sn / 1828246 shed_g1ou, all.q,
+    exit 0 x3, --t-min 5.0 (T_WAIT; the 30.0 default exceeds the T=15 smoke horizon).
+    Outputs <case>/shedding/{summary.yaml,npz + PSD/instfreq PNGs}. Physically coherent:
+    clean lift peaks, f_drag~2f_sh (ratio 0.81-0.83), no 3rd harmonic, alias-free,
+    Hilbert phase advance ~2.0 cycles; const arm U_inlet_median=2.0 EXACT,
+    Re_inlet_median=3899.9955. St_inlet 0.11-0.12 vs 0.21 ref = context only (2 cycles
+    in the 10 t.u. window; 2D-truth framing, not a validation target).
+  * audit_A_job NOT submitted: input = Phase-B FPC-const production run (post-Gate-1
+    approval). Gate = data, not queue.
+  * [QG][LANDED][SGS-CLOSURE] sent via mail job (ibfdr-compute-0-0); body archived in
+    logs/outbox/2026-07-09_QG_LANDED_gate1_smokes.txt + outputs outbox copy.
+  * Wiener trainings 1827225/1827306 verified untouched throughout.
+  * REMAINING for Gate-1 report (awaiting Sanaa GO): U_inlet-vs-table exact overlay,
+    dt-consistency overlay (ou 2.5e-4 vs 1.25e-4 table), [QG][GATE1] report, HARD STOP.
 
 ## 2026-07-09 — session close: CP-1 module set COMPLETE, selftests green (branch supervisor)
 - Landed: 82832aa (CP-1 approval + ledger reconciliation), a58e1aa (modules 1-3),
