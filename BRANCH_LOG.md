@@ -2,6 +2,30 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-09 — GATE D-1 LANDED + VETTED; [QG][GATE-D1][SGS] SENT; awaiting ruling (resumed session)
+- Chain 1828396/1828397/1828398 landed 17:00 EDT (~45 min GPU, 221.5 it/s). Wake DEVELOPED:
+  16 shedding cycles in t 250–1500, drag line at 2.0018×f_sh, third harmonic absent — the
+  T=120 lesson closed. Tracker gate verdict as coded: FAIL ×3 (St 0.159 / Cd 1.136 / rmsCl
+  0.257 vs canonical 0.195–0.20 / 1.3–1.4 / 0.4–0.7).
+- physics-sanity vet (code-level, scalars.py + shedding_tracker.py) — findings:
+  (1) St FAIL is an ESTIMATOR ARTIFACT: St built from Hilbert-median f (0.01301) which has
+  ~3.5 cycles retrograde phase slip; Welch 0.01564 / zero-x 0.01557 / wake-probe 0.01548
+  cluster → corrected St_inlet 0.1916/0.1908 = PASS inside the tracker's own ±5% band
+  (shedding_tracker.py:343-344). (2) St_cyl 0.197 = two low biases cancelling (Welch f →
+  0.237); U_cyl measured 1.5D UPSTREAM (scalars.py:242-248), Re_cyl=162 → route void.
+  (3) Cd/rmsCl TRUSTWORTHY (U_inlet² norm verified, scalars.py:170-175) and genuinely LOW —
+  self-consistent under-forcing; suspects: Brinkman-penalty force under-prediction, periodic
+  wake re-entry (~6 domain flushes). (4) Δf resolution ±20% of f_sh — any future St gate
+  needs a longer window or an error bar.
+- [QG][GATE-D1][SGS] sent DIRECTLY from mseas (rc=0, 17:21 EDT; outbox
+  2026-07-09_QG_GATED1_SGS_verdict.txt): ruling requested (pass-with-findings vs
+  hold-for-root-cause), tracker St-fix proposed (Welch/zero-x for St; Hilbert retained for
+  phase/T_sh exports only), 3 optional probes costed (penalty-drag audit / wake-re-entry A/B
+  windows / long-window St error bar). DECISIONS updated. GATE D-1 REMAINS OPEN — no tracker
+  edit, no probe submitted without her GO.
+- FPC-const 1828324 ~83% at 17:14, landing ~17:40; watcher armed for the landing chain
+  (Π_FF s{2,4,8} → audit_A → [QG][RUN][SGS] → t=30 IC extract).
+
 ## 2026-07-09 — Gate D-1 OPTION B SUBMITTED; EMAIL CHANNEL SWITCHED TO MSEAS (branch supervisor)
 - Sanaa (chat, via coordinator): OPTION B APPROVED for Gate D-1 incl. EXPLICIT dt sign-off
   (2.5e-3, deviation from chartered 2.5e-4) — [red-approved] in DECISIONS (e1b8f99).
