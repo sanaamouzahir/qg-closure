@@ -780,6 +780,17 @@ def main():
                    help='record E/Z every this many coarse steps')
     p.add_argument('--blowup-factor', type=float, default=10.0,
                    help='declare blowup when Z exceeds this multiple of Z(0)')
+    p.add_argument('--world-mask-radius', type=float, default=None,
+                   metavar='FACTOR',
+                   help='ALIAS-CLEAN WORLD: rebuild the solver dealias mask '
+                        'as radial |k| <= FACTOR * min(kx_max, ky_max) for '
+                        'the ENTIRE harness (RK4 truth, bare, r3anal, NN '
+                        'arms -- all read derivative.alias_mask), and '
+                        'project the IC history stack onto the same ball. '
+                        'FACTOR=0.6666666666666667 = strict alias-safe 2/3 '
+                        '(quadratic-product folds land at |k| >= (2/3)kmax, '
+                        'removed exactly by the product mask). sqrt2-world '
+                        'refs FAIL the IC guard by design -- regenerate.')
     p.add_argument('--nn-float64', action=argparse.BooleanOptionalAction,
                    default=True,
                    help='NN parameter dtype (float64 default: closure signal '
@@ -826,6 +837,12 @@ def main():
               f'|k| <= {args.nn_project_radius:.6f} * min(kx_max, ky_max) '
               f'(closure/closure2 f_NN + r3anal f_anal; solver mask '
               f'unchanged)')
+    if args.world_mask_radius is not None:
+        print(f'[apost] WORLD MASK OVERRIDE: radial |k| <= '
+              f'{args.world_mask_radius:.6f} * min(kmax) (mode radius '
+              f'{args.world_mask_radius * (Nx // 2):.1f} of {Nx // 2}) for '
+              f'the ENTIRE harness incl. RK4 truth; IC stack projected onto '
+              f'the same ball')
     if not args.no_truth and h_fine > 2.5e-5:
         print(f'[apost] WARNING: h_fine={h_fine:.3e} > 2.5e-5 -- the RK4 '
               f'truth is NOT a stand-in for the analytic flow at closure-'
@@ -841,6 +858,20 @@ def main():
     for attr in ('dx', 'dy', 'laplacian', 'inv_laplacian', 'alias_mask'):
         if hasattr(derivative, attr):
             setattr(derivative, attr, getattr(derivative, attr).to(device))
+    if args.world_mask_radius is not None:
+        # every dealias in the harness (J products in _N_core / J_phys /
+        # the analytic chain, f_anal, f_NN end-projection -- in BOTH this
+        # module and rollout_perfect_closure's own _dealias_mul) reads
+        # derivative.alias_mask or the cached derivative._keep_mask, so
+        # overriding the mask + clearing the cache re-worlds everything.
+        kx2w = (-(derivative.dx ** 2)).real
+        ky2w = (-(derivative.dy ** 2)).real
+        kmagw = torch.sqrt(kx2w + ky2w)
+        k_world = float(args.world_mask_radius) * min(
+            float(kx2w.max()) ** 0.5, float(ky2w.max()) ** 0.5)
+        derivative.alias_mask = (kmagw > k_world)
+        if hasattr(derivative, '_keep_mask'):
+            del derivative._keep_mask
     L_hat = build_L_hat(derivative, nu, mu, beta).to(device)
     fc = manifest.get('forcing') if manifest.get('has_forcing') else None
     F_phys = build_forcing(grid, fc, device, dtype)
@@ -874,6 +905,11 @@ def main():
                                                dtype=np.float64),
                                     dtype=dtype, device=device)[None]
                        for k in range(n_snap)]
+        if args.world_mask_radius is not None:
+            omega_stack = [to_physical(_dealias_mul(to_spectral(o),
+                                                    derivative))
+                           for o in omega_stack]
+            print('[apost] IC stack projected onto the world-mask ball')
         psi_stack = [psi_from_omega(o, derivative) for o in omega_stack]
         print(f'[apost] IC: packed row {args.ic_index} '
               f'(|omega_0|_rms={float(torch.sqrt((omega_stack[0]**2).mean())):.4e})')
@@ -882,6 +918,10 @@ def main():
         if seed.ndim == 3:
             seed = seed[0]
         om_seed = torch.tensor(seed, dtype=dtype, device=device)[None]
+        if args.world_mask_radius is not None:
+            om_seed = to_physical(_dealias_mul(to_spectral(om_seed),
+                                               derivative))
+            print('[apost] restart IC projected onto the world-mask ball')
         h_uf = Delta_T / 200.0
         n_uf = int(round(Delta_T / h_uf))
         marks = [om_seed.clone()]
