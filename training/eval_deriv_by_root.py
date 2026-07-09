@@ -54,6 +54,10 @@ def main():
     ap.add_argument('--device', default='cuda')
     ap.add_argument('--max-batches', type=int, default=0,
                     help='cap batches per root (0 = all; use e.g. 20 for a fast pass)')
+    ap.add_argument('--model', default='auto',
+                    choices=['auto', 'cheap_deriv', 'cond_local', 'cond_deriv'],
+                    help="'auto' reads config.json next to the ckpt "
+                         "(falls back to cheap_deriv)")
     args = ap.parse_args()
 
     dev = args.device if torch.cuda.is_available() else 'cpu'
@@ -76,8 +80,15 @@ def main():
 
     # ---- model at reference spacing, load ckpt ----
     ck = torch.load(args.ckpt, map_location=dev, weights_only=False)
+    model_name = args.model
+    if model_name == 'auto':
+        cfg_path = args.ckpt.parent / 'config.json'
+        model_name = (json.loads(cfg_path.read_text()).get('model', 'cheap_deriv')
+                      if cfg_path.exists() else 'cheap_deriv')
+        print(f"[eval] --model auto -> {model_name} "
+              f"({'from ' + str(cfg_path) if cfg_path.exists() else 'default'})")
     dt0 = 5e-3  # placeholder; per-sample dt overrides at forward
-    model = build_model('cheap_deriv', in_channels=2 * args.n_snapshots,
+    model = build_model(model_name, in_channels=2 * args.n_snapshots,
                         out_orders=args.out_orders, grad_kernel=args.grad_kernel,
                         dt=dt0, dx=dx0, dy=dy0, physics_init=True,
                         learnable_stencils=True).to(dev).to(adtype)

@@ -5,7 +5,37 @@ every session — never create a new dated RESULTS_*.md. Per diagnostic run: ONE
 consolidated .npz + ONE readable text block here. Dated RESULTS_2026-07-*.md files
 are frozen archives; git history preserves every prior state of this file.**
 
-_Last overwrite: 2026-07-09 evening (session 7e)._
+_Last overwrite: 2026-07-09 evening (session 7f: diagnostics run-status audit + eval wave)._
+
+## Diagnostics run-status (Sanaa's question: "did you run all of these?" — answer: NO)
+
+Ran on current data AND cond_local: spectral_error_profile (ep63, 14 FRC roots),
+rollout_aposteriori (3 matrices, but ONE member/ONE IC, kf4/IC837),
+consolidate_apost_cases, diagnose_condlocal_init (G1 gate ×2), filter_quiescent_windows
+(41-root pool). Triage ran on the INCIDENT ckpt only.
+
+NOT run on cond_local (holes, ranked):
+1. **eval_deriv_by_root on the final ckpts** — the "before any scoreboard claim" gate.
+   → CLOSED THIS SESSION: jobs 1828724 (cond_v2 ep63, 41 roots) / 1828725 (hygiene
+   ep107, 17) / 1828726 (floor0.1 regression vs Jul-6 CSV, validates the --model auto
+   patch). eval_deriv_by_root.py patched: --model auto reads config.json next to ckpt.
+2. A-priori debug ladder never on cond_local: diagnose_error_distribution (control-era
+   Jul 3 only), diagnose_one_sample, diagnose_head_sign (control ckpt only).
+3. All rollout evidence = kf4/IC837 at MID-TRAINING ep63; aposteriori_accuracy/
+   stability ran on smokes only (control ckpt, one later-dropped quiescent IC);
+   benchmark_walltime_closure never timed cond_local.
+4. closure_error_propagation second pass (real ε after training) never ran — only the
+   eps=1 geometry pass (Jun 29, 3 members).
+5. Everything in analysis/ (numerics suite) + perfect-closure/pareto/multistep predates
+   the S=7 pool and cond_local entirely (May–mid-June); pareto has a known unfixed flaw
+   (bare dtb leg). σ̂-drift/frozen-σ̂ A/B are among the un-GO'd D-item ports.
+
+Data-quality footing is solid: filter (41 roots), triage D2 byte-alignment (10 members
+≤9.5e-14), G1 init gates. Gaps there: mark-noise/sliced-inputs scripts never pointed at
+the TASK-0c deep builds; FD floor (temporal_fd_floor_deep) only on Re25k/combo/kf4.
+
+npz count in Results/: 59 (three ladder dirs 12+2/18/9+3 case npz + summary CSVs;
+smoke dirs hold the pre-discipline litter, apost_smoke3 alone ~67 csv/json).
 
 ## Scoreboard (final ckpts, trainings killed 2026-07-09 on Sanaa's order)
 
