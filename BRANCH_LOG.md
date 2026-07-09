@@ -2,6 +2,40 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-09 — St verdict + Gate-1 overlays COMPLETE, [QG][GATE1][SGS] sent, HARD STOP (branch supervisor)
+- Sanaa GO (chat, via coordinator; RED, recorded in DECISIONS): overlays + GATE1 report
+  CONDITIONAL on first justifying St 0.11-0.12 vs 0.21. Email conventions corrected:
+  subject order [QG][<family>][<qualifier>] (family second, SGS qualifier last); result
+  tables INLINE in the body.
+- ST VERDICT: **UNDEVELOPED WAKE** (her hypothesis), not normalization, not a tracker bug.
+  Suspects cleared in shedding_tracker.py: St=f*D/U_inlet(t), U recorded (2.0 exact, not
+  1); D=2r=0.4pi consistent with Re := U*D/nu = 3900; f from the LIFT PSD (drag only
+  cross-checked near 2f_sh — not circular). Development numbers (diagnostics/
+  st_verdict_gate1.py, all.q job 1828287 exit 0): Cl envelope thirds 0.29->0.67->1.48
+  (const_rec, 5.0x and still growing at window end; ou 1.87x; sine rms 2.5x), observed
+  cycles 2.00 vs expected 3.3-4.1, window 15.9-19.4 convective D/U units after only
+  8-10 units of wait (limit cycle at Re~3900 needs O(50+)), f_sh(t) monotone ramp
+  0.05->0.28 toward f_qs=0.334 with St_cyl(t) CROSSING 0.21 late-window (peak 0.235),
+  PSD shows NO discrete line and Welch df=0.1 puts the 0.11-vs-0.21 gap at 1.6-1.9 bins.
+  Caveats: 512^2 = 25.6 pts/D under-resolved at Re 3900 (rule 12 anchor; shifts absolute
+  St but is not needed to explain the median); blockage D/(8pi) = 5%, minor. Smoke St is
+  a NON-MEASUREMENT; production T=120 windows give ~30 cycles at df~0.011 (tracker
+  in-design). No tracker fix required.
+- GATE-1 OVERLAYS (diagnostics/gate1_overlays.py, all.q job 1828314 exit 0):
+  * U_inlet-vs-table EXACT overlay: max|U_rec - U_table[step]| = 0.0 for const_rec,
+    sine, ou (6000 rows each); sine/ou uniquely pin alignment offset 0 (the bc-doc
+    semantic). Figures fig_gate1_u_vs_table.png per case dir.
+  * dt-consistency STRICT IDENTITY: max|U_2p5[k] - U_1p25[2k]| = 0.0 over all 60001
+    compared samples for BOTH ou and telegraph pairs (micro-grid subsample identity as
+    designed). Figures + gate1_overlays_summary.yaml under outputs/SGS_closure_gate1/.
+- GATE-1 CHECKLIST COMPLETE: bit-identity byte-exact PASS; recorder-on byte-exact
+  (non-invasive); 5/5 smokes exit 0 no-NaN; per-case scalars sane (U=2.0/Re=3899.9955
+  exact on const); shedding smoke coherent; U-vs-table exact; dt-consistency identity;
+  St justified. [QG][GATE1][SGS] report emailed with inline tables; **HARD STOP** —
+  no Phase-B submission until Sanaa approves the Gate-1 report (charter S3.4).
+- Session note: a network drop killed the previous session mid-record; nothing was lost
+  (DECISIONS entries + scripts + job outputs all on disk); resumed and completed.
+
 ## 2026-07-09 — Gate-1 GPU smokes SUBMITTED (branch supervisor; Sanaa green light, chat)
 - Sanaa directive (chat, ~13:00 EDT): full green light to submit the held Gate-1 smokes on
   any FREE ibgpu slot; wiener trainings 1827225/1827306 untouchable. qstat -F gpu showed
