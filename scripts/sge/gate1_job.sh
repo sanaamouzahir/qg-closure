@@ -16,7 +16,7 @@
 # Absent keys => bit-identical legacy behavior (Gate-1 max|dw|=0.0 arm).
 #
 # Usage:
-#   qsub -N sgs_gate1_<id> -q ibgpu.q -l gpu=1 -m ea -M $QG_NOTIFY_EMAIL \
+#   qsub -N g1_<id> -q ibgpu.q -l gpu=1 -m ea -M $QG_NOTIFY_EMAIL \
 #        gate1_job.sh +qg.bc.inlet_table=<path/to/table.npz> \
 #        +qg.diag.scalar_rate=10 hydra.run.dir=outputs/SGS_closure_gate1/<id>
 #

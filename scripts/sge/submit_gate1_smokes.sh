@@ -96,7 +96,10 @@ SUBMITTED=0
 SKIPPED=0
 
 for ID in "${CASE_IDS[@]}"; do
-    JOBNAME="sgs_gate1_${ID}"
+    # Job name g1_<id>, NOT sgs_gate1_<id>: qstat truncates names at 10 chars
+    # and all five would collide as "sgs_gate1_" (wrong-qdel hazard, branch
+    # convention 2026-07-09). g1_<id> keeps every case distinct in 10 chars.
+    JOBNAME="g1_${ID}"
     OUT_DIR_ABS="$QG_DIR/$RUN_ROOT/$ID"
     LOG="$LOG_DIR/${JOBNAME}.log"
 
@@ -148,7 +151,7 @@ echo "Monitor with:"
 echo "  qstat -u \$USER"
 echo
 echo "Tail any single log:"
-echo "  tail -f $LOG_DIR/sgs_gate1_<id>.log"
+echo "  tail -f $LOG_DIR/g1_<id>.log"
 echo
 echo "NOTE: the bit-identity diff (legacy vs table_const, max|Δω| must be"
 echo "      0.0), the Cd/Cl + inlet-overlay smoke plots, and the"
