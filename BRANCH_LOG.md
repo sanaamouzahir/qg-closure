@@ -2,6 +2,31 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-09 — GATE-1 APPROVED; PHASE-B WAVE 1 SUBMITTED; Gate D-1 FLAGGED (branch supervisor)
+- Sanaa approved the Gate-1 report (chat, via coordinator) — S3.4 hard stop LIFTED
+  (7a6eb3b). She ordered wiener trainings 1827225/1827306 killed (their supervisor
+  executed; this branch did not touch them; ibgpu host now free).
+- Wave 1 submitted per charter S4 + Amendment 02 (scripts 501cb9f/3f4a81c, sge-checker
+  PASS x3, PHASEB_RELEASE guard): phaseB_tab 1828323 (all.q, const table T=120 dt 2.5e-4,
+  done) -> sgs_FPC_const 1828324 (ibgpu.q gpu=1: 2048^2, T=120, save_rate 1080 per the
+  commensurability fix, recorder rate 10 with per-run diag.out, f64 solve/f32 write;
+  running since 15:13 EDT, measured 54.8 it/s -> ~2.5-3 h) -> shed_FPCc 1828325 (all.q,
+  hold, --t-min 30). Quota check: 57 TB free vs ~7.5 GB this wave.
+- Theory doc read IN FULL (Amendment 02 gate). Consequences applied: audit_A NOT blind-
+  chained (its S8/A decision rule needs Pi_FF tau_int(s=4) -> Pi_FF + audit_A submitted AT
+  LANDING after the conditional mmap-prep decision); 4 modulated runs stay held behind
+  Audit A; convergence tier held behind the t=30 IC extract.
+- **Gate D-1 HELD + [QG][FLAG][SGS] sent**: chartered T=120 at Re=200 gives U=0.1026 ->
+  9.8 convective units, 0.49 domain flushes, ~1.4 shedding periods (T_sh~62) — an
+  undeveloped wake by construction (the Gate-1 St lesson). Options emailed: A) T~1500 at
+  chartered dt (~15-17 h GPU); B) dt 2.5e-3 (CFL 0.010) T~1500 (~2 h, needs her dt
+  sign-off); C) as-chartered plumbing-only run. Table generation ready on her ruling.
+- Emails (corrected convention [QG][<family>][SGS], inline tables): [QG][SUBMIT][SGS]
+  cost-first with job/parameter tables; [QG][FLAG][SGS] with the timescale table.
+- At landing (next session / SGE end-mail): Pi_FF s{2,4,8} -> audit_A -> per-run
+  [QG][RUN][SGS] report (S4.3: walltime, CFL, E/Z traces, U-overlay, snapshots at t=30/120,
+  NaN check) -> t=30 IC extract for the convergence tier.
+
 ## 2026-07-09 — St verdict + Gate-1 overlays COMPLETE, [QG][GATE1][SGS] sent, HARD STOP (branch supervisor)
 - Sanaa GO (chat, via coordinator; RED, recorded in DECISIONS): overlays + GATE1 report
   CONDITIONAL on first justifying St 0.11-0.12 vs 0.21. Email conventions corrected:
