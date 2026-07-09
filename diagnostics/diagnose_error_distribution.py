@@ -37,6 +37,10 @@ def main():
     ap.add_argument('--n-worst', type=int, default=12)
     ap.add_argument('--batch-size', type=int, default=4)
     ap.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu')
+    ap.add_argument('--model', default='auto',
+                    choices=['auto', 'cheap_deriv', 'cond_local', 'cond_deriv'],
+                    help="'auto' reads config.json next to the ckpt "
+                         "(falls back to cheap_deriv)")
     args = ap.parse_args()
     dev = args.device
 
@@ -56,7 +60,13 @@ def main():
     raw_idx = np.asarray(raw_idx)
 
     ck = torch.load(args.ckpt, map_location=dev, weights_only=False)
-    mdl = build_model('cheap_deriv', in_channels=2 * S, out_orders=3,
+    model_name = args.model
+    if model_name == 'auto':
+        cfg_path = args.ckpt.parent / 'config.json'
+        model_name = (json.loads(cfg_path.read_text()).get('model', 'cheap_deriv')
+                      if cfg_path.exists() else 'cheap_deriv')
+        print(f"[diag] --model auto -> {model_name}")
+    mdl = build_model(model_name, in_channels=2 * S, out_orders=3,
                       grad_kernel=args.grad_kernel, dt=dt, dx=dx_, dy=dy_,
                       physics_init=True, learnable_stencils=True).to(dev).double()
     mdl.load_state_dict(ck['model']); mdl.eval()

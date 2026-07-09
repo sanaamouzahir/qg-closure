@@ -58,6 +58,23 @@ Regression: control CSV reproduced to ~1e-10 rel (GPU reduction noise) — --mod
 patch clean. CSVs: eval_by_root_val.csv next to each ckpt.
 Hygiene ablation did not move the Nddot ceiling (0.178≈0.186).
 
+## THE 4-ARM TABLE + the no-bug verdict (session 7f, kf4/IC837, 16 steps, RK4 truth)
+
+| arm \ dT | 5e-3 (1step → end) | 1e-2 | 1.5e-2 |
+|---|---|---|---|
+| AB2CN2 bare | 1.33e-5 → 2.10e-4 | 1.06e-4 → 1.75e-3 | 3.53e-4 → 3.80e-2 |
+| + full analytic LTE | 1.87e-7 → 2.93e-6 (71×) | 2.99e-6 → 4.97e-5 (35×) | 1.54e-5 → 2.87e-4 (133×) |
+| + conditioned NN (ep63) | 7.63e-7 → 2.91e-4 | 6.18e-6 → **BLOWS step 13** | 2.28e-5 → **BLOWS step 7** |
+| + unconditioned NN (ep8) | 1.77e-6 → 3.60e-3 | 1.41e-5 → 1.09e-2 | 4.87e-5 → **BLOWS step 12** |
+
+**Sanaa's bug-vs-rollout check: NO BUG.** Step-1 residual fraction == offline Nddot
+rel-L2 essentially exactly (cond: .0575/.0586/.0646 rollout vs .0567/.0578/.0646
+offline; uncond: .134/.134/.138 vs .125/.125/.130). The blow-ups are pure rollout
+feedback (annulus pumping). Offline accuracy does NOT order rollout stability: cond is
+2.2× better offline yet blows earlier than uncond at dT ≥ 1e-2 — stability is governed
+by WHERE in k the residual sits, not its size. Analytic arm = the ceiling is reachable.
+(4-arm email 2026-07-09; sources: apost_ladder_20260709{,_p170} + eval CSVs.)
+
 ## Latest findings (sessions 7b–7e, 2026-07-09)
 
 1. **ε(k) profile is U-SHAPED** (spectral_error_profile.py, 3 ckpts × 14 roots ×
