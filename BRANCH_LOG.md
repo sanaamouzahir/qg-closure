@@ -2,6 +2,29 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-09 — session close: CP-1 module set COMPLETE, selftests green (branch supervisor)
+- Landed: 82832aa (CP-1 approval + ledger reconciliation), a58e1aa (modules 1-3),
+  02a5c47 (audit_resolution.py + CPU workers shedding_job.sh/audit_A_job.sh;
+  bash -n clean, sge-checker PASS). CP-1 module list is now fully authored AND committed.
+- audit_resolution.py notes: 5-grid-aware (--grids, partial-tier tolerant; 256/512
+  labeled under-resolved lower-bound anchors; 2-deg rule on the 4096-vs-2048 pair only).
+  eta terminology reconciled per S7.2: theory doc's eta_phys = RATE 1/tau_eta; the
+  YAML/scalars eta = TIMESCALE tau_eta = penalty*dt as applied (scalars.py meta
+  verified); delta_eta = sqrt(nu*tau_eta) = sqrt(nu/eta_phys_rate). Fixed-physical-eta
+  tier check compares tau_eta across grids.
+- Selftests on all.q (Amendment 02 §3 — the previously phantom-recorded step, now real):
+  shed_st 1828217 PASS 10/10; audA_st 1828218 PASS 12/12; wake_st 1828219 PASS 10/10;
+  audB_st 1828220 PASS 28/28. qacct: failed=0, exit_status=0 on all four. Known-benign
+  env-activation .err noise (imageio_ffmpeg + dirname, session-2b note). Minor: numpy
+  DeprecationWarning on np.trapz in audit_decorrelation — harmless, swap to
+  np.trapezoid at next touch.
+- Root-level SGS_closure_supervisor_brief.md duplicate removed (byte-identical to the
+  canonical docs/briefs/ copy; was untracked).
+- Gate-1 GPU smokes remain APPROVED-PENDING-GPU (entry below); ibgpu still held by
+  wiener jobs 1827225/1827306 at session close.
+- Next: CP-2 submission plan (must include the 256^2/512^2 convergence runs per
+  e9a2b2d) → relay to Sanaa → Gate-1 smokes when GPUs free.
+
 ## 2026-07-09 — CP-1 APPROVED (Sanaa, chat) + ledger reconciliation (branch supervisor)
 - CP-1 (audit/diagnostics code plan, emailed [QG][PROPOSE][SGS-CLOSURE] 2026-07-08) is
   APPROVED by Sanaa 2026-07-09 via chat. Recorded here git-visibly per the choreography
