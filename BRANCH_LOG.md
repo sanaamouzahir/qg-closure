@@ -2,6 +2,27 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-09 — Gate D-1 OPTION B SUBMITTED; EMAIL CHANNEL SWITCHED TO MSEAS (branch supervisor)
+- Sanaa (chat, via coordinator): OPTION B APPROVED for Gate D-1 incl. EXPLICIT dt sign-off
+  (2.5e-3, deviation from chartered 2.5e-4) — [red-approved] in DECISIONS (e1b8f99).
+- Submitted (scripts e1b8f99, sge-checker PASS x3, GATED1_RELEASE guard): gd1_tab 1828396
+  (all.q, const Re=200 table at run dt, T=1500, exit 0) -> sgs_gd1_re200 1828397
+  (ibgpu.q gpu=1: 1024^2, dt 2.5e-3, T=1500, T_wait 250, save_rate 2800 [dt_save 7.0 =
+  phase-binning T_sh/8=7.8 minus the S5 commensurability trap: T_sh/7.0=8.93], recorder
+  rate 10 per-run diag.out; running 16:11 EDT, 221.5 it/s, ETA ~45 min) -> shed_gd1
+  1828398 (all.q hold, --gate-d1 --t-min 250). Targets: Cd 1.3-1.4 / St 0.195-0.20 /
+  rmsCl 0.4-0.7 (the ONE permitted literature comparison). [QG][GATE-D1][SGS] at landing.
+- **EMAIL DELIVERY INCIDENT**: Sanaa did NOT receive [QG][FLAG][SGS]. Diagnosis: all FIVE
+  SGS emails today went via mailx jobs on ibfdr-compute-0-0; rc=0 there = local-MTA
+  handoff only, evidently no off-node relay — all five presumed lost. The one confirmed-
+  delivered email today went via mailx on mseas.mit.edu (wiener agent). **CANONICAL
+  CHANNEL NOW: mailx directly from mseas.mit.edu**, outbox file copy always; recorded in
+  DECISIONS. Consolidated resend sent from mseas (rc=0): option-B SUBMIT + full FLAG
+  content + Gate-1 results recap + Phase-B wave-1 status + incident report, inline
+  tables, subject [QG][SUBMIT][SGS]. An ibfdr duplicate (job 1828402) doubles as a
+  channel cross-check. Subject convention re-adopted: [QG][<established family>][<qualifier>].
+- FPC-const 1828324 unaffected, running (54.8 it/s, ~2.5-3 h).
+
 ## 2026-07-09 — GATE-1 APPROVED; PHASE-B WAVE 1 SUBMITTED; Gate D-1 FLAGGED (branch supervisor)
 - Sanaa approved the Gate-1 report (chat, via coordinator) — S3.4 hard stop LIFTED
   (7a6eb3b). She ordered wiener trainings 1827225/1827306 killed (their supervisor
