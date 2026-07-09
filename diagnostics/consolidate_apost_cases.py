@@ -82,6 +82,8 @@ def main():
         run = np.load(npath)
         cfg = res.get('config', {})
         variant = 'dropnddot' if cfg.get('drop_nddot') == 'True' else 'full'
+        if cfg.get('nn_project_radius') not in (None, 'None'):
+            variant += '_proj'          # alias-safe-radius projection active
         dtlab = f"{res['Delta_T']:g}".replace('.', 'p')
         for arm, lab in arm_lab.items():
             if f'{arm}_verdict' not in res:
@@ -143,7 +145,8 @@ def main():
         run.close()
         to_delete += [jpath, npath, d / f'rollout_apost_{tag}.csv',
                       d / f'sigma_hat_{tag}_closure.csv',
-                      d / f'sigma_hat_{tag}_closure2.csv']
+                      d / f'sigma_hat_{tag}_closure2.csv',
+                      d / f'sigma_hat_{tag}_r3anal.csv']
     if summary:
         spath = d / 'ladder_matrix_summary.csv'
         with open(spath, 'w', newline='') as f:

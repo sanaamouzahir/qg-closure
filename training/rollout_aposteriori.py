@@ -232,7 +232,8 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
             dealias_nn=True, include_r4=False, blowup_factor=10.0,
             scalars_every=1, freeze_sigma=False, sigma_log=None,
             lte_log=None, profile_step=0,
-            nn_kcut=None, nn_gamma=1.0, nn_clip=None, drop_nddot=False):
+            nn_kcut=None, nn_gamma=1.0, nn_clip=None, drop_nddot=False,
+            nn_project_radius=None):
     """One arm of the comparison. arm in {'bare','r3only','r3anal',
     'closure','closure2'} ('closure2' = a second checkpoint through the
     identical code path, e.g. the control vs the conditioned model;
@@ -275,7 +276,16 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
         implicit L^3 w, explicit L^2 N, L*Ndot -- kept). Applied to BOTH the
         NN (closure/closure2) and the analytic (r3anal) sources so the arms
         stay comparable; --r4 terms (when enabled) keep their own Nddot use.
-    lte_log : optional list; at every checkpoint step the FULL ANALYTIC LTE
+    nn_project_radius : float or None -- Sanaa 2026-07-09 ruling (solver mask
+        untouched, remediate on the correction alone): project the R3
+        correction onto the TRUE alias-safe radius |k| <= factor *
+        min(kx_max, ky_max) (factor 2/3 -> mode radius ~170.67 at 512^2).
+        The solver's own dealias mask is RADIAL at sqrt(2)*(2/3)*k_max
+        (mode ~241.4), leaving the 170.7-241.4 annulus alias-contaminated;
+        this keeps the injected correction out of that annulus. Applies to
+        f_NN of closure/closure2 AND, when the r3anal arm runs with it, to
+        f_anal (the annulus-isolation reference). Distinct from nn_kcut
+        (remediation ladder, closure arms only, alpha x N//3 convention).
         at the arm's CURRENT state is computed (chain-rule Ndot/Nddot,
         ~50 FFTs/checkpoint) and its per-term rms appended; closure arms
         additionally log the NN-vs-analytic rel-L2 per head and the
@@ -315,6 +325,14 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
         kmag = torch.sqrt(kx2 + ky2)
         dk = 2.0 * np.pi / _LX
         kcut_mask = (kmag <= float(nn_kcut) * (Nxg // 3) * dk).to(torch.float64)
+    proj_mask = None
+    if (is_clos or is_anal) and nn_project_radius is not None:
+        kx2p = (-(derivative.dx ** 2)).real
+        ky2p = (-(derivative.dy ** 2)).real
+        kmagp = torch.sqrt(kx2p + ky2p)
+        k_safe = float(nn_project_radius) * min(float(kx2p.max()) ** 0.5,
+                                                float(ky2p.max()) ** 0.5)
+        proj_mask = (kmagp <= k_safe).to(torch.float64)
     dt_v = torch.full((1,), Delta_T, device=device, dtype=torch.float64)
     dx_v = torch.full((1,), _DX, device=device, dtype=torch.float64)
     dy_v = torch.full((1,), _DY, device=device, dtype=torch.float64)
@@ -346,6 +364,8 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
             prof.mark('dealias')
             if dealias_nn:
                 f_anal = _dealias_mul(f_anal, derivative)
+            if proj_mask is not None:                # alias-safe radius
+                f_anal = f_anal * proj_mask
             prof.mark('combine')
             rhs = rhs - coef * f_anal
             if include_r4:
@@ -398,6 +418,8 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
                 f_nn = _dealias_mul(f_nn, derivative)
             if kcut_mask is not None:                        # R1
                 f_nn = f_nn * kcut_mask
+            if proj_mask is not None:                        # alias-safe radius
+                f_nn = f_nn * proj_mask
             prof.mark('combine')
             rhs = rhs - coef * float(nn_gamma) * f_nn        # R2: gamma=1 default
             if include_r4:
@@ -432,7 +454,7 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
     w_par = _parseval_weight(qh_curr, Nxg)
 
     def log_sigma(step, qc, qm):
-        if sigma_log is None or not is_clos:
+        if sigma_log is None or not (is_clos or is_anal):
             return
         sig, _ = sigma_hat_spec(qc, qc - qm, dt_v, _LX, _LY, Nyg, Nxg)
         sigma_log.append((step, step * Delta_T,
@@ -715,6 +737,13 @@ def main():
     p.add_argument('--nn-clip', type=float, default=None, metavar='C',
                    help='R3 remediation: pointwise-clip physical f_NN at '
                         'C x rms(f_NN), then re-dealias (+2 FFTs/step)')
+    p.add_argument('--nn-project-radius', type=float, nargs='?',
+                   const=2.0 / 3.0, default=None, metavar='FACTOR',
+                   help='project the R3 correction onto the alias-safe '
+                        'radius |k| <= FACTOR * min(kx_max, ky_max) (bare '
+                        'flag -> FACTOR = 2/3, mode radius ~170.67 at '
+                        '512^2). Applies to closure/closure2 f_NN and to '
+                        'r3anal f_anal; solver dealias mask unchanged.')
     p.add_argument('--drop-nddot', action='store_true',
                    help='ablation: assemble the R3 correction WITHOUT the '
                         '-5*Nddot term (f = (1/12) L*Ndot only; implicit '
@@ -792,6 +821,11 @@ def main():
     if args.drop_nddot:
         print('[apost] ABLATION: --drop-nddot -- R3 assembled WITHOUT the '
               '-5*Nddot term (closure/closure2/r3anal)')
+    if args.nn_project_radius is not None:
+        print(f'[apost] ALIAS-SAFE PROJECTION: R3 correction kept only for '
+              f'|k| <= {args.nn_project_radius:.6f} * min(kx_max, ky_max) '
+              f'(closure/closure2 f_NN + r3anal f_anal; solver mask '
+              f'unchanged)')
     if not args.no_truth and h_fine > 2.5e-5:
         print(f'[apost] WARNING: h_fine={h_fine:.3e} > 2.5e-5 -- the RK4 '
               f'truth is NOT a stand-in for the analytic flow at closure-'
@@ -978,7 +1012,8 @@ def main():
     arm_out = {}
     for arm in arms:
         mdl = model2 if arm == 'closure2' else model
-        sig_rows = ([] if (args.log_sigma and arm.startswith('closure'))
+        sig_rows = ([] if (args.log_sigma and (arm.startswith('closure')
+                                               or arm == 'r3anal'))
                     else None)
         lte_rows = [] if args.track_lte else None
         print(f'[apost] arm={arm}: {M} coarse steps ...'
@@ -996,7 +1031,8 @@ def main():
                     freeze_sigma=args.freeze_sigma, sigma_log=sig_rows,
                     lte_log=lte_rows, profile_step=args.profile_step,
                     nn_kcut=args.nn_kcut, nn_gamma=args.nn_gamma,
-                    nn_clip=args.nn_clip, drop_nddot=args.drop_nddot)
+                    nn_clip=args.nn_clip, drop_nddot=args.drop_nddot,
+                    nn_project_radius=args.nn_project_radius)
         arm_out[arm] = r
         if lte_rows:
             lte_csv = out_dir / f'lte_{args.tag}_{arm}.csv'
