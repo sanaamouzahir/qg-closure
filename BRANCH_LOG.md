@@ -2,6 +2,29 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-09 — session 7e (Sanaa question: which dealias world, data vs network — CONFIRMED)
+- Sanaa (chat): (1) was the mmap build sqrt(2)*(2/3) or strict 2/3? (2) does the network
+  2/3-dealias internally ("a dealiasing layer" in her memory) or sqrt(2)-something?
+- AUDIT (code-level, extends session 7d Part 2): DATA = sqrt2-world RADIAL everywhere —
+  solver k_cut = sqrt(2)*(2/3)*kmax_axis (derivative.py:29-32, radial ball, keep radius
+  241.36/256 at 512², 120.68/128 at 256²; once per RHS sum, operator/__init__.py:48);
+  build+slice harness imports the SOLVER'S OWN Derivative (build_training_data_mmap.py:67,
+  514,90-105; slice_deriv_from_deep.py:34-49,66-82) → targets use the IDENTICAL sqrt2 mask,
+  per-product (2/Jacobian, 20/anchor). NETWORK = zero internal masks/FFTs on the field path
+  (cheap_deriv AND cond_local; cond_local's 2 rFFTs are the σ̂ scalar context only); the
+  remembered "dealias layer" = the END-PROJECTION on the output, train_deriv.py:229 +
+  296-297 (--dealias-pred default ON), SAME sqrt2 solver mask per shape; == per-product
+  exactly (quadratic-then-linear). NO dt in the mask path ("sqrt(2)/dt" does not exist —
+  the sqrt2 is corner-vs-axis geometry). Comment strings at train_deriv.py:30,215,233 say
+  "2/3 rule" loosely — the object is sqrt2; flagged for a comment fix (not applied, RED-free
+  but zero-urgency). third23 experiment changed NO committed defaults (both override flags
+  default None).
+- Verdict: pipeline internally CONSISTENT, uniformly sqrt2-world; consistently aliased in
+  the 170.7–241.4 annulus (512² mode units, folds ≥ 0.114 kmax irremovable). Session 7d's
+  2/3-world NN failure = train/eval mask MISMATCH, not aliasing per se (unchanged reading).
+- [QG][AUDIT][WIENER] sent from mseas rc=0 17:39 EDT; outbox
+  diagnostics/Results/outbox_20260709_dealias_audit.txt.
+
 ## 2026-07-09 — session 7d (Sanaa full mandate: eps(k) profiles + dealias audit + the 2/3 world; job 1828403)
 - PART 1 (spectral_error_profile.py, 3 ckpts x 14 (member,dt) roots x 6 val samples): profile
   is U-SHAPED — worst at LOW k (Nddot eps(30): cond 0.18 / control 0.45), min at k~100-200,

@@ -1,0 +1,34 @@
+**DEALIAS AUDIT — YOUR TWO QUESTIONS, CONFIRMED IN CODE (FILE:LINE)**
+
+
+**Q1 — THE DATA (MMAP BUILD): SQRT(2)*(2/3), RADIAL, EVERYWHERE**
+
+    1. The solver that generated the data uses ONE mask: RADIAL ball, radius = **SQRT(2) x (2/3) x kmax_axis** (derivative.py:29-32: k_cut = sqrt(2)*(1 - 1/3)*min(kmax)). Applied once per RHS SUM (operator/__init__.py:48).
+
+    2. In mode units: keep radius 241.36 of 256 at 512^2; 120.68 of 128 at 256^2. The axis band 170.7 < |k| <= 241.4 (beyond strict 2/3) is RETAINED. This is the "sqrt2 world" — NOT the classic Orszag 2/3 box.
+
+    3. The build + slice harness (build_training_data_mmap.py:67,514,90-105; slice_deriv_from_deep.py:34-49,66-82) imports THE SOLVER'S OWN Derivative class — so the targets [Ndot, Nddot, N3dot] use the IDENTICAL sqrt2 radial mask, applied PER QUADRATIC PRODUCT (2 per Jacobian, 20 masked products per anchor).
+
+    4. Consequence (fold math): folds landing >= 0.114 x kmax inside the kept ball are IRREMOVABLE at any mask placement — present, self-consistently, in both fields and targets.
+
+
+**Q2 — THE NETWORK: NO INTERNAL DEALIAS LAYER; ONE END-PROJECTION, SAME SQRT2 MASK. NOTHING IS "/dt"**
+
+    1. Inside the model forward (cheap_deriv AND cond_local): **ZERO masks, zero FFTs on the field path**. (cond_local's only spectral touch is 2 rFFTs for the sigma-hat scalar conditioning context — a feature reduction, not a projection.)
+
+    2. Your memory of "a dealiasing layer" = the **END-PROJECTION on the model OUTPUT** before the loss: train_deriv.py:229 builds keep = ~Derivative(grid).alias_mask per shape; applied at train_deriv.py:296-297. Flag --dealias-pred, DEFAULT ON.
+
+    3. That end-projection mask is the SAME solver sqrt2 mask as the data (byte-identical geometry, keyed per (Ny,Nx) shape). NOTE: comments at train_deriv.py:30,215,233 say "2/3 rule" — the WORDS are loose, the OBJECT is sqrt(2)*(2/3) radial.
+
+    4. End-projection == per-product dealiasing EXACTLY here: the model is quadratic-then-linear (single product level; mask commutes with everything after the product).
+
+    5. There is NO dt anywhere in the mask path — the mask is built from the grid alone at trainer startup; pure wavenumber-space projection. Nothing named sqrt(2)/dt exists; the sqrt(2) is the corner-vs-axis geometric factor.
+
+
+**CONSISTENCY VERDICT**
+
+    1. Data-generating solver, target harness, and model end-projection all instantiate the SAME mask: one radial ball at sqrt(2)*(2/3)*kmax_axis. The pipeline is INTERNALLY CONSISTENT — but consistently ALIASED in the 170.7-241.4 annulus (512^2 mode units).
+
+    2. Placement differs (solver: per RHS sum; harness: per product; model: end-projection) but is mathematically immaterial for the model and benign solver-vs-harness (intermediates are band-preserving diagonal images).
+
+    3. Yesterday's 2/3-world experiment changed NO committed defaults — --world-mask-radius and --nn-project-radius both default None; solver still carries sqrt(2). Its NN failure was the TRAIN/EVAL MASK MISMATCH breaking this consistency, not aliasing per se.
