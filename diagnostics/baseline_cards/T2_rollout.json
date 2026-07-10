@@ -1,0 +1,27 @@
+{
+  "template": "T2",
+  "family": "train_deriv_rollout (rollout-in-the-loss: rollout_ft_cond / rollout_ft_phys)",
+  "authored": "2026-07-09, Fable, per CHARTER v1.3 I18d; FIRST-RUN card -- no control exists yet",
+  "config": "lr 5e-5, curriculum 1:10,2:10,4:10, bs 1 (grad accum), grad-clip 1.0, f64, kf4+FRC-256 deep windows, deep split.npz",
+
+  "physics_init_median": {},
+  "expected_ordering": ["s1", "s2", "s3"],
+  "inversion_factor": 2.0,
+  "inversion_min_epoch": 2,
+
+  "control_run": "NONE -- this is the first rollout-loss run; recalibrate this card from rollout_ft_phys epoch 0-10 once it lands",
+  "plateau": {
+    "rf_anchor": "step-1 residual fraction rf_mean_s{1,2,3}: cond ep63 warm start must sit ~0.0575/0.0586/0.0646 at ep0 (4-arm table, session 7f); phys init ~0.13 (uncond offline consistency). rf drifting UP across epochs = the rollout loss is trading step-1 accuracy for horizon -- expected in moderation, phone-screen if rf > 2x its ep0 value",
+    "val_columns": "val_s{1,2,3} = M-step unrolled relL2 vs the deep marks per stride; ABSOLUTE scale is tiny (bare 4-step relL2 ~ 5e-5/5e-4/1e-2 at s=1/2/3 x rf), so EXPLODE's relative (10x ep5) trigger is the meaningful one, not any absolute floor",
+    "curriculum_note": "val_s* steps up when the schedule lengthens M (ep 10, 20) -- a jump AT those epochs is the curriculum, not a trigger; a jump elsewhere is real"
+  },
+
+  "known_metric_caveat": "physics_init_median is EMPTY by design: no rollout-loss control exists, so the per-order median inversion check is silent for this family until this card is recalibrated from the first phys-arm run. The expected_ordering check (val_s1 < val_s2 < val_s3, larger dT = harder) is active. n_blown > 0 in any epoch is a phone-screen signal the monitor does not know about -- read it from log.csv directly.",
+
+  "notes": [
+    "objective = mean_m relL2(omega_rollout_m, omega_truth_m), truth = deep 28-mark builds; NOT comparable to any T1 derivative-loss number",
+    "rf_mean/rf_med columns are the automated offline-consistency check (Sanaa's 4-arm bug-vs-rollout test)",
+    "M_max per stride 21/7/3; val fixed at --val-unroll-M (clamped)",
+    "stability caveat: cond ep63 BLOWS UP in free rollout at dT >= 1e-2 (4-arm table) -- early cond-arm epochs may log n_blown > 0 at s=2,3; falling n_blown is the success signal of the whole exercise"
+  ]
+}

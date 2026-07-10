@@ -108,6 +108,7 @@ Usage (tomorrow, after deriv7_cond_local lands):
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import json
 import sys
@@ -233,7 +234,7 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
             scalars_every=1, freeze_sigma=False, sigma_log=None,
             lte_log=None, profile_step=0,
             nn_kcut=None, nn_gamma=1.0, nn_clip=None, drop_nddot=False,
-            nn_project_radius=None):
+            nn_project_radius=None, nn_grad=False, return_stepper=False):
     """One arm of the comparison. arm in {'bare','r3only','r3anal',
     'closure','closure2'} ('closure2' = a second checkpoint through the
     identical code path, e.g. the control vs the conditioned model;
@@ -295,6 +296,15 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
     profile_step : cuda only; after the clean timed loop, step this many
         more times WITH cuda-event marks and print the per-block breakdown
         (ported from rollout_timed_pareto._StepProfiler).
+    nn_grad : run the NN forward WITH autograd (train_deriv_rollout.py's
+        rollout-in-the-loss trainer). Default False = the original inference
+        no_grad path, bit-identical.
+    return_stepper : build every step-invariant constant (coefs, denoms,
+        masks, dt/dx/dy vectors) and hand back the `one_step` closure WITHOUT
+        running the arm loop -- the rollout-loss trainer drives the EXACT
+        stepper the validated a-posteriori arms run (single source of truth
+        for the scheme + closure assembly). omega_stack/psi_stack are then
+        only read for shape/depth.
     """
     from qg.solver.opt.basis import to_spectral, to_physical
     # truth = RK4 (exact flow) -> the target is the FULL Taylor defect:
@@ -400,7 +410,7 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
                     kw['cond_feats'] = model.context_feats_from_spectral(
                         qh_curr, qh_curr - qh_minus, dt_v, _LX, _LY, Nyg, Nxg)
             prof.mark('nn_conv')
-            with torch.no_grad():
+            with (contextlib.nullcontext() if nn_grad else torch.no_grad()):
                 yhat = model(x, dt=dt_v, dx=dx_v, dy=dy_v,
                              **kw).to(torch.float64)
             prof.mark('nn_fft')
@@ -444,6 +454,10 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
                                                        F_hat, prof=prof)
             return qh_new, Nh_new, om_new, ps_new
         return qh_new, N_spectral(qh_new, derivative, F_hat), None, None
+
+    if return_stepper:
+        # rollout-loss trainer path: expose the exact stepper, skip the loop.
+        return one_step
 
     qh_curr = to_spectral(omega_stack[0])
     qh_minus = to_spectral(omega_stack[1])
