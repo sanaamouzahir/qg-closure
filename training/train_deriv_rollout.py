@@ -490,11 +490,42 @@ def gate_r2(rc: RootCtx, model, device, n_windows):
 
 
 def gate_r3(rc: RootCtx, model, device, lr, grad_clip):
-    print(f"\n===== GATE R3: tiny-overfit (2 windows, M=2, 50 Adam steps, "
-          f"lr={lr}) =====")
+    print(f"\n===== GATE R3: perturbed-init recovery (2 windows, M=2, "
+          f"50 Adam steps, lr={lr}) =====")
+    # Physics init already sits at the loss floor (~5e-7) on the easy stride-1
+    # M=2 probe, so "drop 10x from init" is unpassable-by-construction (first
+    # run 2026-07-09: loss rose then recovered — gradients flow, gate failed).
+    # Instead: PERTURB the trainable weights, then demand recovery to within
+    # 10x of the unperturbed floor. Tests forward+backward+step end-to-end
+    # with a target that is actually reachable.
     wins = rc.train_idx[:2]
     data = [rc.window_tensors(w, 1, 2, device) for w in wins]
     one_step = make_stepper(rc, 1, model, device, arm='closure', nn_grad=True)
+
+    def probe_loss():
+        with torch.no_grad():
+            tot = 0.0
+            for omega_stack, truth in data:
+                losses, blown = unroll_losses(rc, one_step, omega_stack,
+                                              truth, 2, is_closure=True)
+                if blown or not losses:
+                    raise SystemExit("[gate r3] rollout blew up -- FAIL")
+                tot += float(torch.stack(losses).mean())
+        return tot / len(data)
+
+    floor = probe_loss()
+    gen = torch.Generator(device='cpu').manual_seed(20260709)
+    with torch.no_grad():
+        for p in model.parameters():
+            if p.requires_grad:
+                p.mul_(1.0 + 0.25 * torch.randn(p.shape, generator=gen,
+                                                dtype=p.dtype).to(p.device))
+    perturbed = probe_loss()
+    print(f"  unperturbed floor={floor:.4e}   after perturbation="
+          f"{perturbed:.4e}  ({perturbed / max(floor, 1e-30):.1f}x floor)")
+    if perturbed < 10.0 * floor:
+        raise SystemExit("[gate r3] perturbation did not move the loss -- "
+                         "probe invalid, FAIL")
     trainable = [p for p in model.parameters() if p.requires_grad]
     optim = torch.optim.Adam(trainable, lr=lr)
     model.train(True)
@@ -518,9 +549,10 @@ def gate_r3(rc: RootCtx, model, device, lr, grad_clip):
         last = tot
         if it % 10 == 0 or it == 49:
             print(f"  iter {it:3d}  loss={tot:.6e}")
-    ok = last < first / 10.0
-    print(f"  loss {first:.4e} -> {last:.4e}  ({first / max(last, 1e-30):.1f}x)"
-          f"  -> {'PASS (>10x)' if ok else 'FAIL (<10x)'}")
+    ok = (last < first / 10.0) or (last < 10.0 * floor)
+    print(f"  loss {first:.4e} -> {last:.4e}  ({first / max(last, 1e-30):.1f}x"
+          f" drop; floor {floor:.4e})  -> "
+          f"{'PASS' if ok else 'FAIL (neither >10x drop nor near floor)'}")
     print(f"===== GATE R3 {'PASS' if ok else 'FAIL'} =====")
     return ok
 
