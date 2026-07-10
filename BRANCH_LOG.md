@@ -2,6 +2,29 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-10 — session 8 (resume: report session 7f's unlogged jobs + reporting-chain fixes)
+- CONTEXT: Sanaa reported (1) no more reports, (2) no daily report, (3) reply-channel unknown.
+  Root causes found: session 7f (evening 07-09, jobs 1828852/1828855/1828863) finished 22:20 EDT
+  but ended WITHOUT emailing or logging; the daily report had never been installed (no crontab);
+  the reply channel had never been built.
+- SESSION 7f RECONSTRUCTED FROM LOGS (it wrote no ledger entry): rollout-aware fine-tune,
+  strides [1,2,3], M 1→4, grad_mode=full, 30 ep, f64, roots kf4@5e-3 + FRC-256@5e-3.
+  COND-FT (warm ep63): best rollout val 2.98e-05, rf med s1/s2/s3 = .033/.030/.038.
+  PHYS-FT (cheap_deriv): 3.94e-05, .060/.051/.044. Ckpts training_runs/rollout_ft_{cond,phys}.
+- A-POSTERIORI SMOKE (kf4, M=16, full variant): **NEGATIVE RESULT — FT does not transfer.**
+  1.5e-2 both unstable (phys s10 [pre-FT 12, worse], cond s11 [pre-FT 7, delayed]); 1e-2 both
+  unstable s15/s16 (pre-FT uncond SURVIVED — phys-FT regression; cond 13→16); 5e-3 stable but
+  ≤ bare (phys 0.00x, cond 0.05x vs pre-FT cond 0.72x — accuracy degraded; cond corner drift
+  0.249 vs phys 8.84). Tiny a-priori rollout loss + a-post failure ⇒ M≤4 @5e-3 doesn't reach
+  the M=16 feedback. Next lever remains the annulus-weighted loss (7d design, λ~3).
+  Results/apost_rollout_smoke/ (one npz per case + ladder_matrix_summary.csv).
+- REPORTING FIXES (cross-branch, live): QG-closure/reporting/daily_report.sh + crontab
+  0 8 * * * on mseas (deterministic shell; queue + replies + branch states + 24h results/logs);
+  reply channel = mseas spool → reporting/inbox/, on-cluster loop verified, MIT→mseas leg
+  awaiting Sanaa's "TEST" reply. Emails: [QG][DAILY] 2026-07-10 (live test) +
+  [QG][LANDED][WIENER] overnight results (outbox: reporting/outbox/landed_20260710_rolloutft.txt).
+- Decided next: await Sanaa on (a) TEST reply, (b) annulus-weighted-loss GO vs other lever.
+
 ## 2026-07-09 — session 7e (Sanaa question: which dealias world, data vs network — CONFIRMED)
 - Sanaa (chat): (1) was the mmap build sqrt(2)*(2/3) or strict 2/3? (2) does the network
   2/3-dealias internally ("a dealiasing layer" in her memory) or sqrt(2)-something?
