@@ -2,6 +2,40 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-10 — FPCape PRODUCTION WAVE SUBMITTED (global supervisor Fable; Sanaa order)
+- Sanaa ORDER (chat): same five cases as the FPC ensemble, flow past cape, 2048^2 — supersedes
+  the charter S4.1 cape row (1024^2, "CAPE-" naming) and its T=15 dt-smoke note. Justification
+  recorded in DECISIONS: CFL(2048^2, dt 2.5e-4, U=2) = 0.041, identical to the 5 landed FPC
+  runs; eta = factor*dt convention makes the penalty/sponge terms dt-invariant.
+- Scripts ([fable-authored], sge-checker PASS 10/10): scripts/sge/phaseCape_job.sh (copy of
+  phaseB_job.sh, single change scenario=flow_past_cape; commons dt 2.5e-4 / T 120 /
+  nu 6.4443e-4 / f64 unchanged; cape geometry from conf/scenario/flow_past_cape.yaml verbatim:
+  mask x_c=0.2, y_base 0, x_scale 1, y_scale 4, x_support 2, penalty 1.025, bc width 0.1,
+  sponge 1.025) and scripts/sge/submit_phaseCape_wave.sh (wave-2 pattern; DRY-RUN default,
+  --go to fire; DNS_FR never-overwrite guard; job names sgsCape_*/shed_Cp* unique in qstat's
+  10 chars).
+- SUBMITTED 19:08 EDT: sgsCape_co/si/ra/ou/te 1829708/10/12/14/16 (ibgpu.q gpu=1, save_rate
+  1800 = dt_save 0.45, recorder rate 10 with per-run +qg.diag.out) -> shed_Cpco/si/ra/ou/te
+  1829709/11/13/15/17 (all.q, hold_jid, --t-min 30, --tag FPCape-<case>). Hold chains verified
+  via qstat -j. Queued behind current GPU load; overnight landing, Sanaa reviews tomorrow.
+- Cape recorder adaptation (no science-code edits needed): scalars.py requires qg.diag.length
+  for non-circular masks -> +qg.diag.length=1.0 (L_cape=1; Re_cape(t)=U(t)/nu in [1751,4456],
+  mid 3103 — report with the cape length scale, never call it "Re 3900", charter line 29);
+  probes = the APPROVED cape lee set (2026-07-07 entry below): wake (x_c+{1,2,3}L, 4.0) =
+  (6.0265/7.0265/8.0265, 4.0), cross-stream (6.0265, 4.5/3.5), 6th recirculation (6.0265, 2.0).
+- Inlet tables REUSED from the FPC waves (verified geometry-independent: modulation.py
+  generates pure U(t) with no geometry inputs; bc.Flow.const_x_flow reads U[n] only and the
+  cape bc function const-outlet-vorticity-rtd forwards inlet_table through **kwargs exactly
+  like the cylinder path; dt match enforced at table load). No tables job needed — submitter
+  keeps the conditional-regeneration branch as a guard.
+- Shedding-tracker caveat (submitted anyway, per order): Cd/Cl/PSD/f_sh outputs are generic
+  (Brinkman-reaction force on chi + Welch), but the T_sh(Re) theory table, St_ref 0.21 and the
+  default band [0.15,0.55] are CYLINDER-referenced — cape St/T_sh comparisons are context-only
+  until a cape-specific reference is ruled. Cape wake is bottom-attached/asymmetric; nonzero
+  mean Cl expected.
+- Cost: upper bound ~55 GPU-h (5 x ~11 h co-scheduled wall, wave-2 precedent); exclusive-run
+  precedent (FPC-const) is 2.75 h/run. Storage ~4.5 GB/run f32 x 5 = ~23 GB.
+
 ## 2026-07-09 — GATE D-1 RULED: PASS WITH FINDINGS; St estimator fix SHIPPED (resumed session)
 - Sanaa (chat, ~17:35 EDT): Gate D-1 = **PASS WITH FINDINGS**; Cd/Cl-low deferred with explicit
   trigger (low Cd persisting at higher-Re cases ⇒ investigate); **Welch/zero-x St computation
