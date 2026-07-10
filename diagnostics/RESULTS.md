@@ -58,6 +58,22 @@ Regression: control CSV reproduced to ~1e-10 rel (GPU reduction noise) — --mod
 patch clean. CSVs: eval_by_root_val.csv next to each ckpt.
 Hygiene ablation did not move the Nddot ceiling (0.178≈0.186).
 
+## ROLLOUT-IN-THE-LOSS: built, gated, smoked (session 7g, overnight 07-09/10)
+
+Trainer `train_deriv_rollout.py` drives the EXACT validated a-posteriori stepper
+(G-R1: max|Δω| = 0.0 vs bare AND r3only arms). G-R2 reproduced the offline-consistency
+numbers (0.0575/0.0587 vs 0.0575/0.0586). Smokes (kf4+FRC-256, curriculum M 1→2→4,
+30 ep, full BPTT): cond arm step-1 residual 0.058→0.031-0.038 (beat its offline
+parent), phys arm 0.194→0.045, n_blown_val = 0 throughout.
+
+**16-step rerun verdict (apost_rollout_smoke/): horizon-limited.** Blow-up pushed out
+by ≈ the trained horizon (1.5e-2: step 7→11; 1e-2: 13→16-with-large-error) but NOT
+cured; 5e-3 16-step error DEGRADED (2.9e-4→4.2e-3) — no extrapolation past trained M.
+**Data limit: 28 marks ⇒ trainable M ≤ 21/7/3 per stride — 16-step@1.5e-2 is
+untrainable from existing deep builds.** Options emailed (deeper builds / truth-free
+annulus-energy regularizer past the marks / both); AWAITING SANAA'S RULING — no
+training runs until then.
+
 ## THE 4-ARM TABLE + the no-bug verdict (session 7f, kf4/IC837, 16 steps, RK4 truth)
 
 | arm \ dT | 5e-3 (1step → end) | 1e-2 | 1.5e-2 |
