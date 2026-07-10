@@ -60,10 +60,17 @@ import json
 import math
 import os
 import shutil
+import socket
 import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
+
+# Shared spool relayed by an mseas cron (reporting/send_pending.sh, every 10 min).
+# The ONLY delivery channel trusted off-mseas: compute-node mailx/sendmail can
+# return rc=0 while the message is silently dropped (no off-node relay).
+PENDING_MAIL_DIR = Path('/gdata/projects/ml_scope/Closure_modeling/QG-closure/'
+                        'reporting/pending_mail')
 
 ORDER_PREFIX = 'val_'
 NON_ORDER_COLS = {'epoch', 'lr', 'train_relL2', 'val_relL2', 'best_val', 'elapsed_s'}
@@ -337,19 +344,33 @@ def send_email(subject, body, to, run_dir, notify_qsub=True):
     out_file.write_text(f"Subject: {subject}\nTo: {to}\nDate: {stamp}\n\n{body}\n")
 
     text = f"{body}\n\n[full copy: {out_file}]"
-    for cmd in (['mailx', '-s', subject, to], ['mail', '-s', subject, to]):
-        if shutil.which(cmd[0]):
-            r = subprocess.run(cmd, input=text.encode(), capture_output=True)
+    on_mseas = socket.gethostname().startswith('mseas')
+    if on_mseas:
+        # Direct mail is trusted ONLY from mseas (the one host with a relay).
+        for cmd in (['mailx', '-s', subject, to], ['mail', '-s', subject, to]):
+            if shutil.which(cmd[0]):
+                r = subprocess.run(cmd, input=text.encode(), capture_output=True)
+                if r.returncode == 0 and not r.stderr:
+                    print(f"[monitor] MAILED via {cmd[0]}: {subject}", flush=True)
+                    return cmd[0]
+        sm = shutil.which('sendmail') or '/usr/sbin/sendmail'
+        if os.path.exists(sm):
+            msg = f"To: {to}\nSubject: {subject}\n\n{text}"
+            r = subprocess.run([sm, '-t'], input=msg.encode(), capture_output=True)
             if r.returncode == 0 and not r.stderr:
-                print(f"[monitor] MAILED via {cmd[0]}: {subject}", flush=True)
-                return cmd[0]
-    sm = shutil.which('sendmail') or '/usr/sbin/sendmail'
-    if os.path.exists(sm):
-        msg = f"To: {to}\nSubject: {subject}\n\n{text}"
-        r = subprocess.run([sm, '-t'], input=msg.encode(), capture_output=True)
-        if r.returncode == 0 and not r.stderr:
-            print(f"[monitor] MAILED via sendmail: {subject}", flush=True)
-            return 'sendmail'
+                print(f"[monitor] MAILED via sendmail: {subject}", flush=True)
+                return 'sendmail'
+    # Off-mseas (or mseas direct failed): queue for the mseas relay cron.
+    # Compute-node mailx rc=0 proves nothing (2026-07-09: five rc=0 mails lost),
+    # so it is never attempted here.
+    try:
+        PENDING_MAIL_DIR.mkdir(parents=True, exist_ok=True)
+        pf = PENDING_MAIL_DIR / f"{stamp}_{slug}.mail"
+        pf.write_text(f"To: {to}\nSubject: {subject}\n\n{text}\n")
+        print(f"[monitor] QUEUED for mseas relay (<=10 min): {pf}", flush=True)
+        return 'pending-relay'
+    except OSError as e:
+        print(f"[monitor] pending-relay queue failed: {e}", flush=True)
     if notify_qsub and shutil.which('qsub'):
         # Subject-only phone ping via qmaster mail; body stays in the outbox.
         name = ('QGMON_' + ''.join(ch if ch.isalnum() else '_' for ch in subject)
