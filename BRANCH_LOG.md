@@ -2,12 +2,12 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
-## 2026-07-10 — session 8 (resume: report session 7f's unlogged jobs + reporting-chain fixes)
+## 2026-07-10 — session 8 (resume: report session 7g's unlogged jobs + reporting-chain fixes)
 - CONTEXT: Sanaa reported (1) no more reports, (2) no daily report, (3) reply-channel unknown.
-  Root causes found: session 7f (evening 07-09, jobs 1828852/1828855/1828863) finished 22:20 EDT
+  Root causes found: session 7g (evening 07-09, jobs 1828852/1828855/1828863) finished 22:20 EDT
   but ended WITHOUT emailing or logging; the daily report had never been installed (no crontab);
   the reply channel had never been built.
-- SESSION 7f RECONSTRUCTED FROM LOGS (it wrote no ledger entry): rollout-aware fine-tune,
+- SESSION 7g RECONSTRUCTED FROM LOGS (it wrote no ledger entry): rollout-aware fine-tune,
   strides [1,2,3], M 1→4, grad_mode=full, 30 ep, f64, roots kf4@5e-3 + FRC-256@5e-3.
   COND-FT (warm ep63): best rollout val 2.98e-05, rf med s1/s2/s3 = .033/.030/.038.
   PHYS-FT (cheap_deriv): 3.94e-05, .060/.051/.044. Ckpts training_runs/rollout_ft_{cond,phys}.
