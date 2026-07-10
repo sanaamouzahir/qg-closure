@@ -1,0 +1,59 @@
+**ROLLOUT-LOSS SMOKE VERDICT: IT WORKS EXACTLY AS FAR AS IT TRAINS — BLOW-UP PUSHED OUT ~4 STEPS, NOT CURED; ONE DATA-LIMIT FACT CHANGES THE NEXT MOVE**
+
+
+**THE CASE (identical to yesterday's 4-arm table: kf4, IC 837, 16 coarse steps, RK4 truth, same code path bit-for-bit — gate G-R1)**
+
+
+**TRAINING CURVES (30 epochs, curriculum M = 1 -> 2 -> 4, ~18 and ~52 min GPU)**
+
+    ARM                              STEP-1 RESIDUAL (offline-equivalent)    BLOWN VAL ROLLOUTS
+    warm start from conditioned ep63 0.058 -> 0.031-0.038 (BEAT its parent)  0 at every epoch, every dT
+    physics init (from scratch)      0.194 -> 0.045-0.062                    0 at every epoch, every dT
+
+
+**THE 16-STEP TABLE (the success metric) — before vs after rollout training**
+
+    dT = 1.5e-2                       BLOWS AT STEP    (16 = survived to the last step)
+    conditioned NN, offline-trained   7
+    conditioned NN + rollout loss     11               (+4 = the training horizon)
+    unconditioned, offline (ep8)      12
+    physics init + rollout loss       10
+
+    dT = 1e-2
+    conditioned NN, offline-trained   13
+    conditioned NN + rollout loss     16               (survives to the final step; error large at the end)
+    physics init + rollout loss       15
+
+    dT = 5e-3 (both STABLE all 16 steps)               FINAL ERROR vs bare 2.1e-4
+    conditioned NN, offline-trained   stable           2.9e-4
+    conditioned NN + rollout loss     stable           4.2e-3   <- WORSE long-horizon
+    physics init + rollout loss       stable           4.5e-2   <- much worse
+
+
+**HONEST READ**
+
+    1. Rollout-in-the-loss does EXACTLY what it saw: trained to M=4, it stabilized ~4 more steps everywhere. Directionally right, mechanism confirmed.
+
+    2. It does NOT extrapolate: beyond the trained horizon the annulus still pumps (corner-band drift still grows), and at easy dT the 16-step error DEGRADED — short-horizon gains were traded against long-horizon behavior it never saw.
+
+    3. THE DATA LIMIT: deep builds have 28 marks at 5e-3 spacing -> max trainable horizon = 21 / 7 / 3 steps at dT 5e-3 / 1e-2 / 1.5e-2. 16-step stability at 1.5e-2 CANNOT be trained directly from existing data.
+
+
+**OPTIONS FOR THE NEXT ROUND (no training launched tonight — this is a design fork for you)**
+
+    1. OPTION 1 (data): deeper builds — e.g. 64+ marks per window -> trainable M up to ~19 at 1.5e-2. Cost: rebuild deep data for the members we care about (~hours GPU each), then curriculum to M~16. The direct, honest fix.
+
+    2. OPTION 2 (loss): train to the data limit (M 8-21 at stride 1-2, truncated gradient for memory) + a TRUTH-FREE stability term beyond the marks: keep rolling past the last truth mark and penalize energy growth in the aliased annulus (170.7-241.4). No new data; the regularizer is exactly aimed at the observed failure mode.
+
+    3. OPTION 3 (both): 1 then 2. My recommendation if walltime is acceptable.
+
+    4. Reply APPROVE-1 / APPROVE-2 / APPROVE-3 (or discuss tomorrow) — nothing runs until then.
+
+
+**WHERE**
+
+    1. Table npz: diagnostics/Results/apost_rollout_smoke/ (one npz per case + summary CSV)
+
+    2. Smoke runs: training_runs/rollout_ft_{cond,phys}/ (log.csv shows the curricula)
+
+    3. Living doc + ledger updated; all committed.
