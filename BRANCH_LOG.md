@@ -23,6 +23,13 @@ Running record. Supervisor updates this at the end of every session. Newest entr
 - SMOKES SUBMITTED (sge-checker PASS; T=3, save_rate 500 to snapshot t=0.125 pre-onset):
   capeSmkP 1830334 (2048^2, penalty+sponge 1.25 — penalty-stiffness arm) and capeSmkY 1830335
   (1024^2, yaml 1.025 — resolution arm). Verdict email follows their landing.
+- SMOKE VERDICT (same day, 3 arms landed by 13:11): smkY 1024^2@2.5e-4 CLEAN (E<=2.517, Cd~23);
+  smkP 2048^2@2.5e-4 pen1.25 BLOWS t=0.1725 (delay only; E 7.6e28 pre-NaN); smkD 1830340
+  2048^2@dt 1.25e-4 pen1.025 CLEAN (E<=2.695, Cd~27). => PENALTY EXONERATED; the cape at 2048^2
+  is dt-unstable at 2.5e-4 (resolved tip velocities cross the local advective edge); dt<=1.25e-4
+  required at 2048^2. T=3 clean != T=120 clean — NaN-guard goes in before any rerun. Rerun fork
+  emailed ([QG][LANDED] 13:1x): CAPE-A 2048^2@1.25e-4 (~135 GPU-h, tables regen at new dt) vs
+  CAPE-B 1024^2@2.5e-4 (charter row, ~15 GPU-h, tables reusable). HELD for Sanaa.
 - HELD FOR SANAA (reply-approvable, in the SGS email): NaN-guard (i) in job wrapper (now 7
   silent-NaN completions, ~55 GPU-h burned on the cape wave), cape-wave rerun with the fixed
   parameter, FPC-tel rerun choice, dt=5e-4 rung drop, ~23 GB NaN-field cleanup.
