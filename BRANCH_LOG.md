@@ -2,6 +2,31 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-11 — FPCape WAVE FAILED (5/5 NaN at t=0.1475) + mail-chain root cause fixed (global supervisor Fable)
+- CONTEXT: Sanaa received ZERO emails since 07-09 and could not reply. ROOT CAUSE (definitive):
+  mseas postfix has no relayhost -> direct-to-Outlook delivery silently junked; the 07-10
+  "selftest PASS" mailed sanaamz@mseas.mit.edu = LOCAL loop, never testing off-node. FIX (live,
+  tested): all mail via outgoing.mit.edu (reporting/daily_report.sh + send_pending.sh, explicit
+  From/Reply-To=sanaamz@mseas.mit.edu); daily-report tqdm bloat fixed (6.5MB -> 2.9KB, \r-line
+  sanitization + 500KB cap); cron relay verified end-to-end 12:50 EDT. Inbound mseas:25 verified
+  listening on 18.18.38.35; final leg awaits Sanaa's TEST reply. All owed reports RESENT
+  ([QG][POSTMORTEM] / [QG][REPORT][WIENER] with the 3-option fork / [QG][REPORT][SGS] / [QG][DAILY]).
+- FPCape WAVE (1829708/10/12/14/16): all five ran 480k steps, "Simulation complete" — but ALL
+  scalars/fields NaN from t=0.1475 (sample 59/48000; 99.88% of record). BIT-IDENTICAL pre-NaN
+  trajectories across members (E 2.000->6.433, Cd_inst startup spike 21320) => deterministic
+  startup-transient failure, inlet-independent. Shedding trackers (shed_Cp*) correctly refused
+  ("0 samples at t>=30"). Third silent-NaN incident family (after FPC-tel, cnv dt=5e-4).
+- DISCRIMINATORS vs healthy FPC wave: cape penalty 1.025 -> dt/(2 eta)=0.49 (cylinder 1.25 ->
+  0.40); post-spike Cd ~50 with E climbing (cylinder ~0.5, E flat). Cape yaml values are the
+  paper's 1024^2 / dt 1e-4 / Re 400 setup, run verbatim at 2048^2 / dt 2.5e-4 / Re<=4456; the
+  pre-launch CFL check (0.041) did not re-derive the penalty margin.
+- SMOKES SUBMITTED (sge-checker PASS; T=3, save_rate 500 to snapshot t=0.125 pre-onset):
+  capeSmkP 1830334 (2048^2, penalty+sponge 1.25 — penalty-stiffness arm) and capeSmkY 1830335
+  (1024^2, yaml 1.025 — resolution arm). Verdict email follows their landing.
+- HELD FOR SANAA (reply-approvable, in the SGS email): NaN-guard (i) in job wrapper (now 7
+  silent-NaN completions, ~55 GPU-h burned on the cape wave), cape-wave rerun with the fixed
+  parameter, FPC-tel rerun choice, dt=5e-4 rung drop, ~23 GB NaN-field cleanup.
+
 ## 2026-07-10 — FPCape PRODUCTION WAVE SUBMITTED (global supervisor Fable; Sanaa order)
 - Sanaa ORDER (chat): same five cases as the FPC ensemble, flow past cape, 2048^2 — supersedes
   the charter S4.1 cape row (1024^2, "CAPE-" naming) and its T=15 dt-smoke note. Justification
