@@ -38,8 +38,23 @@ Running record. Supervisor updates this at the end of every session. Newest entr
   border blocks direct SMTP from Exchange Online → Sanaa's replies can never arrive; needs
   IS&T ticket; chat = only ruling channel — emails one-way, "reply-approvable" retired);
   [QG][INFO] diagnosis email spooled. CP-ML-1 build running in parallel (sgs branch).
-- Next: LIVE monitor watches 1830425; on landing → per-root eval + a-posteriori M=16 kf4
-  ladder vs pre-FT ep63 → [QG][LANDED][WIENER] with the fork's success verdict.
+- INCIDENT 2 (run 1830428, guards fine): OBJECTIVE IMBALANCE — hinge ~2 vs sup ~2e-4 (4
+  orders); by ep5 rf 0.058→0.43, val doubling, free probe INVERTED (s3 stabilized, s1
+  destabilized to fb 0.62-1.00) = the p170 lesson in training form. qdel ep5 (~15 GPU-min);
+  λ=1 log preserved (rollout_ft_opt2_cond_lambda1_ABORTED). Escalation rule in DECISIONS
+  (one step to 1e-4 if repeat; persistence at parity = intrinsic trade, report not iterate).
+- FINAL RUN (λ=1e-3): ro2c 1830435/36/37 — LANDED, 40 ep, 106 min. Best ep33 val 5.96e-05;
+  ZERO blown windows train+val from ep7; free probe fb=0.00 all strides, ag_s3 10→2.3;
+  rf 0.050/0.048/0.078 vs warm 0.058/0.059/0.065 — stability WITHOUT the accuracy trade.
+- **VERDICT LADDER (job 1830550, apost_opt2_job.sh, identical 07-09 code path, refs reused,
+  kf4 IC837 M=16): BLOW-UPS CURED AT ALL THREE dT** — 1.5e-2 STABLE (pre-FT: blew s7),
+  1e-2 STABLE (pre-FT: blew s13), 5e-3 STABLE at **16.6x over bare** (pre-FT 0.72x; analytic
+  ceiling 71.4x). First NN closure to survive the 16-step ladder at 1.5e-2. Large-dT accuracy
+  still < bare (0.33x/0.50x; corner drift 6.2 bounded) — stability delivered, accuracy at
+  1.5e-2/1e-2 is the next lever. Caveats: single IC/member; ep33 ckpt.
+  Results: diagnostics/Results/apost_opt2_20260711/ (one npz per case + summary CSV).
+- Next: multi-IC/multi-member replication of the 16.6x; accuracy lever at s2/s3 (per-stride
+  free-weight or longer high-M tail); then the Wiener-conditioned model per the roadmap.
 
 ## 2026-07-10 — session 8 (resume: report session 7g's unlogged jobs + reporting-chain fixes)
 - CONTEXT: Sanaa reported (1) no more reports, (2) no daily report, (3) reply-channel unknown.
