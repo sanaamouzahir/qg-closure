@@ -305,7 +305,7 @@ def init_state(rc: RootCtx, omega_stack, device):
 def unroll_losses(rc: RootCtx, one_step, omega_stack, truth, M,
                   is_closure=True, trunc_k=0, use_checkpoint=False,
                   free_K=0, free_weight=1.0, ann_mask=None,
-                  backward_scale=None):
+                  backward_scale=None, free_cap=10.0):
     """Drive one_step M supervised steps (per-step relL2 vs truth), then
     free_K TRUTH-FREE steps collecting the annulus stability terms
     relu(log Z_ann(f)/Z_ann(f-1)) (OPTION 2 -- see module docstring).
@@ -409,7 +409,18 @@ def unroll_losses(rc: RootCtx, one_step, omega_stack, truth, M,
             if z_prev is None:                        # Z at segment entry
                 z_prev = annulus_enstrophy(qm, ann_mask).clamp_min(1e-300)
             z = annulus_enstrophy(qc, ann_mask).clamp_min(1e-300)
-            g = torch.relu(torch.log(z / z_prev))
+            if not torch.isfinite(z):
+                # |omega_hat|^2 overflows LONG before the field itself goes
+                # non-finite (e^4.6/step growth at 1.5e-2 overflows the
+                # squared sum by step ~10 while omega is still ~1e150) --
+                # a finite-field check alone lets log(inf) poison backward
+                # (epoch-0 incident, run 1830425). Treat as blown.
+                blown = True
+                break
+            # cap the hinge: log-growth beyond free_cap/step is already
+            # unambiguous blow-up; an uncapped term makes the free segment's
+            # gradient scale be set by the most-exploded window
+            g = torch.relu(torch.log(z / z_prev)).clamp_max(free_cap)
             if backward_scale is not None:
                 stab.append(float(g))
             else:
@@ -774,6 +785,10 @@ def main():
                         '(ignored when --free-horizon is set)')
     p.add_argument('--free-weight', type=float, default=1.0,
                    help='weight of the annulus stability hinge')
+    p.add_argument('--free-cap', type=float, default=10.0,
+                   help='clamp on the per-step log-growth hinge (gradient '
+                        'is zero above the cap; pre-blowup sub-cap steps '
+                        'carry the signal)')
     p.add_argument('--val-free-steps', type=int, default=16,
                    help='val probe: truth-free steps rolled from the '
                         'stencil (blow-up fraction + annulus growth)')
@@ -884,7 +899,7 @@ def main():
                    + ','.join(f'val_s{s}' for s in strides) + ','
                    + ','.join(f'rf_mean_s{s}' for s in strides) + ','
                    + ','.join(f'rf_med_s{s}' for s in strides)
-                   + ',n_blown,n_blown_val,train_stab,'
+                   + ',n_blown,n_blown_val,train_stab,n_skip,'
                    + ','.join(f'fb_s{s}' for s in strides) + ','
                    + ','.join(f'ag_s{s}' for s in strides)
                    + ',elapsed_s\n')
@@ -915,7 +930,7 @@ def main():
         # rollout_aposteriori._LX/_LY -- do not defer backward across samples
         # (checkpoint recompute / the cond sigma-hat context would read
         # another member's globals).
-        tot_stab = 0.0
+        tot_stab, n_skip = 0.0, 0
         for c0 in range(0, len(samples), args.batch_size):
             chunk = samples[c0:c0 + args.batch_size]
             optim.zero_grad()
@@ -936,7 +951,7 @@ def main():
                     is_closure=True, trunc_k=trunc_k, use_checkpoint=use_cp,
                     free_K=K, free_weight=args.free_weight,
                     ann_mask=rc.annulus(device) if K else None,
-                    backward_scale=bscale)
+                    backward_scale=bscale, free_cap=args.free_cap)
                 if blown:
                     n_blown += 1
                 if not losses and not stab:
@@ -961,10 +976,17 @@ def main():
                 tot_stab += stv
                 n_ok += 1
             if n_ok:
-                torch.nn.utils.clip_grad_norm_(trainable, args.grad_clip)
-                optim.step()
+                gn = torch.nn.utils.clip_grad_norm_(trainable, args.grad_clip)
+                if torch.isfinite(gn):
+                    optim.step()
+                else:
+                    # non-finite gradient: one poisoned step would NaN the
+                    # weights and kill the whole run (epoch-0 incident,
+                    # 1830425) -- drop this chunk's update instead
+                    n_skip += 1
+                    optim.zero_grad()
         optim.zero_grad()
-        return tot / max(nb, 1), tot_stab / max(nb, 1), n_blown
+        return tot / max(nb, 1), tot_stab / max(nb, 1), n_blown, n_skip
 
     def val_epoch():
         model.train(False)
@@ -1034,7 +1056,7 @@ def main():
     for ep in range(args.epochs):
         te0 = time.time()
         M_epoch = schedule[ep]
-        tr, tr_stab, n_blown = train_epoch(ep, M_epoch, rng)
+        tr, tr_stab, n_blown, n_skip = train_epoch(ep, M_epoch, rng)
         va, va_s, rf, n_blown_val, fb, ag = val_epoch()
         sched.step()
         improved = va < best
@@ -1053,7 +1075,7 @@ def main():
                     + ','.join(f'{va_s[s]:.6e}' for s in strides) + ','
                     + ','.join(f'{rf[s][0]:.6e}' for s in strides) + ','
                     + ','.join(f'{rf[s][1]:.6e}' for s in strides)
-                    + f',{n_blown},{n_blown_val},{tr_stab:.6e},'
+                    + f',{n_blown},{n_blown_val},{tr_stab:.6e},{n_skip},'
                     + ','.join(f'{fb[s]:.4f}' for s in strides) + ','
                     + ','.join(f'{ag[s]:.6e}' for s in strides)
                     + f',{time.time() - t0:.1f}\n')
@@ -1066,7 +1088,7 @@ def main():
                   f"train={tr:.4e}(+stab {tr_stab:.2e})  val={va:.4e}  "
                   f"best={best:.4e}  [{vs}]  rf(mean/med)=[{rs}]  "
                   f"free(blown/grow)=[{fs}]  blown={n_blown}/val:{n_blown_val}"
-                  f"  ({time.time() - te0:.1f}s)")
+                  f"  skip={n_skip}  ({time.time() - te0:.1f}s)")
 
     print(f"\n[rollout-train] done in {(time.time() - t0) / 60:.1f} min, "
           f"best val={best:.4e}  -> {run_dir}")

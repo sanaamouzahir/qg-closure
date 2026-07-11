@@ -22,9 +22,16 @@ Running record. Supervisor updates this at the end of every session. Newest entr
   grad tensors would crash default full-mode — my trunc launch was immune; FIXED + both modes
   re-smoked); sge-checker PASS all checks. Micro-smoke: ag_s3 = 4.62 vs ag_s1 = 4.4e-4 — the
   truth-free hinge SEES the 1.5e-2 instability, exactly the observed failure mode.
-- SUBMITTED (~16:0x EDT, 2 free GPUs): rollout_ft_opt2_cond = ro2c_TRN 1830425 + ro2c_MONL
-  1830426 + ro2c_MONF 1830427. kf4+FRC-256, strides 1,2,3, M schedule 4:6,8:8,12:8,16:8,21:10
-  (40 ep, per-stride clamp 21/7/3), trunc:4, free-horizon 16, lr 5e-5, f64. ~2-3 GPU-h.
+- SUBMITTED (~16:0x EDT): 1830425/26/27 — **epoch-0 INCIDENT, caught in ~2 min by the log
+  watch**: annulus enstrophy overflows to inf mid-blow-up while the field is still finite →
+  log(inf) → backward(inf) → NaN weights (stab=inf, 383/384 blown, val all-NaN). The K=4 CPU
+  smoke could not see it (e^18 fits f64, the production K=12's e^55 does not). qdel'd.
+  FIX (3 guards, DECISIONS row): non-finite-Z → blown before the log; hinge clamp_max
+  (--free-cap 10.0); optimizer step skipped on non-finite grad norm (n_skip logged). Poison
+  path REPRODUCED on CPU with guards → finite, un-poisoned, honest counts.
+- RESUBMITTED: rollout_ft_opt2_cond = ro2c_TRN **1830428** + ro2c_MONL **1830429** + ro2c_MONF
+  **1830430**. kf4+FRC-256, strides 1,2,3, M schedule 4:6,8:8,12:8,16:8,21:10 (40 ep,
+  per-stride clamp 21/7/3), trunc:4, free-horizon 16, free-cap 10.0, lr 5e-5, f64. ~2-3 GPU-h.
   Success criteria: fb_s3 → 0 with ag_s3 falling AND 5e-3 accuracy NOT degraded (the 7g
   failure); then a-posteriori M=16 ladder vs pre-FT.
 - ALSO this session (cross-branch): inbound-mail root cause (mseas.mit.edu has NO MX; MIT
