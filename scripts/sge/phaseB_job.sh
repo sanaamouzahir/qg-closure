@@ -69,7 +69,66 @@ echo "[phaseB_job] host $HOSTNAME  date $(date -u +%FT%TZ)"
 echo "[phaseB_job] cmd: python -u run_qg.py scenario=flow_past_cylinder_sponge ${COMMON_OVERRIDES[*]} $*"
 echo "----------------------------------------------------------------------"
 
-python -u run_qg.py scenario=flow_past_cylinder_sponge "${COMMON_OVERRIDES[@]}" "$@"
+# ---- NaN-guard (QUESTIONS item 3(i), Sanaa GO 2026-07-11) ----------------- #
+# Same guard as phaseCape_job.sh: poll the atomically-rewritten scalars.npz,
+# kill the solver on NaN (fail in minutes, not ~11 GPU-h), and fail LOUDLY
+# (exit 99) if a completed record contains NaN (FPC-tel silent-NaN lesson).
+SCALARS_OUT=""
+for a in "$@"; do case "$a" in +qg.diag.out=*) SCALARS_OUT="${a#+qg.diag.out=}";; esac; done
+
+nan_check() {  # exit 1 iff readable and containing NaN; unreadable = no verdict
+    python - "$1" <<'PY'
+import sys, numpy as np
+try:
+    z = np.load(sys.argv[1])
+    bad = any(np.isnan(z[k]).any() for k in z.files if z[k].dtype.kind == 'f')
+except Exception:
+    sys.exit(0)
+sys.exit(1 if bad else 0)
+PY
+}
+
+python -u run_qg.py scenario=flow_past_cylinder_sponge "${COMMON_OVERRIDES[@]}" "$@" &
+SOLVER_PID=$!
+
+GUARD_PID=""
+if [ -n "$SCALARS_OUT" ]; then
+    (
+        while sleep 300; do
+            kill -0 "$SOLVER_PID" 2>/dev/null || exit 0
+            [ -f "$SCALARS_OUT" ] || continue
+            if ! nan_check "$SCALARS_OUT"; then
+                echo "[NAN-GUARD] NaN in $SCALARS_OUT at $(date -u +%FT%TZ) -- killing solver (pid $SOLVER_PID)"
+                kill "$SOLVER_PID" 2>/dev/null
+                sleep 15
+                kill -9 "$SOLVER_PID" 2>/dev/null
+                exit 0
+            fi
+        done
+    ) &
+    GUARD_PID=$!
+    echo "[phaseB_job] NaN-guard armed on $SCALARS_OUT (poll 300 s)"
+else
+    echo "[phaseB_job] WARNING: no +qg.diag.out= arg -- NaN-guard disarmed"
+fi
+
+set +e
+wait "$SOLVER_PID"
+RC=$?
+if [ -n "$GUARD_PID" ]; then kill "$GUARD_PID" 2>/dev/null; fi
+set -e
+
+if [ "$RC" -ne 0 ]; then
+    echo "[phaseB_job] solver exited $RC (NaN-abort or crash) at $(date -u +%FT%TZ)"
+    exit "$RC"
+fi
+if [ -n "$SCALARS_OUT" ] && [ -f "$SCALARS_OUT" ]; then
+    if ! nan_check "$SCALARS_OUT"; then
+        echo "[NAN-GUARD] FINAL CHECK FAILED: NaN in completed record $SCALARS_OUT"
+        exit 99
+    fi
+    echo "[NAN-GUARD] final check clean"
+fi
 
 echo "----------------------------------------------------------------------"
 echo "[phaseB_job] done at $(date -u +%FT%TZ)"

@@ -84,7 +84,7 @@ def _steps(x, dt, what):
     return n
 
 
-def signal_re(signal, t, n_wait, dt, seed, re_const):
+def signal_re(signal, t, n_wait, dt, seed, re_const, switch_smooth_steps=0):
     """Re(t_n) on the full table grid t (t_n = n*dt). Modulation for n >= n_wait."""
     re = np.full(t.shape, RE_MID, dtype=np.float64)
     tau = t[n_wait:] - t[n_wait]                      # 0, dt, 2dt, ...
@@ -120,6 +120,35 @@ def signal_re(signal, t, n_wait, dt, seed, re_const):
             switches.append(acc)
         n_flips = np.searchsorted(np.asarray(switches), tau, side='right')
         re[n_wait:] = np.where(n_flips % 2 == 0, RE_MAX, RE_MIN)   # starts at Re_max
+        if switch_smooth_steps > 0:
+            # FPC-tel rerun fix (Sanaa GO 2026-07-11): replace each instantaneous
+            # level jump — INCLUDING the T_wait entry jump Re_mid -> Re_max, which
+            # produced the first Cd~1378 penalty impulse at t=30.0 — by a linear
+            # ramp over switch_smooth_steps solver steps. Switch TIMES (seed-drawn,
+            # dt-consistent) are unchanged; only the jump shape is mollified, so
+            # outside the ramp windows the table equals the hard-telegraph table
+            # exactly at shared times.
+            w = switch_smooth_steps * dt
+            events = [(0.0, RE_MID, RE_MAX)]           # the T_wait entry jump
+            lev = (RE_MAX, RE_MIN)
+            for i, s in enumerate(switches):
+                if s > horizon:
+                    break
+                events.append((s, lev[i % 2], lev[(i + 1) % 2]))
+            gaps = np.diff([e[0] for e in events])
+            if gaps.size and gaps.min() <= w:
+                raise SystemExit(f'telegraph smoothing window {w} overlaps a dwell '
+                                 f'(min gap {gaps.min()}) — reduce --switch-smooth-steps')
+            if events[-1][0] + w > horizon:
+                # a ramp truncated at t[-1] would end mid-jump SILENTLY otherwise
+                raise SystemExit(
+                    f'telegraph smoothing window {w} spans past the table end '
+                    f'(last event {events[-1][0]}, horizon {horizon}) — '
+                    f'reduce --switch-smooth-steps or extend T')
+            re_mod = re[n_wait:]                        # view; writes land in re
+            for s, lo, hi in events:
+                sel = (tau >= s) & (tau < s + w)
+                re_mod[sel] = lo + (hi - lo) * (tau[sel] - s) / w
     else:
         raise SystemExit(f'unknown signal {signal}')
     return re
@@ -167,7 +196,13 @@ def main():
     p.add_argument('--seed', type=int, default=DEFAULT_SEED)
     p.add_argument('--re-const', type=float, default=RE_MID,
                    help='const signal only: constant Re value (Gate D-1 uses 200)')
+    p.add_argument('--switch-smooth-steps', type=int, default=0,
+                   help='telegraph only: linear ramp over this many solver steps at '
+                        'each level switch, incl. the T_wait entry jump (0 = hard '
+                        'jump, the pre-2026-07-11 behaviour)')
     args = p.parse_args()
+    if args.switch_smooth_steps and args.signal != 'telegraph':
+        raise SystemExit('--switch-smooth-steps only applies to --signal telegraph')
 
     dt, T, t_wait = float(args.dt), float(args.T), float(args.t_wait)
     n_total = _steps(T, dt, 'T')
@@ -176,7 +211,8 @@ def main():
         raise SystemExit('T_wait > T')
 
     t = np.arange(n_total + 1, dtype=np.float64) * dt
-    re = signal_re(args.signal, t, n_wait, dt, args.seed, float(args.re_const))
+    re = signal_re(args.signal, t, n_wait, dt, args.seed, float(args.re_const),
+                   args.switch_smooth_steps)
     u = U_PER_RE * re
 
     if args.signal != 'const':
@@ -189,7 +225,8 @@ def main():
                 Re_mid=RE_MID, Re_amp=RE_AMP, Re_min=RE_MIN, Re_max=RE_MAX,
                 nu=NU, U_per_Re=U_PER_RE, T_shed_mid=T_SHED_MID, P_sine=P_SINE,
                 ramp_len=RAMP_LEN, tau_OU=TAU_OU, sigma_OU=SIGMA_OU,
-                tau_dwell=TAU_DWELL, dt_micro=DT_MICRO, git_sha=git_sha(),
+                tau_dwell=TAU_DWELL, dt_micro=DT_MICRO,
+                switch_smooth_steps=args.switch_smooth_steps, git_sha=git_sha(),
                 convention='U[n] is the inlet at step n (t_n = n*dt); '
                            'OU/telegraph paths are dt-consistent by micro-grid/'
                            'switch-time construction (see module docstring)')
