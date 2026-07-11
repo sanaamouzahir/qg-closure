@@ -2,6 +2,38 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-11 — session 9 (Sanaa ruling: OPTION 2 → implemented, gated, SUBMITTED; global supervisor Fable)
+- RULING (chat ~15:15 EDT, full authorization): rollout fork = OPTION 2 (truth-free annulus
+  stability term; option 1 deeper builds NOT authorized). Sanaa's question "start from the
+  model with the e-5 val error?" answered NO: warm start = cond_local_v2 ep63 FROZEN, not
+  rollout_ft_cond (2.98e-05 is a short-horizon ROLLOUT-loss scale, not comparable to offline
+  pooled 0.214; that ckpt DEGRADED a-posteriori accuracy at 5e-3, 0.05x vs 0.72x pre-FT, and
+  its M<=4 stability gain is subsumed by the longer curriculum).
+- IMPLEMENTATION (train_deriv_rollout.py, no new files): after M supervised steps keep rolling
+  K = max(0, 16 - M) TRUTH-FREE steps; penalty = free_weight * mean_f relu(log Z_ann(f)/
+  Z_ann(f-1)), Z_ann = annulus enstrophy (mode radius > (2/3)(N/2); 170.67@512²). Hinge
+  penalizes growth only (draining the annulus is not rewarded — the p170 lesson). Supervised→
+  free boundary always detaches (the approved truncated gradient); in trunc mode every closed
+  segment backward()s immediately → activation memory ≤ trunc_k steps at any M+K. Val adds a
+  free-roll probe (16 truth-free steps: blow-up fraction fb_s*, median max log-growth ag_s*)
+  — THE stability number the supervised val cannot see (M_max=3 at stride 3). Gate r4 added.
+- VERIFICATION: gates r1 bit-exact (0.000e+00 both arms), r2 healthy, r4 PASS (hinge ACTIVE on
+  warm model, |grad| 3.4e-3); closure-reviewer areas 1-5 sound, 1 CRITICAL caught (np.mean on
+  grad tensors would crash default full-mode — my trunc launch was immune; FIXED + both modes
+  re-smoked); sge-checker PASS all checks. Micro-smoke: ag_s3 = 4.62 vs ag_s1 = 4.4e-4 — the
+  truth-free hinge SEES the 1.5e-2 instability, exactly the observed failure mode.
+- SUBMITTED (~16:0x EDT, 2 free GPUs): rollout_ft_opt2_cond = ro2c_TRN 1830425 + ro2c_MONL
+  1830426 + ro2c_MONF 1830427. kf4+FRC-256, strides 1,2,3, M schedule 4:6,8:8,12:8,16:8,21:10
+  (40 ep, per-stride clamp 21/7/3), trunc:4, free-horizon 16, lr 5e-5, f64. ~2-3 GPU-h.
+  Success criteria: fb_s3 → 0 with ag_s3 falling AND 5e-3 accuracy NOT degraded (the 7g
+  failure); then a-posteriori M=16 ladder vs pre-FT.
+- ALSO this session (cross-branch): inbound-mail root cause (mseas.mit.edu has NO MX; MIT
+  border blocks direct SMTP from Exchange Online → Sanaa's replies can never arrive; needs
+  IS&T ticket; chat = only ruling channel — emails one-way, "reply-approvable" retired);
+  [QG][INFO] diagnosis email spooled. CP-ML-1 build running in parallel (sgs branch).
+- Next: LIVE monitor watches 1830425; on landing → per-root eval + a-posteriori M=16 kf4
+  ladder vs pre-FT ep63 → [QG][LANDED][WIENER] with the fork's success verdict.
+
 ## 2026-07-10 — session 8 (resume: report session 7g's unlogged jobs + reporting-chain fixes)
 - CONTEXT: Sanaa reported (1) no more reports, (2) no daily report, (3) reply-channel unknown.
   Root causes found: session 7g (evening 07-09, jobs 1828852/1828855/1828863) finished 22:20 EDT

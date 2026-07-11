@@ -43,6 +43,25 @@ Gradient modes:
                            the unroll length M >= N (0 = never). Trades one
                            extra forward per step for O(1) activation memory.
 
+OPTION 2 (Sanaa ruling 2026-07-11, truth-free annulus stability term):
+after the M supervised steps, keep rolling K TRUTH-FREE steps and penalize
+GROWTH of the aliased-annulus enstrophy Z_ann = sum_{|k| > (2/3) kmax_axis}
+|omega_hat|^2 (512^2: mode radius > 170.67; the solver ball caps content at
+241.4 -- exactly the band where every observed NN blow-up seeds):
+
+    loss = mean_{m=1..M} relL2(omega_m, truth_m)
+         + free_weight * mean_{f=1..K} relu( log Z_ann(f) / Z_ann(f-1) )
+
+The hinge penalizes growth only -- draining the annulus is NOT rewarded
+(the p170 projection already showed that collapses the closure's value).
+--free-horizon H sets K = max(0, H - M) per (root, stride): every window
+is rolled ~H total steps regardless of how much truth it has, which is
+how 16-step behaviour at dT=1.5e-2 (M_max=3) becomes trainable at all.
+The supervised->free boundary always DETACHES (the approved 'truncated
+gradient'); inside both segments --grad-mode trunc:<k> bounds gradient
+depth, and in trunc mode each closed segment backward()s immediately, so
+activation memory is bounded by k steps, not M+K.
+
 Batching: --batch-size = windows per OPTIMIZER step, executed as B=1 unrolls
 with gradient accumulation. Deliberate: the reused stepper is B=1 (it is the
 inference stepper), every member keeps its own L_hat/F_hat/derivative with
@@ -211,6 +230,28 @@ class RootCtx:
         truth = [t[7 + m] for m in range(M)]
         return omega_stack, truth
 
+    def annulus(self, device):
+        """Boolean rfft-grid mask of the aliased annulus: mode radius
+        r > (2/3)*(min(N)/2). 512^2: r > 170.67 (the solver's sqrt2 ball
+        already zeroes r > 241.36, so no upper bound is needed -- those
+        modes carry exactly zero energy). Half-plane note: the kx=0 column
+        is single-counted vs the doubled interior, but Z_ann only ever
+        enters as a RATIO under one fixed mask, so the growth measure is
+        weighting-invariant."""
+        dev = torch.device(device)
+        if getattr(self, '_ann', None) is None or self._ann.device != dev:
+            ky = torch.fft.fftfreq(self.Ny, d=1.0 / self.Ny)
+            kx = torch.fft.rfftfreq(self.Nx, d=1.0 / self.Nx)
+            r = torch.sqrt(ky[:, None] ** 2 + kx[None, :] ** 2)
+            self._ann = (r > (2.0 / 3.0) * (min(self.Ny, self.Nx) / 2.0)
+                         ).to(dev)
+        return self._ann
+
+
+def annulus_enstrophy(qh, mask):
+    """Z_ann = sum_mask |omega_hat|^2 (graph-carrying torch scalar)."""
+    return (qh.real ** 2 + qh.imag ** 2)[..., mask].sum()
+
 
 def set_globals(rc: RootCtx):
     """rollout_aposteriori's arm constants read module globals; pin them to
@@ -262,11 +303,30 @@ def init_state(rc: RootCtx, omega_stack, device):
 
 
 def unroll_losses(rc: RootCtx, one_step, omega_stack, truth, M,
-                  is_closure=True, trunc_k=0, use_checkpoint=False):
-    """Drive one_step M steps; return list of per-step relL2 (torch scalars,
-    graph-carrying). Stops early on non-finite state (returns what it has +
-    blown=True)."""
+                  is_closure=True, trunc_k=0, use_checkpoint=False,
+                  free_K=0, free_weight=1.0, ann_mask=None,
+                  backward_scale=None):
+    """Drive one_step M supervised steps (per-step relL2 vs truth), then
+    free_K TRUTH-FREE steps collecting the annulus stability terms
+    relu(log Z_ann(f)/Z_ann(f-1)) (OPTION 2 -- see module docstring).
+
+    Returns (losses, stab_terms, blown). Graph-carrying torch scalars,
+    UNLESS backward_scale is set (train + trunc mode): then each segment
+    backward()s as it closes -- segment loss = (sum_seg sup)/M
+    + free_weight*(sum_seg stab)/free_K, scaled by backward_scale -- the
+    carried state detaches at the boundary, and PLAIN FLOATS are returned.
+    Gradient-identical to one final backward (a segment's loss terms reach
+    parameters only through that segment's steps); activation memory is
+    bounded by trunc_k steps instead of M+free_K.
+
+    Stops early on non-finite state (returns what it has + blown=True);
+    in the free segment the already-collected finite growth terms keep
+    their gradient -- a blow-up still teaches."""
     from qg.solver.opt.basis import to_physical
+    assert free_K == 0 or (is_closure and ann_mask is not None), \
+        "free rolling needs the closure arm and an annulus mask"
+    assert backward_scale is None or trunc_k, \
+        "segment backward is only defined at trunc boundaries"
     set_globals(rc)
     qc, qm, Nc, Nm, om, ps = init_state(rc, omega_stack,
                                         omega_stack[0].device)
@@ -276,7 +336,31 @@ def unroll_losses(rc: RootCtx, one_step, omega_stack, truth, M,
         return one_step(qc, qm, Nc, Nm,
                         list(hist[:n_snap]), list(hist[n_snap:]))
 
-    losses, blown = [], False
+    losses, stab, blown = [], [], False
+    seg_sup, seg_stab = [], []              # open-segment terms (graph mode:
+                                            # aliases of losses/stab entries)
+
+    def flush_segment():
+        if backward_scale is None:
+            seg_sup.clear(); seg_stab.clear()
+            return
+        terms = []
+        if seg_sup:
+            terms.append(torch.stack(seg_sup).sum() / max(M, 1))
+        if seg_stab:
+            terms.append(free_weight * torch.stack(seg_stab).sum()
+                         / max(free_K, 1))
+        if terms:
+            (backward_scale * sum(terms)).backward()
+        seg_sup.clear(); seg_stab.clear()
+
+    def detach_state():
+        nonlocal qc, qm, Nc, Nm, om, ps
+        qc, qm, Nc, Nm = (v.detach() for v in (qc, qm, Nc, Nm))
+        om = [v.detach() for v in om]
+        ps = [v.detach() for v in ps]
+
+    # ---- supervised segment ----
     for m in range(1, M + 1):
         if use_checkpoint:
             out = _torch_checkpoint(
@@ -298,12 +382,46 @@ def unroll_losses(rc: RootCtx, one_step, omega_stack, truth, M,
         t = truth[m - 1]
         rel = (torch.linalg.vector_norm(om_m - t)
                / torch.linalg.vector_norm(t).clamp_min(1e-30))
-        losses.append(rel)
-        if trunc_k and m % trunc_k == 0 and m < M:    # truncated BPTT boundary
-            qc, qm, Nc, Nm = (v.detach() for v in (qc, qm, Nc, Nm))
-            om = [v.detach() for v in om]
-            ps = [v.detach() for v in ps]
-    return losses, blown
+        if backward_scale is not None:
+            losses.append(float(rel))
+        else:
+            losses.append(rel)
+        seg_sup.append(rel)
+        if trunc_k and m % trunc_k == 0 and (m < M or free_K):
+            flush_segment()                           # truncated BPTT boundary
+            detach_state()
+
+    # ---- truth-free segment (annulus stability) ----
+    if free_K and not blown:
+        flush_segment()
+        detach_state()      # the approved truncated gradient: stability
+        z_prev = None       # gradient lives in the free segment only
+        for f in range(1, free_K + 1):
+            qh_new, Nh_new, om_new, ps_new = step_flat(qc, qm, Nc, Nm,
+                                                       *om, *ps)
+            om = [om_new] + om[:-1]
+            ps = [ps_new] + ps[:-1]
+            qm, qc = qc, qh_new
+            Nm, Nc = Nc, Nh_new
+            if not torch.isfinite(om_new[0]).all():
+                blown = True
+                break
+            if z_prev is None:                        # Z at segment entry
+                z_prev = annulus_enstrophy(qm, ann_mask).clamp_min(1e-300)
+            z = annulus_enstrophy(qc, ann_mask).clamp_min(1e-300)
+            g = torch.relu(torch.log(z / z_prev))
+            if backward_scale is not None:
+                stab.append(float(g))
+            else:
+                stab.append(g)
+            seg_stab.append(g)
+            z_prev = z
+            if trunc_k and f % trunc_k == 0 and f < free_K:
+                flush_segment()
+                detach_state()
+                z_prev = z_prev.detach()
+    flush_segment()
+    return losses, stab, blown
 
 
 # --------------------------------------------------------------------------- #
@@ -446,14 +564,14 @@ def residual_fractions(rc: RootCtx, model, device, strides, windows,
         with torch.no_grad():
             for w in windows:
                 omega_stack, truth = rc.window_tensors(w, s, 1, device)
-                lc, bc = unroll_losses(rc, clos, omega_stack, truth, 1,
-                                       is_closure=True)
+                lc, _, bc = unroll_losses(rc, clos, omega_stack, truth, 1,
+                                          is_closure=True)
                 key = (rc.member, s, w)
                 if bare_cache is not None and key in bare_cache:
                     lb = bare_cache[key]
                 else:
-                    lbl, _ = unroll_losses(rc, bare, omega_stack, truth, 1,
-                                           is_closure=False)
+                    lbl, _, _ = unroll_losses(rc, bare, omega_stack, truth, 1,
+                                              is_closure=False)
                     lb = float(lbl[0]) if lbl else float('nan')
                     if bare_cache is not None:
                         bare_cache[key] = lb
@@ -506,8 +624,8 @@ def gate_r3(rc: RootCtx, model, device, lr, grad_clip):
         with torch.no_grad():
             tot = 0.0
             for omega_stack, truth in data:
-                losses, blown = unroll_losses(rc, one_step, omega_stack,
-                                              truth, 2, is_closure=True)
+                losses, _, blown = unroll_losses(rc, one_step, omega_stack,
+                                                 truth, 2, is_closure=True)
                 if blown or not losses:
                     raise SystemExit("[gate r3] rollout blew up -- FAIL")
                 tot += float(torch.stack(losses).mean())
@@ -534,8 +652,8 @@ def gate_r3(rc: RootCtx, model, device, lr, grad_clip):
         optim.zero_grad()
         tot = 0.0
         for omega_stack, truth in data:
-            losses, blown = unroll_losses(rc, one_step, omega_stack, truth, 2,
-                                          is_closure=True)
+            losses, _, blown = unroll_losses(rc, one_step, omega_stack,
+                                             truth, 2, is_closure=True)
             if blown or not losses:
                 raise SystemExit("[gate r3] rollout blew up -- FAIL")
             loss = torch.stack(losses).mean() / len(data)
@@ -554,6 +672,46 @@ def gate_r3(rc: RootCtx, model, device, lr, grad_clip):
           f" drop; floor {floor:.4e})  -> "
           f"{'PASS' if ok else 'FAIL (neither >10x drop nor near floor)'}")
     print(f"===== GATE R3 {'PASS' if ok else 'FAIL'} =====")
+    return ok
+
+
+def gate_r4(rc: RootCtx, model, device, grad_clip):
+    """OPTION-2 wiring probe: 2 windows, M=2 supervised + K=4 free steps,
+    trunc:2 segment backward. PASS = all terms finite, gradients populated,
+    and 10 Adam steps stay finite. A zero stability term is HEALTHY here
+    (relu hinge: the warm model is stable on a 6-step horizon) -- the gate
+    checks plumbing, not that the penalty is active."""
+    print("\n===== GATE R4: option-2 free-segment wiring (M=2 + K=4, "
+          "trunc:2, segment backward) =====")
+    wins = rc.train_idx[:2]
+    mask = rc.annulus(device)
+    one_step = make_stepper(rc, 1, model, device, arm='closure', nn_grad=True)
+    trainable = [p for p in model.parameters() if p.requires_grad]
+    optim = torch.optim.Adam(trainable, lr=1e-6)
+    model.train(True)
+    ok = True
+    for it in range(10):
+        optim.zero_grad()
+        sup_v, stab_v = [], []
+        for w in wins:
+            omega_stack, truth = rc.window_tensors(w, 1, 2, device)
+            losses, stab, blown = unroll_losses(
+                rc, one_step, omega_stack, truth, 2, is_closure=True,
+                trunc_k=2, free_K=4, free_weight=1.0, ann_mask=mask,
+                backward_scale=1.0 / len(wins))
+            if blown:
+                print("  rollout blew up -- FAIL"); ok = False
+            sup_v += losses; stab_v += stab
+        gnorm = float(torch.nn.utils.clip_grad_norm_(trainable, grad_clip))
+        optim.step()
+        finite = (all(np.isfinite(v) for v in sup_v + stab_v)
+                  and np.isfinite(gnorm))
+        ok &= finite and gnorm > 0.0
+        if it in (0, 9):
+            print(f"  iter {it}  sup={np.mean(sup_v):.4e}  "
+                  f"stab={np.mean(stab_v) if stab_v else 0.0:.4e}  "
+                  f"|grad|={gnorm:.4e}  finite={finite}")
+    print(f"===== GATE R4 {'PASS' if ok else 'FAIL'} =====")
     return ok
 
 
@@ -608,6 +766,19 @@ def main():
                    help='val windows per (root,stride) (0 = all)')
     p.add_argument('--val-unroll-M', type=int, default=4,
                    help='fixed val unroll length (per-stride clamp)')
+    p.add_argument('--free-horizon', type=int, default=0,
+                   help='OPTION 2: roll every window to ~this many total '
+                        'steps, K = max(0, H - M) truth-free (0 = off)')
+    p.add_argument('--free-steps', type=int, default=0,
+                   help='OPTION 2: fixed truth-free step count K '
+                        '(ignored when --free-horizon is set)')
+    p.add_argument('--free-weight', type=float, default=1.0,
+                   help='weight of the annulus stability hinge')
+    p.add_argument('--val-free-steps', type=int, default=16,
+                   help='val probe: truth-free steps rolled from the '
+                        'stencil (blow-up fraction + annulus growth)')
+    p.add_argument('--val-free-windows', type=int, default=8,
+                   help='val windows per (root,stride) for the free probe')
     p.add_argument('--roughness-min', type=float, default=1e-4,
                    help='drop windows with stack roughness below this '
                         '(rule-15 safety net; 0 disables)')
@@ -619,7 +790,7 @@ def main():
     p.add_argument('--out-root', type=Path, default=None)
     p.add_argument('--print-every', type=int, default=1)
     p.add_argument('--gate', type=str, default=None,
-                   choices=['r1', 'r2', 'r3', 'all'],
+                   choices=['r1', 'r2', 'r3', 'r4', 'all'],
                    help='run acceptance gate(s) and exit (no training)')
     p.add_argument('--gate-windows', type=int, default=16)
     p.add_argument('--gate-lr', type=float, default=1e-3,
@@ -672,6 +843,8 @@ def main():
             ok &= gate_r2(rcs[0], model, device, args.gate_windows)
         if args.gate in ('r3', 'all'):
             ok &= gate_r3(rcs[0], model, device, args.gate_lr, args.grad_clip)
+        if args.gate in ('r4', 'all'):
+            ok &= gate_r4(rcs[0], model, device, args.grad_clip)
         raise SystemExit(0 if ok else 1)
 
     # ---- steppers: one per (root, stride), capture the trained model ----
@@ -692,21 +865,29 @@ def main():
     run = args.run_name or f"rollout_{datetime.now():%Y%m%d_%H%M%S}"
     run_dir = out_root / 'training_runs' / run
     run_dir.mkdir(parents=True, exist_ok=True)
+    free_on = bool(args.free_horizon or args.free_steps)
     (run_dir / 'config.json').write_text(json.dumps(
         vars(args) | {'model': model_name, 'n_snapshots': n_snap,
-                      'objective': 'rollout_relL2',
+                      'objective': ('rollout_relL2+annulus_stab'
+                                    if free_on else 'rollout_relL2'),
                       'schedule_M': schedule,
                       'deep_roots': [str(r.root) for r in rcs]},
         indent=2, default=str))
     log = run_dir / 'log.csv'
     # column names follow diagnostics/monitor_training.py conventions:
     # train_relL2/val_relL2/best_val are its headline columns; per-stride
-    # val_s{1,2,3} land in its generic per-order ('val_*') track.
+    # val_s{1,2,3} land in its generic per-order ('val_*') track. Option-2
+    # columns: train_stab (mean hinge), fb_s* (val free-roll blow-up
+    # fraction over --val-free-steps), ag_s* (median max annulus
+    # log-growth per step on surviving free rolls).
     log.write_text('epoch,lr,M_train,train_relL2,val_relL2,best_val,'
                    + ','.join(f'val_s{s}' for s in strides) + ','
                    + ','.join(f'rf_mean_s{s}' for s in strides) + ','
                    + ','.join(f'rf_med_s{s}' for s in strides)
-                   + ',n_blown,n_blown_val,elapsed_s\n')
+                   + ',n_blown,n_blown_val,train_stab,'
+                   + ','.join(f'fb_s{s}' for s in strides) + ','
+                   + ','.join(f'ag_s{s}' for s in strides)
+                   + ',elapsed_s\n')
     print(f"[rollout-train] run={run}  strides={strides}  "
           f"grad_mode={args.grad_mode}  checkpoint_steps={args.checkpoint_steps}  "
           f"schedule={schedule[:12]}{'...' if len(schedule) > 12 else ''}")
@@ -734,31 +915,56 @@ def main():
         # rollout_aposteriori._LX/_LY -- do not defer backward across samples
         # (checkpoint recompute / the cond sigma-hat context would read
         # another member's globals).
+        tot_stab = 0.0
         for c0 in range(0, len(samples), args.batch_size):
             chunk = samples[c0:c0 + args.batch_size]
             optim.zero_grad()
             n_ok = 0
             for rc, s, w in chunk:
                 M = min(M_epoch, rc.m_max(s))
+                K = (max(0, args.free_horizon - M) if args.free_horizon
+                     else args.free_steps)
                 use_cp = (args.checkpoint_steps > 0
                           and M >= args.checkpoint_steps and trunc_k == 0)
                 omega_stack, truth = rc.window_tensors(w, s, M, device)
-                losses, blown = unroll_losses(rc, steppers[(rc.member, s)],
-                                              omega_stack, truth, M,
-                                              is_closure=True, trunc_k=trunc_k,
-                                              use_checkpoint=use_cp)
+                # trunc mode: unroll_losses backward()s per segment (memory
+                # bounded by trunc_k) and returns floats; full mode: graph
+                # tensors, one backward here.
+                bscale = (1.0 / len(chunk)) if trunc_k else None
+                losses, stab, blown = unroll_losses(
+                    rc, steppers[(rc.member, s)], omega_stack, truth, M,
+                    is_closure=True, trunc_k=trunc_k, use_checkpoint=use_cp,
+                    free_K=K, free_weight=args.free_weight,
+                    ann_mask=rc.annulus(device) if K else None,
+                    backward_scale=bscale)
                 if blown:
                     n_blown += 1
-                if not losses:
+                if not losses and not stab:
                     continue
-                loss = torch.stack(losses).mean()
-                (loss / len(chunk)).backward()
-                tot += float(loss); nb += 1; n_ok += 1
+                if bscale is None:
+                    # full mode: graph tensors -- one backward here
+                    sup_t = torch.stack(losses).mean() if losses else None
+                    stab_t = torch.stack(stab).mean() if stab else None
+                    terms = ([sup_t] if sup_t is not None else []) \
+                        + ([args.free_weight * stab_t]
+                           if stab_t is not None else [])
+                    (sum(terms) / len(chunk)).backward()
+                    sup = float(sup_t) if sup_t is not None else 0.0
+                    stv = float(stab_t) if stab_t is not None else 0.0
+                else:
+                    # trunc mode: unroll_losses already backward()ed per
+                    # segment and returned plain floats
+                    sup = (float(np.mean(losses)) if losses else 0.0)
+                    stv = (float(np.mean(stab)) if stab else 0.0)
+                if losses:
+                    tot += sup; nb += 1
+                tot_stab += stv
+                n_ok += 1
             if n_ok:
                 torch.nn.utils.clip_grad_norm_(trainable, args.grad_clip)
                 optim.step()
         optim.zero_grad()
-        return tot / max(nb, 1), n_blown
+        return tot / max(nb, 1), tot_stab / max(nb, 1), n_blown
 
     def val_epoch():
         model.train(False)
@@ -772,7 +978,7 @@ def main():
                     wins = rc.val_idx[:args.val_windows or None]
                     for w in wins:
                         omega_stack, truth = rc.window_tensors(w, s, M, device)
-                        losses, blown = unroll_losses(
+                        losses, _, blown = unroll_losses(
                             rc, steppers[(rc.member, s)], omega_stack, truth,
                             M, is_closure=True)
                         # blown windows are COUNTED, not averaged: one inf
@@ -784,6 +990,29 @@ def main():
                             continue
                         vals.append(float(torch.stack(losses).mean()))
                 per_stride[s] = float(np.mean(vals)) if vals else float('nan')
+        # free-roll probe: --val-free-steps truth-free steps from the raw
+        # stencil -- blow-up fraction + median max annulus log-growth. THE
+        # stability number to watch (the supervised val cannot see past
+        # M_max: 3 steps at stride 3).
+        fb, ag = {}, {}
+        with torch.no_grad():
+            for s in strides:
+                blown_n, tot_n, growth = 0, 0, []
+                for rc in rcs:
+                    mask = rc.annulus(device)
+                    for w in rc.val_idx[:args.val_free_windows or None]:
+                        omega_stack, _ = rc.window_tensors(w, s, 1, device)
+                        _, stab_t, blown = unroll_losses(
+                            rc, steppers[(rc.member, s)], omega_stack, [], 0,
+                            is_closure=True, free_K=args.val_free_steps,
+                            ann_mask=mask)
+                        tot_n += 1
+                        if blown:
+                            blown_n += 1
+                        elif stab_t:
+                            growth.append(max(float(g) for g in stab_t))
+                fb[s] = blown_n / max(tot_n, 1)
+                ag[s] = float(np.median(growth)) if growth else float('nan')
         for s in strides:
             means, meds, ns = [], [], 0
             for rc in rcs:
@@ -798,15 +1027,15 @@ def main():
                      if ns else (float('nan'), float('nan')))
         pooled = float(np.mean([v for v in per_stride.values()
                                 if np.isfinite(v)]))
-        return pooled, per_stride, rf, n_blown_val
+        return pooled, per_stride, rf, n_blown_val, fb, ag
 
     best = float('inf'); t0 = time.time()
     rng = np.random.default_rng(args.seed)
     for ep in range(args.epochs):
         te0 = time.time()
         M_epoch = schedule[ep]
-        tr, n_blown = train_epoch(ep, M_epoch, rng)
-        va, va_s, rf, n_blown_val = val_epoch()
+        tr, tr_stab, n_blown = train_epoch(ep, M_epoch, rng)
+        va, va_s, rf, n_blown_val, fb, ag = val_epoch()
         sched.step()
         improved = va < best
         payload = {'model': model.state_dict(), 'epoch': ep, 'val': va,
@@ -824,15 +1053,20 @@ def main():
                     + ','.join(f'{va_s[s]:.6e}' for s in strides) + ','
                     + ','.join(f'{rf[s][0]:.6e}' for s in strides) + ','
                     + ','.join(f'{rf[s][1]:.6e}' for s in strides)
-                    + f',{n_blown},{n_blown_val},{time.time() - t0:.1f}\n')
+                    + f',{n_blown},{n_blown_val},{tr_stab:.6e},'
+                    + ','.join(f'{fb[s]:.4f}' for s in strides) + ','
+                    + ','.join(f'{ag[s]:.6e}' for s in strides)
+                    + f',{time.time() - t0:.1f}\n')
         if ep % args.print_every == 0 or improved:
             vs = ' '.join(f's{s}={va_s[s]:.3e}' for s in strides)
             rs = ' '.join(f's{s}={rf[s][0]:.4f}/{rf[s][1]:.4f}'
                           for s in strides)
+            fs = ' '.join(f's{s}={fb[s]:.2f}/{ag[s]:.2e}' for s in strides)
             print(f"  ep {ep:3d} {'*' if improved else ' '} M={M_epoch}  "
-                  f"train={tr:.4e}  val={va:.4e}  best={best:.4e}  [{vs}]  "
-                  f"rf(mean/med)=[{rs}]  blown={n_blown}/val:{n_blown_val}  "
-                  f"({time.time() - te0:.1f}s)")
+                  f"train={tr:.4e}(+stab {tr_stab:.2e})  val={va:.4e}  "
+                  f"best={best:.4e}  [{vs}]  rf(mean/med)=[{rs}]  "
+                  f"free(blown/grow)=[{fs}]  blown={n_blown}/val:{n_blown_val}"
+                  f"  ({time.time() - te0:.1f}s)")
 
     print(f"\n[rollout-train] done in {(time.time() - t0) / 60:.1f} min, "
           f"best val={best:.4e}  -> {run_dir}")
