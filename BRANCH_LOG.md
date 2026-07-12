@@ -2,6 +2,30 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-12 — ARM D (heteroscedastic B-item): noise head ABSORBS the signal — ladder complete, grid HELD (branch supervisor Fable; orchestrator ruling 2)
+- RULING 2 (recorded in DECISIONS): try the heteroscedastic-Gaussian B-item (arm C's own
+  conclusion) against the UNMODIFIED 0.95 gate before putting the re-gate question to Sanaa.
+- IMPLEMENTATION (commit d5de2ef): sigma^2(x) = softplus(linear(F+1 GP inputs)) + 1e-4 floor,
+  never a function of y; FixedNoiseGaussianLikelihood(learn_additional_noise=False) with the
+  per-batch noise= kwarg — plumbing verified in installed gpytorch 1.13 source (live tensor ->
+  DiagLinearOperator, kwargs forwarded; gradients reach the head — confirmed on CPU). Head init
+  = exactly the arm-2 data-informed noise. All else arm-2 baseline.
+- RESULT (pT6_D 1830755, exit 0): R2 flat 0.0000 all 50 ep, RMSE frozen 167.5. NOT a crash —
+  the logged sigma stats expose the mechanism: max sigma(x) 2125 -> 3050 physical (~35x target
+  std), min 28 -> 4. Jointly trained from scratch, the noise head EATS THE SIGNAL: the ELBO
+  prefers inflating sigma on large-|Pi| pixels over fitting them with the GP mean. The exact
+  collapse family the spec mandates logging, never auto-switching. No resubmit (that allowance
+  is for wiring crashes; this ran as designed).
+- LADDER COMPLETE: baseline 0.17 -> standardized 0.80 -> A(time,150ep) 0.89 asymptote ->
+  B(M=1024) 0.81 -> C(StudentT) 0.00 (rejects signal as outliers) -> D(hetero joint) 0.00
+  (noise absorbs signal). VERDICT: rule 3 — the 0.95-in-50-ep bar is unreachable for the
+  specced family under every tested variation; the standing evidence is the A curve.
+- PROPOSALS for Sanaa (not actions): (i) re-gate T6 at R2 >= 0.85 in 100 ep (A crosses 0.85 at
+  ep 81) — unblocks the lr x wd grid immediately; (ii) heteroscedastic RETRY with mean-warmup
+  (freeze noise at 0.1 for ~30 ep, then unfreeze head) and/or a sigma cap — the D collapse is
+  an optimization-order pathology, not necessarily a dead end for the B-item.
+- GRID: still HELD. [QG][GATE-ML][SGS-CLOSURE] ladder email sent; relay-verified.
+
 ## 2026-07-12 — 3-ARM T6 DISCRIMINATION: rule 3 fires — gate bar suspect, grid HELD (branch supervisor Fable; orchestrator ruling under Sanaa's autonomy window)
 - ORCHESTRATOR RULING (recorded in DECISIONS): keep the gate moving — 3 concurrent T6 arms from
   the arm-2 y-standardized baseline, pre-committed decision rule (any >= 0.95 -> minimal arm +
