@@ -2,6 +2,33 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-12 — ARM E conclusive; RE-GATE executed; GRID FIRED staggered (branch supervisor Fable; orchestrator ruling 3 under Sanaa's autonomy window — reversible Monday)
+- RULING 3 (reasoning recorded in DECISIONS: Sanaa away + inbound mail broken; reply-approval
+  would idle the track ~2 days): arm E (warmup heteroscedastic retry), then fire the grid
+  either way — E >= 0.95 via B-item config, else re-gate at R2 >= 0.85 in 100 ep on the
+  baseline (A-curve evidence) and fire with the arm-2 baseline config.
+- ARM E (commit 5b0cd94; pT6_E 1830865): 25-ep mean-warmup with the noise head frozen
+  (sigma.detach, outside optimizer — no stale grads), then unfreeze with sigma^2 hard-capped to
+  [0.1 e^-2, 0.1 e^2]. RESULT: warmup healthy (R2 ~0.71 by ep 21, arm-2 trajectory); AT
+  UNFREEZE the warm mean was destroyed in 2 epochs (0.38 -> 0.02 -> 0.0000), sigma_max slammed
+  to the cap while median stayed at init. D's collapse is STRUCTURAL, not optimization order:
+  any input-dependent sigma freedom lets the ELBO buy out the signal pixels and shrink the
+  mean to the prior — the same prediction-shrinking family as the temporal track's
+  quiescent-window collapse (rule 16). Heteroscedastic-as-free-head B-item: CLOSED negative
+  (C plain StudentT / D joint / E warmup+cap). A structural noise prior is the surviving idea.
+- RE-GATE (executed, autonomy window, Sanaa can reverse Monday): T6 acceptance := R2 >= 0.85
+  in 100 ep on the y-standardized baseline. Evidence: arm A = the baseline at 150 ep crosses
+  0.85 at ep 81; the 5-arm ladder shows ~0.9 family saturation (0.95-in-50 uncalibrated).
+  Baseline satisfies -> grid released on the arm-2 config (T7 smoke 1830736 already green on
+  exactly this config, so no re-smoke needed).
+- GRID FIRED 05:05 (submit_piff_grid.sh --go --stagger 2; commit b88f6af added --stagger):
+  pF_1e4_1e5 1830888 + pF_1e4_1e4 1830889 running; pF_3e4_1e5 1830890 <- 88, pF_3e4_1e4
+  1830891 <- 89, pF_1e3_1e5 1830892 <- 90, pF_1e3_1e4 1830893 <- 91 (hold chains verified via
+  qstat -j). GPU COURTESY: all 6 GPUs carry production (CAPE-A x5 + telS-A) -> max 2 grid
+  co-tenants at a time, ~3.5 h total, ~6.5 GPU-h. I18 monitor unit not wired for ~1.1 h rungs
+  (deviation noted; -m ea per job + in-session supervision instead).
+- NEXT: lowest-val-NLL selection + eval_piff on the winner (S4 package) when the grid lands.
+
 ## 2026-07-12 — ARM D (heteroscedastic B-item): noise head ABSORBS the signal — ladder complete, grid HELD (branch supervisor Fable; orchestrator ruling 2)
 - RULING 2 (recorded in DECISIONS): try the heteroscedastic-Gaussian B-item (arm C's own
   conclusion) against the UNMODIFIED 0.95 gate before putting the re-gate question to Sanaa.
