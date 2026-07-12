@@ -43,13 +43,19 @@ HERE = Path(__file__).resolve().parent
 
 def main():
     ap = argparse.ArgumentParser(description="one T6 discrimination arm")
-    ap.add_argument('--arm', required=True, choices=['A', 'B', 'C', 'D'])
+    ap.add_argument('--arm', required=True, choices=['A', 'B', 'C', 'D', 'E'])
     ap.add_argument('--epochs', type=int, default=50)
     ap.add_argument('--n-inducing', type=int, default=512)
     ap.add_argument('--likelihood', default='gaussian',
                     choices=['gaussian', 'studentt', 'hetero'])
     ap.add_argument('--lr', type=float, default=3.0e-3)      # = T6 test recipe
     ap.add_argument('--crops', type=int, default=500)
+    ap.add_argument('--warmup-epochs', type=int, default=0,
+                    help='ARM E: epochs with the noise head FROZEN at the '
+                         'homoscedastic init before unfreezing (hetero only)')
+    ap.add_argument('--sigma-cap-logrange', type=float, default=2.0,
+                    help='ARM E: clamp log sigma^2 to +/- this around the '
+                         'homoscedastic init once unfrozen')
     ap.add_argument('--outdir', default=str(HERE / 'runs_piff' / 't6_arms'))
     args = ap.parse_args()
 
@@ -91,8 +97,15 @@ def main():
         with torch.no_grad():
             noise_head.bias.fill_(float(np.log(np.expm1(0.1))))   # softplus -> 0.1
 
-        def het_sigma2(gpin):
-            return torch.nn.functional.softplus(noise_head(gpin)).squeeze(-1) + 1.0e-4
+        # ARM E (orchestrator ruling 3): sigma cap — clamp sigma^2 to
+        # exp(+/-logrange) around the homoscedastic init (0.1). Clamp's zero
+        # gradient outside the band is the point: the head cannot run away.
+        s2_lo = 0.1 * float(np.exp(-args.sigma_cap_logrange))
+        s2_hi = 0.1 * float(np.exp(+args.sigma_cap_logrange))
+
+        def het_sigma2(gpin, capped):
+            s2 = torch.nn.functional.softplus(noise_head(gpin)).squeeze(-1) + 1.0e-4
+            return s2.clamp(s2_lo, s2_hi) if capped else s2
     npix_km = model.init_inducing_kmeans(ds, 10000, int(conf['model']['kmeans_iters']),
                                          seed=0, device=device)
     st = dp.target_stats(runs, 'train', conf)
@@ -109,10 +122,15 @@ def main():
 
     n_pix = int(sum(ds[i]['mask'].sum() for i in range(len(ds))))
     mll = gpytorch.mlls.VariationalELBO(model.likelihood, model.gp, num_data=n_pix)
+    warmup = int(args.warmup_epochs) if noise_head is not None else 0
+    use_cap = warmup > 0            # ARM E; arm D (warmup 0) = uncapped legacy
     params = list(model.parameters())
-    if noise_head is not None:
-        params += list(noise_head.parameters())
+    if noise_head is not None and warmup == 0:
+        params += list(noise_head.parameters())     # arm-D joint-from-scratch
     opt = torch.optim.Adam(params, lr=float(args.lr))
+    if noise_head is not None and warmup > 0:
+        print(f"[t6{args.arm}] mean-warmup: head FROZEN (detached) for {warmup} ep, "
+              f"then unfrozen with sigma^2 cap [{s2_lo:.4f}, {s2_hi:.4f}] (std space)")
 
     @torch.no_grad()
     def hetero_evaluate(gp_chunk):
@@ -128,7 +146,7 @@ def main():
             for i0 in range(0, gpin.shape[0], gp_chunk):
                 ch = gpin[i0:i0 + gp_chunk]
                 f = model.gp(ch)
-                s2 = het_sigma2(ch)
+                s2 = het_sigma2(ch, use_cap)
                 mus.append((f.mean * y_sd + y_mu).cpu().numpy())
                 vars_.append(((f.variance + s2) * y_sd * y_sd).cpu().numpy())
                 sds.append((s2.sqrt() * y_sd).cpu().numpy())
@@ -145,6 +163,13 @@ def main():
     verdict = 'FAIL'
     for ep in range(int(args.epochs)):
         t0 = time.time()
+        if noise_head is not None and warmup > 0 and ep == warmup:
+            # ARM E unfreeze: head joins the optimizer with fresh (zero) grads;
+            # during warmup its sigma was DETACHED, so no stale accumulation.
+            opt.add_param_group({'params': list(noise_head.parameters())})
+            print(f"[t6{args.arm}] ep {ep:03d}: noise head UNFROZEN "
+                  f"(sigma^2 cap [{s2_lo:.4f}, {s2_hi:.4f}])")
+        head_live = noise_head is not None and (warmup == 0 or ep >= warmup)
         model.train()
         for b in batches(ds, int(conf['data']['batch_crops'])):
             gpin = model.masked_gp_inputs(b['x'].to(device), b['zeta'].to(device),
@@ -152,8 +177,10 @@ def main():
             yt = b['y'].to(device)[b['mask'].to(device)]
             opt.zero_grad(set_to_none=True)
             if noise_head is not None:
-                loss = -mll(model.gp(gpin), model.standardize_y(yt),
-                            noise=het_sigma2(gpin))
+                s2 = het_sigma2(gpin, use_cap)
+                if not head_live:
+                    s2 = s2.detach()          # frozen warmup: no grads to head
+                loss = -mll(model.gp(gpin), model.standardize_y(yt), noise=s2)
             else:
                 loss = -mll(model.gp(gpin), model.standardize_y(yt))
             loss.backward()
@@ -170,7 +197,9 @@ def main():
               f"RMSE {m['rmse']:.3e}  ({time.time()-t0:.0f}s){extra}")
         np.savez(outdir / f'arm{args.arm}.npz', r2=np.array(r2s), rmse=np.array(rmses),
                  arm=args.arm, epochs=args.epochs, n_inducing=args.n_inducing,
-                 likelihood=args.likelihood, lr=args.lr, crops=args.crops)
+                 likelihood=args.likelihood, lr=args.lr, crops=args.crops,
+                 warmup_epochs=int(args.warmup_epochs),
+                 sigma_cap_logrange=float(args.sigma_cap_logrange))
         if m['r2'] > 0.95:
             verdict = 'PASS'
             break
