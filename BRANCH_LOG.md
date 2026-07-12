@@ -2,6 +2,33 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-12 — 3-ARM T6 DISCRIMINATION: rule 3 fires — gate bar suspect, grid HELD (branch supervisor Fable; orchestrator ruling under Sanaa's autonomy window)
+- ORCHESTRATOR RULING (recorded in DECISIONS): keep the gate moving — 3 concurrent T6 arms from
+  the arm-2 y-standardized baseline, pre-committed decision rule (any >= 0.95 -> minimal arm +
+  T7 + grid; C >= 0.90 -> propose C+epochs; all ~0.8 -> gate bar suspect).
+- Runner ml_closure/t6_arm.py + scripts/sge/piff_t6arm_job.sh (commit b3ff7bb). Jobs pT6_A
+  1830743 / pT6_B 1830744 / pT6_C 1830745 -> rerun 1830750.
+- ARM A (150 ep): best R2 0.8910 at ep 145, final 0.8652 — slow asymptote to ~0.89; "needs
+  time" gains 0.80 -> 0.89, cannot reach 0.95.
+- ARM B (M=1024, 50 ep): 0.8146 at ep 49 (+0.02 over M=512 at ~6x per-epoch cost) — capacity
+  is not the binding constraint.
+- ARM C (StudentT B-ITEM EXPERIMENT): first run 1830745 crashed on wiring — gpytorch MC-samples
+  non-Gaussian marginals, pred moments 2-D; fixed in predict_physical (law-of-total-variance
+  reduction, commit b48622a; also fixes a silent single-chunk flatten), resubmitted once per the
+  ruling. Rerun 1830750 exit 0: R2 FLAT ~0.0000 all 50 ep (RMSE frozen at 167.5 =
+  constant-mean prediction) — SCIENTIFIC NEGATIVE, mechanism understood: StudentT's redescending
+  influence bounds the gradient from large residuals, and large-|Pi| pixels ARE the signal; the
+  wake structures get rejected as outliers. Kurtosis 395 = SIGNAL HETEROSCEDASTICITY, not noise
+  heavy-tails. Plain StudentT is the wrong B-item variant; input-dependent (heteroscedastic)
+  Gaussian noise is the right one.
+- VERDICT (rule 3): no arm >= 0.95, C < 0.90 -> the 0.95-in-50-ep T6 bar is itself suspect —
+  the specced model family saturates ~0.9 under BOTH time and capacity extension. GRID HELD.
+- PROPOSAL for Sanaa (not an action): (i) re-gate T6 at R2 >= 0.85 in 100 ep on the arm-2
+  config (evidence-based bar: A hit 0.85 by ~ep 60), or (ii) rule the heteroscedastic-Gaussian
+  B-item first and re-gate after. Grid fires on whichever re-gate passes.
+- Commits: b3ff7bb (arms), b48622a (predict_physical fix), b9749d3 + this (ledger).
+  [QG][GATE-ML][SGS-CLOSURE] RESULT email sent with the three curves; relay-verified.
+
 ## 2026-07-12 — AUTONOMY WINDOW: T6 fix, two arms, BOTH miss 0.95 — grid HELD, escalated (branch supervisor Fable; Sanaa ~23:55 ruling)
 - RULING (Sanaa chat ~23:55 07-11, via coordinator, recorded verbatim in DECISIONS): full-autonomy
   window tonight + all of 07-12, gates waived, act-and-report; implement data-informed GP init;
