@@ -142,6 +142,35 @@ class PiffModel(nn.Module):
         if gpytorch is None:
             raise ImportError(str(_GPYTORCH_ERR))
         self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
+        # recorded, invertible y-standardization constants (2026-07-12 ruling
+        # fallback): buffers -> saved in every checkpoint state_dict. Defaults
+        # (0,1) = identity. The GP is trained on y_t = (y - y_mu)/y_sd;
+        # predict_physical() inverts exactly. Spec-S1.2 target DEFINITION
+        # untouched — this is an affine reparameterization for GP conditioning
+        # (a large raw outputscale ~var(y) makes the float32 K_zz Cholesky
+        # numerically singular: absolute jitter 1e-6 is ~1e-10 relative).
+        self.register_buffer('y_mu', torch.zeros(()))
+        self.register_buffer('y_sd', torch.ones(()))
+
+    def set_y_standardization(self, y_mean, y_var):
+        """Set the recorded standardization constants from exact train-target
+        stats. Returns them for the run/checkpoint manifest."""
+        y_mean, y_var = float(y_mean), float(y_var)
+        if not y_var > 0.0:
+            raise ValueError(f"bad target stats: var={y_var}")
+        self.y_mu.fill_(y_mean)
+        self.y_sd.fill_(y_var ** 0.5)
+        return {'y_mean': y_mean, 'y_std': y_var ** 0.5}
+
+    def standardize_y(self, y):
+        return (y - self.y_mu) / self.y_sd
+
+    def predict_physical(self, gpin):
+        """Likelihood-included predictive (mean, var) in PHYSICAL target units
+        (standardization inverted exactly)."""
+        pred = self.likelihood(self.gp(gpin))
+        return (pred.mean * self.y_sd + self.y_mu,
+                pred.variance * self.y_sd * self.y_sd)
 
     def features(self, x, zeta):
         """(B,4,H,W),(B,) -> per-pixel GP inputs (B,H,W,F+1)."""
@@ -190,14 +219,14 @@ class PiffModel(nn.Module):
 
     @torch.no_grad()
     def init_hyperparams_from_stats(self, y_mean, y_var, noise_frac=0.1):
-        """Data-informed hyperparameter INIT (Sanaa autonomy ruling 2026-07-12,
-        T6 root-cause fix): constant mean = train-target mean, kernel
-        outputscale = (1-noise_frac)*var(y), likelihood noise = noise_frac*
-        var(y). Closes the ~var(y) gap between the O(1) gpytorch defaults and
-        the spec-S1.2 nondimensionalized target scale that made the ELBO climb
-        glacially (T6 R2 0.17). INIT ONLY — the target definition and the S1.2
-        normalization are untouched; all three remain trainable. Returns the
-        constants for the checkpoint manifest."""
+        """Data-informed hyperparameter INIT (Sanaa autonomy ruling 2026-07-12):
+        constant mean = target mean, kernel outputscale = (1-noise_frac)*var,
+        likelihood noise = noise_frac*var — in the space the GP is trained in.
+        HISTORY: applied in RAW target space (var ~7.6e3) this NaN'd instantly
+        (float32 K_zz Cholesky, jitter 1e-6 absolute ~1e-10 relative — job
+        1830733); with set_y_standardization the GP space has var(y_t)=1, so
+        call this with (0.0, 1.0) — same information, conditioned kernels.
+        INIT ONLY; all three remain trainable."""
         y_mean, y_var = float(y_mean), float(y_var)
         nf = float(noise_frac)
         if not (y_var > 0.0 and 0.0 < nf < 1.0):
@@ -205,7 +234,7 @@ class PiffModel(nn.Module):
         self.gp.mean_module.constant.data.fill_(y_mean)
         self.gp.covar_module.outputscale = (1.0 - nf) * y_var
         self.likelihood.noise = nf * y_var
-        return {'y_mean': y_mean, 'y_var': y_var, 'noise_frac': nf,
+        return {'gp_mean_init': y_mean, 'gp_space_var': y_var, 'noise_frac': nf,
                 'outputscale_init': (1.0 - nf) * y_var, 'noise_init': nf * y_var}
 
     def film_norms(self):

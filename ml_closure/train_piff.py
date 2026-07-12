@@ -70,9 +70,9 @@ def evaluate(model, ds, device, gp_chunk):
         gpin = model.masked_gp_inputs(x, zeta, mask)
         yt = y[mask]
         for i0 in range(0, gpin.shape[0], gp_chunk):
-            pred = model.likelihood(model.gp(gpin[i0:i0 + gp_chunk]))
-            mus.append(pred.mean.cpu().numpy())
-            vars_.append(pred.variance.cpu().numpy())
+            mu_p, var_p = model.predict_physical(gpin[i0:i0 + gp_chunk])
+            mus.append(mu_p.cpu().numpy())
+            vars_.append(var_p.cpu().numpy())
         ys.append(yt.cpu().numpy())
     y = np.concatenate(ys); mu = np.concatenate(mus); var = np.concatenate(vars_)
     rmse = float(np.sqrt(np.mean((y - mu) ** 2)))
@@ -107,7 +107,8 @@ def residual_kurtosis(model, ds, device, n_batches=64):
             break
         gpin = model.masked_gp_inputs(b['x'].to(device), b['zeta'].to(device),
                                       b['mask'].to(device))
-        mu = model.gp(gpin).mean.cpu().numpy()
+        mu_t = model.gp(gpin).mean
+        mu = (mu_t * model.y_sd + model.y_mu).cpu().numpy()   # physical units
         res.append(b['y'].numpy()[b['mask'].numpy()] - mu)
     r = np.concatenate(res)
     r = r - r.mean()
@@ -160,16 +161,20 @@ def main():
                                       int(conf['model']['kmeans_iters']), seed, device=device)
     print(f"[train] inducing k-means init on {npix} pixels; M = {int(conf['model']['n_inducing'])}")
 
-    # data-informed GP hyperparameter init (Sanaa ruling 2026-07-12): exact
-    # train-target stats at build; constants logged in run_info + every ckpt
+    # 2026-07-12 ruling: exact train-target stats at build -> recorded
+    # invertible y-standardization (buffers, in every ckpt) + data-informed
+    # hyperparameter init in the standardized space (var=1 -> conditioned K_zz;
+    # the raw-space variant NaN'd on the float32 Cholesky, job 1830733)
     ystats = target_stats(runs, 'train', conf)
+    std_const = model.set_y_standardization(ystats['mean'], ystats['var'])
     hyper0 = model.init_hyperparams_from_stats(
-        ystats['mean'], ystats['var'], noise_frac=_f(tc['init_noise_frac']))
+        0.0, 1.0, noise_frac=_f(tc['init_noise_frac']))
+    hyper0.update(std_const)
     hyper0['stats_n_pixels'] = ystats['n']
     info['init_hyperparams'] = hyper0
     with open(outdir / 'run_info.yaml', 'w') as f:
         yaml.safe_dump(info, f, sort_keys=False)
-    print(f"[train] data-informed GP init: {json.dumps(hyper0)}")
+    print(f"[train] y-standardization + GP init: {json.dumps(hyper0)}")
 
     mll = gpytorch.mlls.VariationalELBO(model.likelihood, model.gp, num_data=N)
     gp_named = {id(p) for p in model.gp.parameters()} | {id(p) for p in model.likelihood.parameters()}
@@ -203,7 +208,7 @@ def main():
             if yt.numel() == 0:
                 continue
             opt.zero_grad(set_to_none=True)
-            loss = -mll(model.gp(gpin), yt)              # per-datum (num_data=N)
+            loss = -mll(model.gp(gpin), model.standardize_y(yt))  # per-datum (num_data=N), GP space
             loss.backward()
             opt.step()
             elbos.append(-float(loss))

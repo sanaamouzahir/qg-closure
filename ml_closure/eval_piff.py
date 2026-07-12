@@ -47,9 +47,9 @@ def predict_frame(model, run, frame, device, gp_chunk):
                                   mask[None].to(device))
     mus, vars_ = [], []
     for i0 in range(0, gpin.shape[0], gp_chunk):
-        pred = model.likelihood(model.gp(gpin[i0:i0 + gp_chunk]))
-        mus.append(pred.mean.cpu().numpy())
-        vars_.append(pred.variance.cpu().numpy())
+        mu_p, var_p = model.predict_physical(gpin[i0:i0 + gp_chunk])
+        mus.append(mu_p.cpu().numpy())
+        vars_.append(var_p.cpu().numpy())
     mu, var = np.concatenate(mus), np.concatenate(vars_)
     m = mask.numpy()
     truth = y.numpy()

@@ -154,11 +154,13 @@ def test_t6_overfit_500_crops():
     model = PiffModel(conf).to(device)
     model.init_inducing_kmeans(ds, 10000, int(conf['model']['kmeans_iters']),
                                seed=0, device=device)
-    # data-informed hyperparameter init — same path as train_piff.py (2026-07-12 ruling)
+    # same path as train_piff.py (2026-07-12 ruling, standardization fallback):
+    # recorded y-standardization + data-informed init in standardized space
     ystats = dp.target_stats(runs, 'train', conf)
+    std_const = model.set_y_standardization(ystats['mean'], ystats['var'])
     hyper0 = model.init_hyperparams_from_stats(
-        ystats['mean'], ystats['var'], noise_frac=dp._f(conf['train']['init_noise_frac']))
-    print(f"[t6] data-informed GP init: {hyper0}")
+        0.0, 1.0, noise_frac=dp._f(conf['train']['init_noise_frac']))
+    print(f"[t6] y-standardization {std_const} + GP init: {hyper0}")
     n_pix = int(sum(ds[i]['mask'].sum() for i in range(len(ds))))
     mll = gpytorch.mlls.VariationalELBO(model.likelihood, model.gp, num_data=n_pix)
     opt = torch.optim.Adam(model.parameters(), lr=3e-3)
@@ -170,7 +172,7 @@ def test_t6_overfit_500_crops():
                                           b['mask'].to(device))
             yt = b['y'].to(device)[b['mask'].to(device)]
             opt.zero_grad()
-            loss = -mll(model.gp(gpin), yt)
+            loss = -mll(model.gp(gpin), model.standardize_y(yt))
             loss.backward()
             opt.step()
         m = evaluate(model, ds, device, int(conf['train']['gp_chunk']))
