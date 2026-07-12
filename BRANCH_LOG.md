@@ -20,8 +20,17 @@ Running record. Supervisor updates this at the end of every session. Newest entr
   end-to-end, hold_jid 1830730). GPU arm co-scheduled IMMEDIATELY on ibgpu-compute-0-0 next to
   the running CAPE-A wave (jobscript picks idlest GPU by memory) — no queue wait after all;
   smoke follows on its hold.
-- GATE HELD: submit_piff_grid.sh NOT fired; [QG][GATE-ML][SGS-CLOSURE] email goes out only
-  after T1–T7 results land (T5–T7 pending the jobs above).
+- RESULTS (all landed same session): T1–T4 PASS (1830729); T5 PASS (gpytorch works on the
+  node); T6 FAILED twice — 1830730 on a harness bug (small_conf duplicate-kwarg, fixed
+  0381586, T1–T4 re-verified), resubmit 1830732 on SUBSTANCE: train R2 0.1700 < 0.95 after
+  50 epochs, glacial monotone climb. T7 smoke 1830731 mechanically CLEAN (full train+eval
+  package in ml_closure/runs_piff/smoke_T7_20260712_0401/; kurtosis 352.9 B-item flagged).
+- T6 DIAGNOSIS: spec-S1.2 physics nondimensionalization leaves y at RMS ~165 vs O(1)
+  outputscale/noise init — ~2.7e4 variance gap the ELBO climbs too slowly. Fix options
+  (a) data-informed hyperparameter init from train-y variance [recommended] or (b) recorded
+  y-standardization constant — HELD for Sanaa in the gate email; no unilateral model change.
+- GATE HELD: submit_piff_grid.sh NOT fired; [QG][GATE-ML][SGS-CLOSURE] follows with the full
+  T1–T7 table + the T6 fix decision; recommendation: grid does not fire until T6 passes.
 - Email: [QG][SUBMIT][SGS-CLOSURE] spooled via reporting/pending_mail (10-min cron relay).
 
 ## 2026-07-11 — CAPE-A + telS submitted, NaN-guard live, NaN outputs purged (global supervisor Fable; Sanaa chat rulings)
