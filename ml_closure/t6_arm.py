@@ -43,10 +43,11 @@ HERE = Path(__file__).resolve().parent
 
 def main():
     ap = argparse.ArgumentParser(description="one T6 discrimination arm")
-    ap.add_argument('--arm', required=True, choices=['A', 'B', 'C'])
+    ap.add_argument('--arm', required=True, choices=['A', 'B', 'C', 'D'])
     ap.add_argument('--epochs', type=int, default=50)
     ap.add_argument('--n-inducing', type=int, default=512)
-    ap.add_argument('--likelihood', default='gaussian', choices=['gaussian', 'studentt'])
+    ap.add_argument('--likelihood', default='gaussian',
+                    choices=['gaussian', 'studentt', 'hetero'])
     ap.add_argument('--lr', type=float, default=3.0e-3)      # = T6 test recipe
     ap.add_argument('--crops', type=int, default=500)
     ap.add_argument('--outdir', default=str(HERE / 'runs_piff' / 't6_arms'))
@@ -66,10 +67,32 @@ def main():
     ds = dp.PiffCropDataset(runs, 'train', conf, seed=0)     # fixed table: pure overfit
 
     model = PiffModel(conf).to(device)
+    noise_head = None
     if args.likelihood == 'studentt':
         # B-ITEM EXPERIMENT (spec S2.2 kurtosis item): swap BEFORE hyper init
         # so init_hyperparams_from_stats sets THIS likelihood's noise.
         model.likelihood = gpytorch.likelihoods.StudentTLikelihood().to(device)
+    elif args.likelihood == 'hetero':
+        # ARM D — HETEROSCEDASTIC B-ITEM (orchestrator ruling 2 of 2026-07-12,
+        # motivated by arm C: kurtosis 395 = signal heteroscedasticity).
+        # Per-pixel noise sigma^2(x) from the model's OWN inputs (never y):
+        # linear head on the F+1 GP inputs -> softplus + 1e-4 floor
+        # (standardized space; floor sigma ~ 1% of target std).
+        # Verified-supported gpytorch path: FixedGaussianNoise.forward accepts
+        # a per-batch `noise=` kwarg and wraps the live tensor in a
+        # DiagLinearOperator (gradients flow to the head); the approximate MLL
+        # forwards kwargs to expected_log_prob. learn_additional_noise=False.
+        # Init: zero weights + bias softplus^-1(0.1) => EXACTLY the arm-2
+        # data-informed noise at init.
+        model.likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
+            noise=torch.full((1,), 0.1), learn_additional_noise=False).to(device)
+        noise_head = torch.nn.Linear(model.gp_input_dim, 1).to(device)
+        torch.nn.init.zeros_(noise_head.weight)
+        with torch.no_grad():
+            noise_head.bias.fill_(float(np.log(np.expm1(0.1))))   # softplus -> 0.1
+
+        def het_sigma2(gpin):
+            return torch.nn.functional.softplus(noise_head(gpin)).squeeze(-1) + 1.0e-4
     npix_km = model.init_inducing_kmeans(ds, 10000, int(conf['model']['kmeans_iters']),
                                          seed=0, device=device)
     st = dp.target_stats(runs, 'train', conf)
@@ -86,7 +109,37 @@ def main():
 
     n_pix = int(sum(ds[i]['mask'].sum() for i in range(len(ds))))
     mll = gpytorch.mlls.VariationalELBO(model.likelihood, model.gp, num_data=n_pix)
-    opt = torch.optim.Adam(model.parameters(), lr=float(args.lr))
+    params = list(model.parameters())
+    if noise_head is not None:
+        params += list(noise_head.parameters())
+    opt = torch.optim.Adam(params, lr=float(args.lr))
+
+    @torch.no_grad()
+    def hetero_evaluate(gp_chunk):
+        """evaluate() twin for arm D: predictive var = f.var + sigma^2(x),
+        both unstandardized to physical units; also returns sigma stats."""
+        model.eval()
+        ys, mus, vars_, sds = [], [], [], []
+        y_sd, y_mu = float(model.y_sd), float(model.y_mu)
+        for b in batches(ds, 8):
+            gpin = model.masked_gp_inputs(b['x'].to(device), b['zeta'].to(device),
+                                          b['mask'].to(device))
+            yt = b['y'].to(device)[b['mask'].to(device)]
+            for i0 in range(0, gpin.shape[0], gp_chunk):
+                ch = gpin[i0:i0 + gp_chunk]
+                f = model.gp(ch)
+                s2 = het_sigma2(ch)
+                mus.append((f.mean * y_sd + y_mu).cpu().numpy())
+                vars_.append(((f.variance + s2) * y_sd * y_sd).cpu().numpy())
+                sds.append((s2.sqrt() * y_sd).cpu().numpy())
+            ys.append(yt.cpu().numpy())
+        y = np.concatenate(ys); mu = np.concatenate(mus)
+        sd = np.concatenate(sds)
+        rmse = float(np.sqrt(np.mean((y - mu) ** 2)))
+        r2 = float(1.0 - np.sum((y - mu) ** 2) / max(np.sum((y - y.mean()) ** 2), 1e-30))
+        return {'r2': r2, 'rmse': rmse,
+                'sig_min': float(sd.min()), 'sig_med': float(np.median(sd)),
+                'sig_max': float(sd.max())}
 
     r2s, rmses = [], []
     verdict = 'FAIL'
@@ -98,13 +151,23 @@ def main():
                                           b['mask'].to(device))
             yt = b['y'].to(device)[b['mask'].to(device)]
             opt.zero_grad(set_to_none=True)
-            loss = -mll(model.gp(gpin), model.standardize_y(yt))
+            if noise_head is not None:
+                loss = -mll(model.gp(gpin), model.standardize_y(yt),
+                            noise=het_sigma2(gpin))
+            else:
+                loss = -mll(model.gp(gpin), model.standardize_y(yt))
             loss.backward()
             opt.step()
-        m = evaluate(model, ds, device, int(conf['train']['gp_chunk']))
+        if noise_head is not None:
+            m = hetero_evaluate(int(conf['train']['gp_chunk']))
+            extra = (f"  sigma(phys) min/med/max "
+                     f"{m['sig_min']:.2f}/{m['sig_med']:.2f}/{m['sig_max']:.2f}")
+        else:
+            m = evaluate(model, ds, device, int(conf['train']['gp_chunk']))
+            extra = ""
         r2s.append(m['r2']); rmses.append(m['rmse'])
         print(f"[t6{args.arm}] ep {ep:03d} train R2 {m['r2']:.4f} "
-              f"RMSE {m['rmse']:.3e}  ({time.time()-t0:.0f}s)")
+              f"RMSE {m['rmse']:.3e}  ({time.time()-t0:.0f}s){extra}")
         np.savez(outdir / f'arm{args.arm}.npz', r2=np.array(r2s), rmse=np.array(rmses),
                  arm=args.arm, epochs=args.epochs, n_inducing=args.n_inducing,
                  likelihood=args.likelihood, lr=args.lr, crops=args.crops)
