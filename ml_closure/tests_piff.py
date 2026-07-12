@@ -34,7 +34,9 @@ needs_gpytorch = pytest.mark.skipif(
 
 def small_conf(**data_over):
     conf = copy.deepcopy(CONF)
-    conf['data'].update(crops_per_epoch_train=32, crops_per_epoch_val=16, **data_over)
+    small = {'crops_per_epoch_train': 32, 'crops_per_epoch_val': 16}
+    small.update(data_over)  # explicit overrides win; no duplicate-kwarg collision
+    conf['data'].update(small)
     return conf
 
 
