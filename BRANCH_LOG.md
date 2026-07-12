@@ -2,6 +2,30 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-12 — AUTONOMY WINDOW: T6 fix, two arms, BOTH miss 0.95 — grid HELD, escalated (branch supervisor Fable; Sanaa ~23:55 ruling)
+- RULING (Sanaa chat ~23:55 07-11, via coordinator, recorded verbatim in DECISIONS): full-autonomy
+  window tonight + all of 07-12, gates waived, act-and-report; implement data-informed GP init;
+  y-standardization as fallback; fire the grid on T6 PASS; if BOTH arms fail, stop and report.
+- ARM 1 (data-informed init in RAW target space, commit 2a31e9b): target_stats exact f64 over all
+  62,548,500 valid train pixels (mean -1.35e-3, var 7.617e3); outputscale 6.856e3 / noise 762.
+  T6 job 1830733: T5 PASS, T6 NaN FROM EP 0 — float32 K_zz Cholesky goes singular (gpytorch
+  jitter is ABSOLUTE 1e-6 ~ 1e-10 relative at that scale). Smoke 1830734 (raced onto arm-1 code
+  via its hold) NaN'd identically and failed loudly at eval (no best.pt — desired behavior).
+- ARM 2 (recorded invertible y-STANDARDIZATION, commit 5a75893): y_mu/y_sd buffers in every ckpt;
+  GP trained on (y-y_mu)/y_sd; init in standardized space (outputscale 0.9, noise 0.1);
+  predict_physical() inverts exactly — all reported metrics stay in PHYSICAL units; S1.2 target
+  definition untouched. T6 job 1830735: NO NaN, healthy climb R2 0.029 -> 0.798 (RMSE 165 -> 75)
+  but plateaus ~0.79-0.80 from ep ~39: GATE 0.95 NOT MET. T7 smoke 1830736: mechanically CLEAN,
+  2-ep val R2 0.086 -> 0.158 (was 0.003), constants logged, eval package good; kurtosis 394.8
+  B-item raised again.
+- VERDICT: both pre-authorized arms exhausted -> STOP per the ruling. submit_piff_grid.sh NOT
+  fired. [QG][GATE-ML][SGS-CLOSURE] escalation email sent (full T1-T7 table + analysis).
+- ANALYSIS for the ruling: kurtosis ~395 = homoscedastic Gaussian badly misspecified (heavy
+  tails); the ELBO inflates noise instead of fitting the mean — plausibly the SAME mechanism as
+  the 0.8 plateau, i.e. the open heteroscedastic/Student-t B-item and the T6 miss are one issue.
+  Alternatives: more epochs (curve still +0.001-0.002/ep at 49), larger M, T6 gate revisit.
+- Commits this window: 2a31e9b (arm 1), 5a75893 (arm 2), a43c424 + this (ledger).
+
 ## 2026-07-12 — FPC-telS postmortem: impulse hypothesis DISPROVEN, dt-edge confirmed; FPC-telS-A submitted at dt 1.25e-4 (incident agent Fable; Sanaa 07-12 autonomy window, chat)
 - POSTMORTEM (job 1830422, NaN-guard kill at step 270251, detection 03:59:36Z): actual NaN
   onset in scalars.npz at t=66.8150 (step 267260), not the guard's t≈67.56. Onset is 12.34
