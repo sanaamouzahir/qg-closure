@@ -2,6 +2,28 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-12 — CP-ML-1 build COMMITTED; qg-env-piff repaired+completed; T1–T4 green; test jobs submitted (branch supervisor Fable; Sanaa blanket GO)
+- BLANKET GO (Sanaa chat, 07-11 evening): "I have approved everything you sent me" — covers the
+  CP-ML-1 build (already approved ~15:15 with its three defaults) and this session's submissions.
+- VENV qg-env-piff: the clone was MISWIRED — bin/activate + 32 console-script shebangs still
+  pointed at the shared qg-env (a pip through them would have poisoned qg-env; the grid
+  submitter's dry-run guard was right to refuse). Fixed: all bin/ paths repointed to
+  qg-env-piff (bin/python symlink + full site-packages copy were already correct).
+  gpytorch install: attempt 1 failed on a pip-23.2.1 sdist build-dep subprocess; attempt 2
+  with --only-binary :all: SUCCEEDED. Resolved pins: gpytorch 1.13, linear-operator 0.6.1,
+  jaxtyping 0.2.19, scikit-learn 1.7.2, joblib 1.5.3, threadpoolctl 3.6.0, typeguard 4.5.2
+  against the copied torch 2.4.1+cu118 / numpy 2.2.6 / scipy 1.13.1. Shared qg-env verified
+  UNTOUCHED post-install (gpytorch not importable there; zero new dists).
+- T1–T4 pre-commit rerun from ml_closure/ in the completed venv: 4 passed, 0 skipped (70 s CPU).
+- TEST JOBS (self-audit vs hard SGE rules passed; cpu=all.q, gpu=exactly ibgpu.q gpu=1):
+  piffT_cpu 1830729 (T1–T4) + piffT_gpu 1830730 (T5–T6) + piff_smoke 1830731 (T7 2-epoch
+  end-to-end, hold_jid 1830730). GPU arm co-scheduled IMMEDIATELY on ibgpu-compute-0-0 next to
+  the running CAPE-A wave (jobscript picks idlest GPU by memory) — no queue wait after all;
+  smoke follows on its hold.
+- GATE HELD: submit_piff_grid.sh NOT fired; [QG][GATE-ML][SGS-CLOSURE] email goes out only
+  after T1–T7 results land (T5–T7 pending the jobs above).
+- Email: [QG][SUBMIT][SGS-CLOSURE] spooled via reporting/pending_mail (10-min cron relay).
+
 ## 2026-07-11 — CAPE-A + telS submitted, NaN-guard live, NaN outputs purged (global supervisor Fable; Sanaa chat rulings)
 - RULINGS (chat ~14:40-14:50 EDT, full authorization per convention): CAPE-A; NaN-guard 3(i)
   "good"; QUESTIONS 1+2 "go for it" (= tel option (b) smoothed-switch rerun + dt=5e-4 rung
