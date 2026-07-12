@@ -167,10 +167,16 @@ class PiffModel(nn.Module):
 
     def predict_physical(self, gpin):
         """Likelihood-included predictive (mean, var) in PHYSICAL target units
-        (standardization inverted exactly)."""
+        (standardization inverted exactly). Non-Gaussian likelihoods (e.g.
+        StudentT, arm-C B-item experiment): gpytorch's marginal is Monte-Carlo
+        sampled -> moments carry a leading sample dim; reduce by the law of
+        total variance (E[var] + Var[mean]) so callers always get 1-D."""
         pred = self.likelihood(self.gp(gpin))
-        return (pred.mean * self.y_sd + self.y_mu,
-                pred.variance * self.y_sd * self.y_sd)
+        mu, var = pred.mean, pred.variance
+        if mu.dim() > 1:
+            var = var.mean(dim=0) + mu.var(dim=0)
+            mu = mu.mean(dim=0)
+        return mu * self.y_sd + self.y_mu, var * self.y_sd * self.y_sd
 
     def features(self, x, zeta):
         """(B,4,H,W),(B,) -> per-pixel GP inputs (B,H,W,F+1)."""
