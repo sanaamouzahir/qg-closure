@@ -24,8 +24,8 @@ Running record. Supervisor updates this at the end of every session. Newest entr
 - VERDICT (rule 3): no arm >= 0.95, C < 0.90 -> the 0.95-in-50-ep T6 bar is itself suspect —
   the specced model family saturates ~0.9 under BOTH time and capacity extension. GRID HELD.
 - PROPOSAL for Sanaa (not an action): (i) re-gate T6 at R2 >= 0.85 in 100 ep on the arm-2
-  config (evidence-based bar: A hit 0.85 by ~ep 60), or (ii) rule the heteroscedastic-Gaussian
-  B-item first and re-gate after. Grid fires on whichever re-gate passes.
+  config (evidence-based bar: A first crosses 0.85 at ep 81), or (ii) rule the
+  heteroscedastic-Gaussian B-item first and re-gate after. Grid fires on whichever passes.
 - Commits: b3ff7bb (arms), b48622a (predict_physical fix), b9749d3 + this (ledger).
   [QG][GATE-ML][SGS-CLOSURE] RESULT email sent with the three curves; relay-verified.
 
