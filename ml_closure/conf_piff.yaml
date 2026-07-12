@@ -49,6 +49,7 @@ train:
   num_workers: 0
   gp_chunk: 65536             # pixels per GP predictive chunk at eval
   kurtosis_after_epoch: 1     # residual-PDF excess kurtosis computed after this epoch (spec S2.2)
+  init_noise_frac: 1.0e-1     # data-informed GP init (Sanaa ruling 2026-07-12): noise = frac*var(y_train), outputscale = (1-frac)*var(y_train), mean = mean(y_train); INIT only, constants logged in every ckpt
 
 eval:
   n_field_snapshots: 6        # 4-panel field figures (spec S4.3)

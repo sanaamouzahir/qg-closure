@@ -40,7 +40,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from dataset_piff import (load_conf, build_runs, PiffCropDataset,
-                          count_masked_pixels, describe, _f)
+                          count_masked_pixels, target_stats, describe, _f)
 from model_piff import PiffModel, gpytorch
 
 HERE = Path(__file__).resolve().parent
@@ -160,6 +160,17 @@ def main():
                                       int(conf['model']['kmeans_iters']), seed, device=device)
     print(f"[train] inducing k-means init on {npix} pixels; M = {int(conf['model']['n_inducing'])}")
 
+    # data-informed GP hyperparameter init (Sanaa ruling 2026-07-12): exact
+    # train-target stats at build; constants logged in run_info + every ckpt
+    ystats = target_stats(runs, 'train', conf)
+    hyper0 = model.init_hyperparams_from_stats(
+        ystats['mean'], ystats['var'], noise_frac=_f(tc['init_noise_frac']))
+    hyper0['stats_n_pixels'] = ystats['n']
+    info['init_hyperparams'] = hyper0
+    with open(outdir / 'run_info.yaml', 'w') as f:
+        yaml.safe_dump(info, f, sort_keys=False)
+    print(f"[train] data-informed GP init: {json.dumps(hyper0)}")
+
     mll = gpytorch.mlls.VariationalELBO(model.likelihood, model.gp, num_data=N)
     gp_named = {id(p) for p in model.gp.parameters()} | {id(p) for p in model.likelihood.parameters()}
     opt = torch.optim.Adam([
@@ -226,7 +237,8 @@ def main():
 
         state = {'model': model.state_dict(), 'conf': conf, 'seed': seed,
                  'epoch': ep, 'val': vm, 'ELBO_num_data': N,
-                 'lr': lr, 'weight_decay': wd, 'kurtosis': kurt}
+                 'lr': lr, 'weight_decay': wd, 'kurtosis': kurt,
+                 'init_hyperparams': hyper0}
         torch.save(state, outdir / 'last.pt')
         if vm['nll'] < best_nll:
             best_nll = vm['nll']

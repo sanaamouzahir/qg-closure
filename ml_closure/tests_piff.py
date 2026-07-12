@@ -154,6 +154,11 @@ def test_t6_overfit_500_crops():
     model = PiffModel(conf).to(device)
     model.init_inducing_kmeans(ds, 10000, int(conf['model']['kmeans_iters']),
                                seed=0, device=device)
+    # data-informed hyperparameter init — same path as train_piff.py (2026-07-12 ruling)
+    ystats = dp.target_stats(runs, 'train', conf)
+    hyper0 = model.init_hyperparams_from_stats(
+        ystats['mean'], ystats['var'], noise_frac=dp._f(conf['train']['init_noise_frac']))
+    print(f"[t6] data-informed GP init: {hyper0}")
     n_pix = int(sum(ds[i]['mask'].sum() for i in range(len(ds))))
     mll = gpytorch.mlls.VariationalELBO(model.likelihood, model.gp, num_data=n_pix)
     opt = torch.optim.Adam(model.parameters(), lr=3e-3)

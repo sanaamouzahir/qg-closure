@@ -188,6 +188,26 @@ class PiffModel(nn.Module):
         self.gp.variational_strategy.inducing_points.data.copy_(centers.to(device))
         return pts.shape[0]
 
+    @torch.no_grad()
+    def init_hyperparams_from_stats(self, y_mean, y_var, noise_frac=0.1):
+        """Data-informed hyperparameter INIT (Sanaa autonomy ruling 2026-07-12,
+        T6 root-cause fix): constant mean = train-target mean, kernel
+        outputscale = (1-noise_frac)*var(y), likelihood noise = noise_frac*
+        var(y). Closes the ~var(y) gap between the O(1) gpytorch defaults and
+        the spec-S1.2 nondimensionalized target scale that made the ELBO climb
+        glacially (T6 R2 0.17). INIT ONLY — the target definition and the S1.2
+        normalization are untouched; all three remain trainable. Returns the
+        constants for the checkpoint manifest."""
+        y_mean, y_var = float(y_mean), float(y_var)
+        nf = float(noise_frac)
+        if not (y_var > 0.0 and 0.0 < nf < 1.0):
+            raise ValueError(f"bad init stats: var={y_var}, noise_frac={nf}")
+        self.gp.mean_module.constant.data.fill_(y_mean)
+        self.gp.covar_module.outputscale = (1.0 - nf) * y_var
+        self.likelihood.noise = nf * y_var
+        return {'y_mean': y_mean, 'y_var': y_var, 'noise_frac': nf,
+                'outputscale_init': (1.0 - nf) * y_var, 'noise_init': nf * y_var}
+
     def film_norms(self):
         """||dgamma||, ||beta|| summaries for logging (spec S3.5). Probes the
         MLP at the training zeta range midpoint 0."""

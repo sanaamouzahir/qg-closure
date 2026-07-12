@@ -221,6 +221,25 @@ def count_masked_pixels(runs, split, conf):
     return int(sum(runs[ri].n_valid for ri, _ in split_frames(runs, split, conf)))
 
 
+def target_stats(runs, split, conf):
+    """EXACT mean/var of the normalized target over every valid pixel of the
+    split (float64 accumulation, deterministic — no sampling). Feeds the
+    data-informed GP hyperparameter INIT (Sanaa ruling 2026-07-12): this is an
+    initialization constant, NOT a normalization of the data — the spec-S1.2
+    target definition (pi * D^2/U^2) is untouched."""
+    n, s1, s2 = 0, 0.0, 0.0
+    for ri, fi in split_frames(runs, split, conf):
+        r = runs[ri]
+        U = _f(r.U_snap[fi])
+        y = r.pi[fi][r.valid].astype(np.float64) * (r.D * r.D / (U * U))
+        n += y.size
+        s1 += float(y.sum())
+        s2 += float((y * y).sum())
+    mean = s1 / n
+    var = max(s2 / n - mean * mean, 0.0)
+    return {'n': int(n), 'mean': float(mean), 'var': float(var)}
+
+
 class PiffCropDataset(Dataset):
     """Deterministic crop sampler. call set_epoch(ep) each epoch — the crop
     table is a pure function of (seed, split, epoch)."""
