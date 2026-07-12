@@ -41,12 +41,16 @@ curve -- physics-init medians, expected ordering, control-run reference epochs.
 The monitor compares against the card, not just against NaN/explosion. JSON on
 purpose (hard rule 4: PyYAML float parsing is banned territory).
 
-Email path: compute nodes on this cluster have a broken sendmail
-(libmysqlclient.so.18 missing -- observed 2026-07-08); the head node works.
-send_email() therefore ALWAYS writes the body to <run_dir>/monitor_outbox/ and
-then tries mailx/mail/sendmail; if all fail it submits a subject-only qsub
-notify job (-m e) so the verdict still reaches a phone via qmaster mail, with
-the full table in the outbox file. Silence is a violation (I18b).
+Email path (v3, 2026-07-11): compute nodes CANNOT deliver mail directly --
+sendmail is broken (libmysqlclient.so.18, observed 2026-07-08) and a mailx
+rc=0 is NOT delivery (direct-to-Outlook is silently junked unless relayed via
+outgoing.mit.edu -- the 2026-07-11 blackout root cause; job 1830437's verdict
+died in monitor_outbox this way). send_email() therefore ALWAYS writes the
+body to <run_dir>/monitor_outbox/ and then spools a .mail file
+(To:/Subject:/blank/body) into the reporting pending_mail dir as the PRIMARY
+channel -- a 10-min cron on mseas relays it through the sanctioned MIT relay.
+The old direct channels (mailx/mail/sendmail/qsub-notify) remain as fallback
+ONLY if the spool write itself fails. Silence is a violation (I18b).
 
 Usage:
   python monitor_training.py --run-dir <dir-with-log.csv> --branch <branch> \
@@ -325,10 +329,17 @@ def param_header(run_dir, branch, job_id, card):
 
 # --------------------------------------------------------------------- email
 
+PENDING_MAIL_SPOOL = Path('/gdata/projects/ml_scope/Closure_modeling'
+                          '/QG-closure/reporting/pending_mail')
+
+
 def send_email(subject, body, to, run_dir, notify_qsub=True):
-    """Outbox first (always), then mailx/mail/sendmail, then a subject-only
-    qsub notify job as the last resort (compute-node sendmail is broken on this
-    cluster; qmaster mail is not). Returns the delivery channel used."""
+    """Outbox copy first (always), then the reporting pending_mail SPOOL as
+    the primary delivery channel (a 10-min cron on mseas relays it via
+    outgoing.mit.edu -- compute nodes cannot deliver mail directly, and a
+    direct mailx rc=0 is NOT delivery: 2026-07-11 blackout lesson). The old
+    mailx/mail/sendmail/qsub-notify ladder survives only as a fallback when
+    the spool write itself fails. Returns the delivery channel used."""
     outbox = Path(run_dir) / 'monitor_outbox'
     outbox.mkdir(exist_ok=True)
     stamp = datetime.now().strftime('%Y%m%dT%H%M%S')
@@ -337,6 +348,16 @@ def send_email(subject, body, to, run_dir, notify_qsub=True):
     out_file.write_text(f"Subject: {subject}\nTo: {to}\nDate: {stamp}\n\n{body}\n")
 
     text = f"{body}\n\n[full copy: {out_file}]"
+    try:
+        PENDING_MAIL_SPOOL.mkdir(parents=True, exist_ok=True)
+        spool_file = PENDING_MAIL_SPOOL / f"monitor_{stamp}_{slug[:48]}.mail"
+        spool_file.write_text(f"To: {to}\nSubject: {subject}\n\n{text}\n")
+        print(f"[monitor] SPOOLED to pending_mail (cron relays <=10 min): "
+              f"{spool_file}", flush=True)
+        return 'pending-mail-spool'
+    except OSError as e:
+        print(f"[monitor] pending_mail spool FAILED ({e}) -- falling back to "
+              f"direct channels", flush=True)
     for cmd in (['mailx', '-s', subject, to], ['mail', '-s', subject, to]):
         if shutil.which(cmd[0]):
             r = subprocess.run(cmd, input=text.encode(), capture_output=True)

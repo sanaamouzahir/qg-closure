@@ -783,8 +783,13 @@ def main():
     p.add_argument('--free-steps', type=int, default=0,
                    help='OPTION 2: fixed truth-free step count K '
                         '(ignored when --free-horizon is set)')
-    p.add_argument('--free-weight', type=float, default=1.0,
-                   help='weight of the annulus stability hinge')
+    p.add_argument('--free-weight', type=str, default='1.0',
+                   help='weight of the annulus stability hinge: one value '
+                        'for all strides, or a comma list matched to '
+                        '--strides in order (per-stride lever, e.g. '
+                        '1.0e-3,1.0e-3,2.5e-4 -- the s1 hinge is inactive '
+                        'on a stable model anyway; the list lets s3 trade '
+                        'less accuracy for damping than s2)')
     p.add_argument('--free-cap', type=float, default=10.0,
                    help='clamp on the per-step log-growth hinge (gradient '
                         'is zero above the cap; pre-blowup sub-cap steps '
@@ -816,6 +821,14 @@ def main():
     device = (args.device if (args.device == 'cpu'
                               or torch.cuda.is_available()) else 'cpu')
     args.strides = strides = [int(s) for s in args.strides.split(',')]
+    # --free-weight: scalar broadcast or per-stride list (order = --strides)
+    fw = [float(x) for x in str(args.free_weight).split(',')]
+    if len(fw) == 1:
+        fw = fw * len(strides)
+    if len(fw) != len(strides):
+        raise SystemExit(f"--free-weight has {len(fw)} values for "
+                         f"{len(strides)} strides; give 1 or one per stride")
+    args.free_weight_map = dict(zip(strides, fw))
     trunc_k = 0
     if args.grad_mode != 'full':
         if not args.grad_mode.startswith('trunc:'):
@@ -905,6 +918,7 @@ def main():
                    + ',elapsed_s\n')
     print(f"[rollout-train] run={run}  strides={strides}  "
           f"grad_mode={args.grad_mode}  checkpoint_steps={args.checkpoint_steps}  "
+          f"free_weight={args.free_weight_map}  "
           f"schedule={schedule[:12]}{'...' if len(schedule) > 12 else ''}")
 
     bare_cache = {}                       # (member, stride, win) -> bare step-1
@@ -937,6 +951,7 @@ def main():
             n_ok = 0
             for rc, s, w in chunk:
                 M = min(M_epoch, rc.m_max(s))
+                fw_s = args.free_weight_map[s]
                 K = (max(0, args.free_horizon - M) if args.free_horizon
                      else args.free_steps)
                 use_cp = (args.checkpoint_steps > 0
@@ -949,7 +964,7 @@ def main():
                 losses, stab, blown = unroll_losses(
                     rc, steppers[(rc.member, s)], omega_stack, truth, M,
                     is_closure=True, trunc_k=trunc_k, use_checkpoint=use_cp,
-                    free_K=K, free_weight=args.free_weight,
+                    free_K=K, free_weight=fw_s,
                     ann_mask=rc.annulus(device) if K else None,
                     backward_scale=bscale, free_cap=args.free_cap)
                 if blown:
@@ -961,7 +976,7 @@ def main():
                     sup_t = torch.stack(losses).mean() if losses else None
                     stab_t = torch.stack(stab).mean() if stab else None
                     terms = ([sup_t] if sup_t is not None else []) \
-                        + ([args.free_weight * stab_t]
+                        + ([fw_s * stab_t]
                            if stab_t is not None else [])
                     (sum(terms) / len(chunk)).backward()
                     sup = float(sup_t) if sup_t is not None else 0.0
