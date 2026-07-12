@@ -2,6 +2,87 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-12 — session 11 (predecessor wedged+killed post-submit; fresh supervisor triaged both landings + psw3 verdict ladder; Sanaa 07-12 autonomy window)
+- CONTINUITY: the session-10 agent submitted 1830720 (apost_rep) + 1830721/22/23 (ro2p
+  unit), then wedged and was killed before triage. Both landed exit 0 overnight. This
+  session ran under the Sanaa 07-12 autonomy window (chat): act and report, no approvals.
+- TASK A TRIAGE (apost_rep 1830720, 35 min, 27 cases): **the 16.6x REPLICATES at 5e-3**
+  — 10/10 stable (incl. IC837), median 15.96x, range [0.92, 23.57]; weakest = held-out
+  combo IC527 at parity 0.92x. **Large-dT stability does NOT replicate**: 1.5e-2 blows
+  4/10 (256_ic1357@s15, combo_ic527@s10, combo_ic884@s14, kf4_ic912@s16), 1e-2 blows
+  1/10 (combo_ic527@s13). IC837 was a favorable draw — the 07-11 "survives the 16-step
+  ladder at 1.5e-2" headline downgrades to ~60% of draws. Stable large-dT accuracy at/
+  below parity (medians 0.50x / 0.65x). Merged CSV: Results/apost_opt2_rep_20260711/.
+- TASK B TRIAGE (ro2p 1830721, rollout_ft_opt2_psw3, 52.7 min): best ep17 val 4.8677e-05;
+  rf 0.047/0.042/0.055 vs ep33 0.050/0.048/0.078 — rf_s3 RECOVERED past the warm baseline
+  (0.065) with fb=0.00 all strides; zero val poisoning (two transient train blow-ups, ep2
+  60-window + ep6 inf, absorbed by the session-9 guards, n_skip 0). Session-10's outcome
+  test said: hinge-induced → ladder the ckpt. MONITOR-SPOOL FIX VERIFIED LIVE: 3 monitor
+  mails (ep0 FIRST_VAL / ep5 OK / ep6 EXPLODE) spooled to pending_mail AND relayed.
+- PSW3 VERDICT LADDER (new scripts/sge/apost_psw3_job.sh, job **1830760**, 9 min ~0.15
+  GPU-h, sge-checker PASS): identical code path/flags, ONLY the ckpt swapped; full grid =
+  IC837 + all 9 replication pairs; ALL 30 truth refs REUSED (hard-fail on missing — no
+  silent recompute). Result: **TRADE, not the accuracy lever.** 5e-3 improves in 10/10
+  cases (median 15.96→17.02x; combo IC527 0.92→1.75x); 1e-2 wash (0.50→0.49x); 1.5e-2
+  stability 6/10→7/10 (kf4_ic912 un-blown) but accuracy degrades in EVERY previously-
+  stable case (median 0.65→0.18x; IC837 0.33→0.18x, low-k drift 0.23→3.19). The offline
+  rf_s3 recovery did NOT transfer to rollout — the s3 hinge damping was protective of
+  low-k drift (p170 lesson, third form). s3 deficit = intrinsic data limit (M_max=3
+  supervised at stride 3), NOT hinge over-damping. Results/apost_psw3_20260712/.
+- RULING RECORDED (DECISIONS): **ep33 rollout_ft_opt2_cond REMAINS the reference best
+  ckpt**; psw3 kept as the 5e-3 specialist. Hinge tuning exhausted; remaining large-dT
+  levers = deeper builds (option 1, needs Sanaa) or the Wiener-conditioned model.
+- RESULTS.md overwritten in place (session-11 state; 07-09 state in git history).
+  [QG][LANDED][WIENER] verdict email spooled via pending_mail; relay verified.
+- Next: Sanaa rulings on (a) option-1 deep builds for s3 supervision range, (b) start of
+  the Wiener-conditioned model build; no training submitted by this session.
+
+## 2026-07-11 — session 10 (Sanaa blanket GO "go for everything" → replication + accuracy lever SUBMITTED)
+- AUTHORIZATION: Sanaa chat, evening — approved everything in the LANDED email's PROPOSED
+  NEXT: (A) multi-IC/multi-member replication of the M=16 ladder, (B) ONE large-dT accuracy
+  lever. NOT authorized: deep builds (option 1 stays dead), conditioned-model work beyond notes.
+- TASK A (replication, job apost_rep **1830720**, ~0.8 GPU-h): new
+  scripts/sge/apost_opt2_rep_job.sh — IDENTICAL code path/flags as the 07-11 ladder
+  (apost_opt2_job.sh, same ckpt rollout_ft_opt2_cond/best.pt = ep33 val 5.96e-05), only
+  (member, IC) varies. 3 ICs x 3 members x 3 dT = 27 cases: kf4 {532,912,1356},
+  FRC-256 {549,933,1357}, FRC-combo {527,884,1355} (combo = HELD OUT of the fine-tune;
+  kf4/FRC-256 were its training members). ICs = val rows common to all 3 sweeps, >=30 rows
+  apart (distinct windows) and away from 837. Refs: kf4 IC837 refs already exist (session 9,
+  not rerun); 27 NEW refs computed once per (member,IC,dT) with --save-refs, kept under
+  Results/apost_opt2_rep_20260711/<member>_ic<N>/ for future ckpt ladders (~218 s/IC at
+  512², ~55 s at 256²; the truth is the only expensive leg). Per-(member,IC) consolidation
+  (one npz per case) + merged ladder_matrix_summary_ALL.csv.
+- TASK B (accuracy lever, three-job unit ro2p **1830721/22/23**, ~1 GPU-h): PER-STRIDE
+  FREE-WEIGHT chosen over the extended high-M tail. Rationale (DECISIONS row): the high-M
+  tail cannot reach s2/s3 (M_max = 7/3 is the data limit, hit from ep12 of the landed run,
+  which then plateaued ep33-39 — config-only continuation just replays flat epochs), while
+  session-9 evidence points at hinge over-damping at s3: rf_s3 degraded 0.065→0.078 while
+  s1/s2 improved, and at s3 the hinge governs 13/16 rolled steps vs 3 supervised.
+  Implementation: --free-weight now scalar-or-per-stride comma list (small
+  train_deriv_rollout.py change, commit 8da5398). Run rollout_ft_opt2_psw3: warm start
+  ep33 best.pt, λ = (1.0e-3, 1.0e-3, 2.5e-4) — ONLY s3 reduced 4x, one variable; schedule
+  12:4,16:6,21:10 (20 ep), all else identical to the landed run (trunc:4, free-horizon 16,
+  free-cap 10.0, lr 5.0e-5, f64). Outcome test: rf_s3 back to <=0.065 with fb_s3 = 0.00 ⇒
+  hinge-induced (then ladder the ckpt); rf recovers but fb_s3 > 0 ⇒ intrinsic trade — report,
+  do not iterate (λ escalation rule respected: global λ=1e-3 NOT re-litigated).
+- SMOKE (CPU, pre-submit): parse unit checks (scalar broadcast / list / wrong-length refusal)
+  + 1 epoch FRC-256 warm ep33, K=13 free segment, per-stride weights applied, all finite,
+  config records the map. HONEST LIMITS: 256² CPU only, 1 epoch — kf4 512² multi-epoch
+  dynamics not exercised (the K=12+ overflow class IS covered by the session-9 guards,
+  unchanged code). sge-checker audit PASS all 3 items (one cosmetic note: lr spelled 5.0e-5).
+- MONITOR DELIVERY FIX (cross-cutting): ro2c FINALIZE 1830437 ended "NO delivery channel
+  worked" — its verdict died in monitor_outbox (compute nodes cannot deliver mail; mailx
+  rc=0 ≠ delivered). monitor_training.py send_email() now spools a .mail file into
+  reporting/pending_mail/ as the PRIMARY channel (10-min cron relays via outgoing.mit.edu);
+  direct channels demoted to fallback-only. Both paths smoked against a scratch spool.
+  NB: the fallback smoke fired one stray direct-mailx test ("[QG][MONITOR][test] fallback
+  smoke", body "x") from this node — the known-junked channel, expected to vanish.
+- QUEUE STATE at submit (23:52 EDT): both GPU jobs started IMMEDIATELY (2 free slots on
+  ibgpu-compute-0-0 despite the 6-job CAPE-A wave); ro2p_MONL live on all.q, ro2p_MONF held.
+- Next: read ladder_matrix_summary_ALL.csv (does 16.6x replicate? does combo hold up?),
+  psw3 rf_s3/fb_s3 verdict, then ladder the psw3 ckpt if the trade resolves; then the
+  Wiener-conditioned model per the roadmap.
+
 ## 2026-07-11 — session 9 (Sanaa ruling: OPTION 2 → implemented, gated, SUBMITTED; global supervisor Fable)
 - RULING (chat ~15:15 EDT, full authorization): rollout fork = OPTION 2 (truth-free annulus
   stability term; option 1 deeper builds NOT authorized). Sanaa's question "start from the
