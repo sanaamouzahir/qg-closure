@@ -21,7 +21,17 @@
 set -e
 
 GO=0
-[ "${1:-}" = "--go" ] && GO=1
+STAGGER=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --go) GO=1; shift ;;
+        --stagger) STAGGER="${2:?--stagger needs N}"; shift 2 ;;
+        *) echo "usage: $0 [--go] [--stagger N]"; exit 2 ;;
+    esac
+done
+# --stagger N: GPU courtesy (2026-07-12 ruling 3) — job i holds on job i-N, so
+# at most N grid trainers run concurrently (use when production co-tenants
+# occupy the node, e.g. the CAPE-A wave). 0 = all six at once.
 
 QG_ROOT=/gdata/projects/ml_scope/Closure_modeling/QG-closure
 BRANCH="$QG_ROOT/qg-sgs-closure"
@@ -53,17 +63,26 @@ for LR in 1.0e-4 3.0e-4 1.0e-3; do
         # job name pF_<lr-exp><wd-exp> stays unique in qstat's 10 chars
         JN="pF_${LR/1.0e-/1e}_${WD/1.0e-/1e}"
         JN="${JN/3.0e-/3e}"
-        OUT=$(run qsub -N "$JN" -q ibgpu.q -l gpu=1 \
+        HOLD=()
+        IDX="${#JOB_IDS[@]}"
+        if [ "$STAGGER" -gt 0 ] && [ "$IDX" -ge "$STAGGER" ]; then
+            HOLD=(-hold_jid "${JOB_IDS[$((IDX - STAGGER))]}")
+        fi
+        OUT=$(run qsub -N "$JN" "${HOLD[@]}" -q ibgpu.q -l gpu=1 \
             -o "$LOG_DIR/\$JOB_NAME.\$JOB_ID.log" -j y -cwd -V \
             -m ea -M "$QG_NOTIFY_EMAIL" \
             "$SGE/piff_train_job.sh" \
             --run-name "$NAME" --lr "$LR" --weight-decay "$WD")
         echo "$OUT"
         JID=$(echo "$OUT" | grep -oE '[0-9]+' | head -1)
-        [ -n "$JID" ] && [ "$GO" = "1" ] && JOB_IDS+=("$JID")
+        if [ "$GO" = "1" ]; then
+            [ -n "$JID" ] && JOB_IDS+=("$JID")
+        else
+            JOB_IDS+=("<id-job-$((IDX + 1))>")   # dry-run hold preview
+        fi
     done
 done
 
-[ "${#JOB_IDS[@]}" -gt 0 ] && echo "JOB_IDS: $(IFS=,; echo "${JOB_IDS[*]}")  (use for -hold_jid selection/eval chaining)"
+[ "$GO" = "1" ] && [ "${#JOB_IDS[@]}" -gt 0 ] && echo "JOB_IDS: $(IFS=,; echo "${JOB_IDS[*]}")  (use for -hold_jid selection/eval chaining)"
 echo "=== grid done; monitor: qstat -u \$USER ==="
 echo "  artifacts land in $BRANCH/ml_closure/runs_piff/grid_lr*_wd*/"
