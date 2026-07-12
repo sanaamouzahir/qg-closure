@@ -2,6 +2,34 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-12 — FPC-telS postmortem: impulse hypothesis DISPROVEN, dt-edge confirmed; FPC-telS-A submitted at dt 1.25e-4 (incident agent Fable; Sanaa 07-12 autonomy window, chat)
+- POSTMORTEM (job 1830422, NaN-guard kill at step 270251, detection 03:59:36Z): actual NaN
+  onset in scalars.npz at t=66.8150 (step 267260), not the guard's t≈67.56. Onset is 12.34
+  time units INTO the long Re=5600 dwell [54.472, 68.862] and 2.05 BEFORE the next switch;
+  the original hard-switch FPC-tel blew at t=68.615 inside the SAME dwell. Both variants die
+  mid-dwell, far from any ramp — the switch-impulse hypothesis is disproven.
+- SIGNATURE = cape dt-edge, not physics: enstrophy Z grew exponentially with shrinking
+  doubling time (3.44 at t=66.740 → 32.0 at 66.8075 → 164 at 66.810 → 7.6e191 at 66.8125)
+  while E stayed FLAT at 4.314 (grid-scale blowup, energy at high-k only). Cd normal (~2.2)
+  until the final record. No secular E/Cd growth over the dwell (E 4.31-4.36 for 12 units).
+- Re CONTEXT: dwell Re=5600 → U_inlet 2.872 = 1.44x the max U 2.0 (Re 3900) that the clean
+  FPC-{const,sine,ramp,ou} members ever saw at 2.5e-4/2048^2; probe |u| ~2.2-2.45 at onset.
+  Nuance stated plainly: the earlier Re=5600 dwell [39.51, 49.82] (10.3 units) survived —
+  the edge crossing is a local/instantaneous-velocity rare event, consistent with the cape
+  precedent (capeSmk: 2048^2 dt-unstable at 2.5e-4, clean at 1.25e-4; penalty exonerated).
+- DECISION (autonomy window; CAPE-A playbook): rerun as FPC-telS-A at dt 1.25e-4.
+  Table telegraphS20_dt1p25e-4_T120.npz generated (modulation.py, seed 20260707,
+  --switch-smooth-steps 20 = SAME physical 0.0025 ramp as 10 steps at 2.5e-4; switch times
+  unchanged). VALIDATED: bitwise equal to telegraphS10_dt2p5e-4 at ALL 480001 shared times
+  (ramp windows included); 7 ramps, physical duration 0.0025 each (20/21-step grid spans).
+- SCRIPTS: phaseB_A_job.sh (phaseB_job.sh with dt 1.25e-4 baked, NaN-guard verbatim — the
+  CAPE-A pattern) + submit_FPCtelSA.sh (save_rate 3600 = dt_save 0.45, scalar_rate 10,
+  flush_every 500, new dir FPC-telS-A, no-overwrite guard; partial FPC-telS t<66.81 KEPT).
+  sge-checker PASS all rules. SUBMITTED: sgsB_teSA 1830737 (ibgpu.q gpu=1, running
+  immediately) + shed_CteSA 1830738 (all.q, hold_jid). Cost ~32 GPU-h (960k steps at the
+  measured 8.3 it/s of 1830422).
+- Email [QG][FLAG][SGS] spooled via reporting/pending_mail.
+
 ## 2026-07-12 — CP-ML-1 build COMMITTED; qg-env-piff repaired+completed; T1–T4 green; test jobs submitted (branch supervisor Fable; Sanaa blanket GO)
 - BLANKET GO (Sanaa chat, 07-11 evening): "I have approved everything you sent me" — covers the
   CP-ML-1 build (already approved ~15:15 with its three defaults) and this session's submissions.
