@@ -2,6 +2,34 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-13 — ORDERS 1-3 EXECUTED; CONDITIONED ENSEMBLE FLEET IN FLIGHT (global supervisor Fable; afternoon session)
+- SANAA RULINGS (chat): three [QG][GLOBAL] ORDERS (architecture email / results map +
+  diagnostics / ensemble training under new template T4) + mid-session STANDING FULL
+  INDEPENDENCE ("no need to ask me for any approval anymore... report everything") —
+  recorded in DECISIONS + memory. Also: video-rerender directive — fleet 1832129-34
+  fired via pipeline-runner, standing landing-chain rule saved to memory.
+- O1 LANDED 12:50:01 (architecture email, relay-verified). O2 LANDED 13:00:01 (results
+  map + all 8 diagnostics; see the 13:05 entry below for detail).
+- O3 DATA GAP CLOSED: FPC-telS-A Pi_FF chain had NEVER fired (chain-gap, video-family) —
+  1832176-80 + step0 sine/ramp/ou 1832181-83, all clean; 5/5 FPC members Step-0 complete.
+- O3 MODEL (commits 017bd52, ddd811b, [fable-authored]): zeta_dot (table-Re, T_shed=2.992
+  cumsum boxcar, recorded zdot_sd buffer) into FiLM (cond_dim 2) + ARD; |grad omega_bar|*
+  (recorded g_scale) as ARD dim; GP inputs 16+3=19; flags-off = exact legacy (old ckpts
+  load strict). Gates: T1-T5 + T8/T8b PASS; legacy in-test T6 0.814 = known family plateau
+  (arm-2 hit 0.80 on the same path) — operative bar is the re-gated run-level one. G4:
+  1 CONFIRMED MEDIUM (kmeans before conditioning stats) FIXED pre-submit; G5 PASS;
+  template T4 appended to charter §4 (Sanaa's order = the RED approval).
+- CROSS-EVAL BEFORE-ROW (1832208-12; 1832203-07 qdel'd in 1 min, I14 --config fix):
+  prod_ext150 per-member R2 const .858 / ou .842 / ramp .587 / sine .491 / telS-A .365 —
+  SPREAD 0.493; degradation tracks the Re-excursion of each modulation class.
+- IN FLIGHT (~16 GPU-h): piff_fpc_ens unit 1832221/22/23 (+evals 1832224-30, startup
+  verified: zdot_sd 0.1818, g_scale 1.1048, 883 train frames); piff_cape_cond unit
+  1832231/32/33 (+1832234/35, zdot_sd 0.1934, g_scale 2.0588); cape LOMO ladder 1832241;
+  arm-F 150 ep 1832242 (held). Predictions P1-P3 pre-recorded
+  (ml_closure/PREDICTIONS_ensemble_2026-07-13.md); [QG][SUBMIT][log] spooled.
+- SUPERVISOR DECISIONS (independence ruling): prod_ext150 PROMOTED; cape convergence
+  tier YES (fires after the fleet); Wiener levers queue behind the SGS fleet.
+
 ## 2026-07-13 — OVERNIGHT FLEET LANDED 7/7 CLEAN (global supervisor Fable; Monday resume session)
 - All 7 jobs exit 0 (22:32 Sat – 04:50 Sun EDT). The live-session watcher died with the
   07-12 session, so the landing chain ran at Monday resume; consolidated [QG][LANDED]
@@ -786,3 +814,10 @@ Running record. Supervisor updates this at the end of every session. Newest entr
 - Baseline/control: MOD-const (Re = 3900) per geometry.
 - Truth framing: 2D fine-grid penalized-obstacle solution ONLY; Cd≈0.99 / St≈0.21 are
   context, never validation targets.
+
+## 2026-07-13 ORDER 2 (SGS supervisor): results map + 8 diagnostics — LANDED
+- New standalone tool `ml_closure/diagnose_piff.py` (imports dataset_piff/model_piff as-is; train/eval helpers copied in). Jobs: 1832173 (all.q, item 7 log parsing), 1832174/1832175 (ibgpu.q gpu=1; FPC ckpt prod_ext150 on FPC-const, cape ckpt on 5 FPCape members). All clean.
+- Outputs: runs_piff/prod_ext150/diagnostics/ + runs_piff/cape_base_100ep/diagnostics/ (+ zeta_ls curves in every grid/smoke run dir).
+- Headlines: (1) sigma FLAT across |grad omega| deciles (1.0002x) vs |err| 39.6x (FPC) — Arm F prior quantified; (2) overdispersion lives in the FREESTREAM (cov1 free 0.96-0.99 vs wake 0.85-0.96); (3) zeta_ls frozen at ln2 for ALL FPC-const runs, moves 0.877->2.308 on cape = data property, not optimizer; (4) kurtosis tail lives in FPCape-sine (1428); (5) cape error fields temporally COHERENT across the shedding cycle (corr 0.85-0.92 at lag 0.45) vs FPC fast decorrelation.
+- FPC-sine/ramp/ou/tel model diagnostics impossible until their Step-0 packages exist (no DNS_LES_s4/U_of_t/manifest).
+- Email: reporting/pending_mail/landed_20260713_results_map.mail ([QG][LANDED][sgs]).
