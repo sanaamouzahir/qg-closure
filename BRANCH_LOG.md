@@ -2,6 +2,23 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-12 — GRID LANDED, WINNER SELECTED, S4 EVAL PACKAGE DONE (global supervisor Fable; autonomy window, evening session)
+- GRID (1830888-93): all 6 exit 0, landed 07:13-09:24 EDT, ~6.5 GPU-h as budgeted. Val NLL /
+  R2 at ep59 (best epoch = FINAL epoch on all six rungs — none saturated at 60 ep):
+  lr1e-3/wd1e-5 5.6694/0.8133 (WINNER, lowest NLL per spec S3.3); lr1e-3/wd1e-4 5.6864/0.8043;
+  lr3e-4 pair ~5.72/~0.79; lr1e-4 pair ~7.18/0.61. READ: lr is the only lever; wd inert.
+- S4 EVAL on the winner (piff_eval_winner 1831530, ~5 min GPU; new reusable
+  scripts/sge/piff_eval_job.sh, sge-checker PASS): full-frame val R2 0.8323 / RMSE 36.0 /
+  NLL 5.286 (full frames beat crop-val as expected). FLAG — CALIBRATION OVERDISPERSED:
+  coverage 0.975/0.990/0.995 vs nominal 0.683/0.954/0.997; mean sigma 69 ~ 1.9x RMSE.
+  zeta ARD ls 0.6931 = exact init (zeta constant on FPC-const — unidentifiable by
+  construction; meaningful only multi-run). Package in runs_piff/grid_lr1.0e-3_wd1.0e-5/eval/.
+- PROPOSALS to Sanaa (email, not actions): (i) extend winner to 100-150 ep as production ckpt
+  (re-gated 0.85-in-100-ep bar on trajectory: 0.813@59 climbing, arm-A precedent crossed 0.85
+  at ep81); (ii) post-hoc scalar sigma recalibration on val (no retrain; pairs with the
+  structural-noise-prior B-item).
+- [QG][MILESTONE][SGS-CLOSURE] S4 email spooled via pending_mail relay.
+
 ## 2026-07-12 — ARM E conclusive; RE-GATE executed; GRID FIRED staggered (branch supervisor Fable; orchestrator ruling 3 under Sanaa's autonomy window — reversible Monday)
 - RULING 3 (reasoning recorded in DECISIONS: Sanaa away + inbound mail broken; reply-approval
   would idle the track ~2 days): arm E (warmup heteroscedastic retry), then fire the grid
