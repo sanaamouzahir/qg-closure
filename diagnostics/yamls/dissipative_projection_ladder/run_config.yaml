@@ -1,0 +1,54 @@
+# P0 dissipative-projection A/B ladder -- run configuration
+# (Sanaa 2026-07-13 [QG][GLOBAL] WIENER STABILITY+ACCURACY PLAN, item P0)
+# YAML rule I9: exponents always written with a decimal point.
+plan_item: P0
+date: 2026-07-13
+driver: training/rollout_aposteriori.py
+flag: --nn-dissipative-proj
+flag_semantics: >
+  Per integer mode-radius shell kappa (spectral_error_profile.py
+  convention, Hermitian rfft weights): remove the enstrophy-injecting
+  radial component of the NN correction. The correction enters the
+  tendency as g = -coef*gamma*f_NN, so the spec formula
+  g -= max(0, Re<g,w>_k)/||w_k||^2 * w|_k is implemented on the code
+  variable f_NN as f_NN -= min(0, Re<f_NN,w>_k)/||w_k||^2 * w|_k.
+  Zero extra FFTs; closure/closure2 R3 f_NN only, after all other masks.
+ckpt: data/ensemble_N5_7lag/training_runs/rollout_ft_opt2_cond/best.pt   # ep33
+truth_convention: RK4 at h_fine = dT/K, coef = dT^3, no (1-1/K^n)        # I4
+h_fine: 1.0e-5
+draws:
+  FRC-kf4:   [532, 912, 1356, 837]
+  FRC-256:   [549, 933, 1357]
+  FRC-combo: [527, 884, 1355]
+ladder_16step:
+  n_steps: 16
+  n_checkpoints: 24
+  arms: [bare, closure]
+  dT_K: {1.5e-2: 1500, 1.0e-2: 1000, 5.0e-3: 500}
+  refs: reused from Results/apost_opt2_rep_20260711/<member>_ic<IC>/
+        (IC837 from apost_smoke3 + apost_ladder_20260709); hard-fail if missing
+horizons_5em3:
+  n_steps: [64, 128]
+  K: 500
+  refs: extended via --save-refs on the OFF pass, then moved next to the
+        existing 16-step refs in the rep case dirs for future reuse
+ab_variants: [proj_off, proj_on]
+gate_G3:
+  standing_smoke: FRC-b2 5.0e-3 ic0 K=20 12 steps deriv7_filtered_lr5e-5
+  reference: {bare: 2.1105790523239925e-8, r3only: 1.996186035829837e-8,
+              closure: 2.207535597526632e-5}
+  in_distribution_smoke: FRC-kf4 1.5e-2 ic837 K=1500 16 steps
+  reference2: {bare: 3.80264539661592e-2, r3only: 3.801253063298178e-2,
+               r3anal: 2.867890699509995e-4, closure_blowup_step: 12}
+  bar: <= 1% per arm with flag OFF; flag ON must log projected shells
+pre_registered_bars:
+  - "proj-on -> 1e-2 10/10 stable"
+  - "1.5e-2 improves"
+  - "accuracy cost < 5% at 5e-3"
+outputs:
+  results_dir: diagnostics/Results/apost_dissproj_20260713
+  case_files: one consolidated npz per case (consolidate_apost_cases.py)
+  merged_csv: [ladder_matrix_summary_ALL.csv, ladder_matrix_summary_h64_ALL.csv,
+               ladder_matrix_summary_h128_ALL.csv, dissproj_AB_table.csv]
+  verdict: dissproj_verdict.txt
+  figures: diagnostics/pngs/dissipative_projection_ladder/

@@ -234,7 +234,8 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
             scalars_every=1, freeze_sigma=False, sigma_log=None,
             lte_log=None, profile_step=0,
             nn_kcut=None, nn_gamma=1.0, nn_clip=None, drop_nddot=False,
-            nn_project_radius=None, nn_grad=False, return_stepper=False):
+            nn_project_radius=None, nn_dissipative_proj=False,
+            nn_grad=False, return_stepper=False):
     """One arm of the comparison. arm in {'bare','r3only','r3anal',
     'closure','closure2'} ('closure2' = a second checkpoint through the
     identical code path, e.g. the control vs the conditioned model;
@@ -287,6 +288,25 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
         f_NN of closure/closure2 AND, when the r3anal arm runs with it, to
         f_anal (the annulus-isolation reference). Distinct from nn_kcut
         (remediation ladder, closure arms only, alpha x N//3 convention).
+    nn_dissipative_proj : bool -- Sanaa P0 2026-07-13 (unconditional
+        stability backstop): per integer mode-radius shell kappa
+        (spectral_error_profile.py convention), remove the enstrophy-
+        INJECTING radial component of the NN correction. SIGN NOTE: the
+        NN piece enters the tendency as g = -coef*gamma*f_nn, so shell
+        kappa injects enstrophy iff Re<g, w>_kappa > 0 iff
+        Re<f_nn, w>_kappa < 0. The spec's formula, stated on the APPLIED
+        correction g,
+            g -= max(0, Re<g, w>_k) / ||w_k||^2 * w|_k
+        is therefore implemented on the code's f_nn variable as
+            f_nn -= min(0, Re<f_nn, w>_k) / ||w_k||^2 * w|_k.
+        Post-projection Re<g, w>_k <= 0 in EVERY shell. Zero extra FFTs
+        (f_nn and qh_curr are already spectral; two scatter_adds/step).
+        Acts on the R3 f_NN of closure/closure2 arms ONLY, AFTER
+        dealias/kcut/proj-radius masks (the projection sees the
+        correction exactly as applied); r3anal/f_anal and the --r4 terms
+        untouched, matching the other remediations. Per-step projected-
+        shell counts + removed-norm fractions returned as proj_counts /
+        proj_frac.
         at the arm's CURRENT state is computed (chain-rule Ndot/Nddot,
         ~50 FFTs/checkpoint) and its per-term rms appended; closure arms
         additionally log the NN-vs-analytic rel-L2 per head and the
@@ -343,6 +363,27 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
         k_safe = float(nn_project_radius) * min(float(kx2p.max()) ** 0.5,
                                                 float(ky2p.max()) ** 0.5)
         proj_mask = (kmagp <= k_safe).to(torch.float64)
+    diss_shells = None
+    proj_log = None
+    if is_clos and nn_dissipative_proj:
+        # integer mode-radius shells round(|k_index|) + Hermitian rfft
+        # double-count weights -- the branch's radial convention
+        # (diagnostics/spectral_error_profile.py shell_index); valid on
+        # the isotropic square grids this driver serves.
+        iy_d = torch.fft.fftfreq(Nyg, d=1.0 / Nyg,
+                                 device=device).to(torch.float64)
+        ix_d = torch.arange(Nxg // 2 + 1, dtype=torch.float64, device=device)
+        sh_d = torch.round(torch.sqrt(iy_d[:, None] ** 2
+                                      + ix_d[None, :] ** 2)).to(torch.int64)
+        n_sh_d = int(sh_d.max()) + 1
+        wh_d = torch.full((Nxg // 2 + 1,), 2.0, dtype=torch.float64,
+                          device=device)
+        wh_d[0] = 1.0
+        if Nxg % 2 == 0:
+            wh_d[-1] = 1.0
+        diss_shells = (sh_d.reshape(-1), n_sh_d,
+                       wh_d[None, :].expand(Nyg, -1).reshape(-1))
+        proj_log = []
     dt_v = torch.full((1,), Delta_T, device=device, dtype=torch.float64)
     dx_v = torch.full((1,), _DX, device=device, dtype=torch.float64)
     dy_v = torch.full((1,), _DY, device=device, dtype=torch.float64)
@@ -430,6 +471,27 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
                 f_nn = f_nn * kcut_mask
             if proj_mask is not None:                        # alias-safe radius
                 f_nn = f_nn * proj_mask
+            if diss_shells is not None:
+                # --nn-dissipative-proj: delete the enstrophy-injecting
+                # radial component of the NN correction, per shell (sign
+                # mapping documented in the run_arm docstring). Zero FFTs.
+                prof.mark('dissproj')
+                shf_d, n_sh_d, w_d = diss_shells
+                fr = f_nn.reshape(-1)
+                qr = qh_curr.reshape(-1)
+                q2 = qr.real ** 2 + qr.imag ** 2
+                num = torch.zeros(n_sh_d, dtype=torch.float64, device=device)
+                den = torch.zeros_like(num)
+                num.scatter_add_(0, shf_d, w_d * (fr.real * qr.real
+                                                  + fr.imag * qr.imag))
+                den.scatter_add_(0, shf_d, w_d * q2)
+                lam = num.clamp_max(0.0) / den.clamp_min(1e-300)
+                if proj_log is not None:
+                    rem2 = float((lam[shf_d] ** 2 * w_d * q2).sum())
+                    f2 = float((w_d * (fr.real ** 2 + fr.imag ** 2)).sum())
+                    proj_log.append((int((lam < 0.0).sum()),
+                                     (rem2 / f2) ** 0.5 if f2 > 0.0 else 0.0))
+                f_nn = f_nn - lam[shf_d].reshape(f_nn.shape) * qh_curr
             prof.mark('combine')
             rhs = rhs - coef * float(nn_gamma) * f_nn        # R2: gamma=1 default
             if include_r4:
@@ -552,6 +614,7 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
     log_sigma(0, qh_curr, qh_minus)
     log_lte(0, qh_curr, qh_minus, om, ps)
 
+    proj_i0 = len(proj_log) if proj_log is not None else 0   # skip warmup rows
     _sync(device); t0 = time.time()
     for s in range(1, n_steps + 1):
         qh_new, Nh_new, om_new, ps_new = one_step(qh_curr, qh_minus,
@@ -588,6 +651,11 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
                                                Delta_T, _DX, _DY))
     _sync(device)
     wall = time.time() - t0
+    proj_counts = proj_frac = None
+    if proj_log is not None:
+        tail = proj_log[proj_i0:]        # timed loop only (no warmup/profile)
+        proj_counts = np.asarray([c for c, _ in tail], np.int64)
+        proj_frac = np.asarray([f for _, f in tail], np.float64)
 
     # ---- optional per-block breakdown (separate short window; the headline
     # walltime above is from the un-instrumented loop) -- pareto port ------ #
@@ -611,7 +679,7 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
 
     return dict(fields=fields, t=np.asarray(ts), E=np.asarray(Es),
                 Z=np.asarray(Zs), cfl_max=cfl_max, blowup=blowup,
-                walltime=wall)
+                walltime=wall, proj_counts=proj_counts, proj_frac=proj_frac)
 
 
 def diag_term_rms(model, omega_stack, psi_stack, Delta_T, derivative, L_hat,
@@ -758,6 +826,15 @@ def main():
                         'flag -> FACTOR = 2/3, mode radius ~170.67 at '
                         '512^2). Applies to closure/closure2 f_NN and to '
                         'r3anal f_anal; solver dealias mask unchanged.')
+    p.add_argument('--nn-dissipative-proj', action='store_true',
+                   help='per integer-|k| shell, remove the enstrophy-'
+                        'injecting radial component of the NN correction '
+                        '(subtract the positive projection of the APPLIED '
+                        'correction g = -coef*f_NN onto w, shell-wise: '
+                        'g -= max(0, Re<g,w>_k)/||w_k||^2 * w|_k). '
+                        'Unconditional stability backstop; zero extra FFTs; '
+                        'closure/closure2 R3 f_NN only, after all other '
+                        'masks. Per-step projected-shell counts logged.')
     p.add_argument('--drop-nddot', action='store_true',
                    help='ablation: assemble the R3 correction WITHOUT the '
                         '-5*Nddot term (f = (1/12) L*Ndot only; implicit '
@@ -846,6 +923,11 @@ def main():
     if args.drop_nddot:
         print('[apost] ABLATION: --drop-nddot -- R3 assembled WITHOUT the '
               '-5*Nddot term (closure/closure2/r3anal)')
+    if args.nn_dissipative_proj:
+        print('[apost] DISSIPATIVE PROJECTION ON: per-shell removal of the '
+              'enstrophy-injecting radial component of f_NN (closure arms, '
+              'R3 f_NN only, after all other masks; zero extra FFTs; '
+              'integer mode-radius shells)')
     if args.nn_project_radius is not None:
         print(f'[apost] ALIAS-SAFE PROJECTION: R3 correction kept only for '
               f'|k| <= {args.nn_project_radius:.6f} * min(kx_max, ky_max) '
@@ -1086,7 +1168,8 @@ def main():
                     lte_log=lte_rows, profile_step=args.profile_step,
                     nn_kcut=args.nn_kcut, nn_gamma=args.nn_gamma,
                     nn_clip=args.nn_clip, drop_nddot=args.drop_nddot,
-                    nn_project_radius=args.nn_project_radius)
+                    nn_project_radius=args.nn_project_radius,
+                    nn_dissipative_proj=args.nn_dissipative_proj)
         arm_out[arm] = r
         if lte_rows:
             lte_csv = out_dir / f'lte_{args.tag}_{arm}.csv'
@@ -1121,6 +1204,22 @@ def main():
         results[f'{arm}_blowup_step'] = r['blowup']
         results[f'{arm}_verdict'] = ('UNSTABLE' if r['blowup'] is not None
                                      else 'STABLE')
+        if r.get('proj_counts') is not None and len(r['proj_counts']):
+            npz_payload[f'{arm}_proj_shell_count'] = r['proj_counts']
+            npz_payload[f'{arm}_proj_removed_frac'] = r['proj_frac']
+            results[f'{arm}_proj_shells_mean'] = float(
+                np.mean(r['proj_counts']))
+            results[f'{arm}_proj_shells_max'] = int(np.max(r['proj_counts']))
+            results[f'{arm}_proj_removed_frac_mean'] = float(
+                np.mean(r['proj_frac']))
+            results[f'{arm}_proj_removed_frac_max'] = float(
+                np.max(r['proj_frac']))
+            print(f'[apost]   dissipative proj: shells/step mean='
+                  f'{results[f"{arm}_proj_shells_mean"]:.1f} '
+                  f'max={results[f"{arm}_proj_shells_max"]}  '
+                  f'removed-frac mean='
+                  f'{results[f"{arm}_proj_removed_frac_mean"]:.3e} '
+                  f'max={results[f"{arm}_proj_removed_frac_max"]:.3e}')
 
     # ---- error tables vs truth ---- #
     if truth_cp is not None:

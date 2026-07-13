@@ -66,6 +66,11 @@ def main():
     ap.add_argument('--tags', type=str, required=True)
     ap.add_argument('--arm-labels', type=str,
                     default='closure=uncond,closure2=cond')
+    ap.add_argument('--summary-csv', type=str,
+                    default='ladder_matrix_summary.csv',
+                    help='summary filename (override when several tag '
+                         'groups of one dir are consolidated separately, '
+                         'e.g. per-horizon)')
     ap.add_argument('--delete-intermediates', action='store_true')
     args = ap.parse_args()
     d = args.dir
@@ -84,6 +89,8 @@ def main():
         variant = 'dropnddot' if cfg.get('drop_nddot') == 'True' else 'full'
         if cfg.get('nn_project_radius') not in (None, 'None'):
             variant += '_proj'          # alias-safe-radius projection active
+        if cfg.get('nn_dissipative_proj') == 'True':
+            variant += '_dissproj'      # per-shell dissipative projection
         dtlab = f"{res['Delta_T']:g}".replace('.', 'p')
         for arm, lab in arm_lab.items():
             if f'{arm}_verdict' not in res:
@@ -119,6 +126,10 @@ def main():
                 Delta_T=np.float64(res['Delta_T']), K=np.int64(res['K']),
                 M=np.int64(res['M']),
             )
+            if f'{arm}_proj_shell_count' in run:
+                payload.update(
+                    proj_shell_count=run[f'{arm}_proj_shell_count'],
+                    proj_removed_frac=run[f'{arm}_proj_removed_frac'])
             sc = _sigma_csv(d / f'sigma_hat_{tag}_{arm}.csv')
             if sc is not None:
                 steps, st, sig, n_sh = sc
@@ -140,7 +151,16 @@ def main():
                 corner_drift_last='' if dc is None or not len(dc)
                 else f'{dc[-1]:.4e}',
                 low_drift_last='' if 'drift_low' not in payload
-                else f'{payload["drift_low"][-1]:.4e}'))
+                else f'{payload["drift_low"][-1]:.4e}',
+                proj_on='dissproj' in variant,
+                proj_shells_mean=''
+                if 'proj_shell_count' not in payload
+                or not len(payload['proj_shell_count'])
+                else f'{float(np.mean(payload["proj_shell_count"])):.1f}',
+                proj_removed_frac_mean=''
+                if 'proj_removed_frac' not in payload
+                or not len(payload['proj_removed_frac'])
+                else f'{float(np.mean(payload["proj_removed_frac"])):.3e}'))
             print(f'[consolidate] wrote {case}')
         run.close()
         to_delete += [jpath, npath, d / f'rollout_apost_{tag}.csv',
@@ -148,7 +168,7 @@ def main():
                       d / f'sigma_hat_{tag}_closure2.csv',
                       d / f'sigma_hat_{tag}_r3anal.csv']
     if summary:
-        spath = d / 'ladder_matrix_summary.csv'
+        spath = d / args.summary_csv
         with open(spath, 'w', newline='') as f:
             w = csv.DictWriter(f, fieldnames=list(summary[0].keys()))
             w.writeheader()
