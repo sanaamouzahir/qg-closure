@@ -869,3 +869,9 @@ Running record. Supervisor updates this at the end of every session. Newest entr
 - Headlines: (1) sigma FLAT across |grad omega| deciles (1.0002x) vs |err| 39.6x (FPC) — Arm F prior quantified; (2) overdispersion lives in the FREESTREAM (cov1 free 0.96-0.99 vs wake 0.85-0.96); (3) zeta_ls frozen at ln2 for ALL FPC-const runs, moves 0.877->2.308 on cape = data property, not optimizer; (4) kurtosis tail lives in FPCape-sine (1428); (5) cape error fields temporally COHERENT across the shedding cycle (corr 0.85-0.92 at lag 0.45) vs FPC fast decorrelation.
 - FPC-sine/ramp/ou/tel model diagnostics impossible until their Step-0 packages exist (no DNS_LES_s4/U_of_t/manifest).
 - Email: reporting/pending_mail/landed_20260713_results_map.mail ([QG][LANDED][sgs]).
+
+## 2026-07-13 EVENING — cape full-target reference (ep65) eval package
+- Sanaa order: eval the PRESERVED full-target cape ckpt (piff_cape_gauss/best.pt, ep65) as the frozen reference for the J-only cape run. Jobs: pCEv65 1832563 (eval_piff, ibgpu.q, 2.5 min), pCEv65r 1832564 (replot_eval_fields symlog, all.q CPU).
+- Headlines: R2 0.8288 (above the 0.813 training-time val), RMSE 86.2, NLL 6.67; sigma 309.5 ~3.6x overdispersed, coverage 0.9992@1sigma (CP-ML-1 flag); zeta bins R2 0.661/0.698 low vs 0.924-0.954 top four, sigma flat per bin; ARD lengthscales zeta 8.37 / zeta_dot 5.92 / grad 11.48 (conditioning alive on cape).
+- Convention tree: pngs/cape_full_target_reference_model_eval/ (calibration+spread-skill, Re-trace, 6 linear field_*, 6 symlog field5_*, .txt explainer) + yamls/cape_full_target_reference_model_eval/cape_full_target_ep65_eval_summary.yaml (annotated). Originals in runs_piff/piff_cape_gauss/eval/ untouched.
+- Email: reporting/pending_mail/landed_20260713_cape_ep65_eval.mail ([QG][LANDED][sgs]).

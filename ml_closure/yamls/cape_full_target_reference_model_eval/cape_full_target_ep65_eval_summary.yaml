@@ -1,0 +1,115 @@
+# =====================================================================
+# CAPE FULL-TARGET REFERENCE MODEL — S4 A-PRIORI EVAL SUMMARY (epoch 65)
+# =====================================================================
+# Checkpoint: ml_closure/runs_piff/piff_cape_gauss/best.pt — the PRESERVED
+# best checkpoint of the cape full-target Gaussian-filter training
+# (killed 2026-07-13 at Sanaa's convention change to Jacobian-only
+# targets; frozen at epoch 65, best val R2 0.8132 during training).
+# Kept as the FULL-TARGET REFERENCE against which the Jacobian-only
+# cape run (piff_cape_gj, training now) will be compared.
+#
+# Eval: eval_piff.py, config conf_piff_cape_cond_gaussian.yaml,
+# SGE job 1832563 (pCEv65), 2026-07-13. 220 validation frames across
+# the 5 cape members (FPCape-const/sine/ramp/ou/tel), 40,813,740
+# valid pixels (sponge and body masked out).
+#
+# Reading guide: 'global' = pooled metrics over all val pixels
+# (r2/rmse/nll, mean predictive sigma, empirical coverage at 1/2/3
+# sigma); 'zeta_bins' = the same block per zeta-decile (inlet-forcing
+# conditioning variable); ard_lengthscales = FiLM/ARD lengthscales of
+# the conditioning inputs (larger = feature matters less).
+# Headline: r2 0.8288, rmse 86.2, nll 6.67; coverage 0.999 at 1 sigma
+# with mean_sigma 309.5 vs rmse 86.2 = the known sigma OVERDISPERSION
+# (sigma ~3.6x too wide), same flag as CP-ML-1 S4.
+# =====================================================================
+ckpt: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/runs_piff/piff_cape_gauss/best.pt
+epoch: 65
+seed: 0
+zeta_ard_lengthscale: 8.3725004196167
+ard_lengthscales:
+  zeta: 8.3725004196167
+  zeta_dot: 5.9191179275512695
+  grad: 11.47730541229248
+global:
+  n: 40813740
+  r2: 0.8287736177444458
+  rmse: 86.20343780517578
+  nll: 6.666033744812012
+  mean_sigma: 309.5344543457031
+  coverage:
+    1sigma: 0.9992015434018053
+    2sigma: 0.9996923830063111
+    3sigma: 0.9998226087587171
+zeta_bins:
+- n: 4081374
+  r2: 0.6613668203353882
+  rmse: 229.97027587890625
+  nll: 6.746022701263428
+  mean_sigma: 310.6920166015625
+  coverage:
+    1sigma: 0.9979607357718259
+    2sigma: 0.9988739086395905
+    3sigma: 0.9992191355166177
+  zeta_range:
+  - -0.9994327425956726
+  - -0.2849402427406543
+- n: 1113102
+  r2: 0.6976318359375
+  rmse: 139.42041015625
+  nll: 6.6797099113464355
+  mean_sigma: 309.75299072265625
+  coverage:
+    1sigma: 0.9987063180193729
+    2sigma: 0.9994151479379249
+    3sigma: 0.999659510089821
+  zeta_range:
+  - -0.2849402427406543
+  - 0.0
+- n: 11131020
+  r2: 0.9238840341567993
+  rmse: 56.09199523925781
+  nll: 6.660090446472168
+  mean_sigma: 309.32452392578125
+  coverage:
+    1sigma: 0.9991987257232491
+    2sigma: 0.9997102691397554
+    3sigma: 0.9998457463916155
+  zeta_range:
+  - 0.0
+  - 0.19473262729053942
+- n: 4081374
+  r2: 0.939691424369812
+  rmse: 45.96692657470703
+  nll: 6.656978607177734
+  mean_sigma: 309.2945556640625
+  coverage:
+    1sigma: 0.9993117513856853
+    2sigma: 0.9997589047217922
+    3sigma: 0.9998804324230026
+  zeta_range:
+  - 0.19473262729053942
+  - 0.32065585255622864
+- n: 4081374
+  r2: 0.9440946578979492
+  rmse: 39.483489990234375
+  nll: 6.655176639556885
+  mean_sigma: 309.32086181640625
+  coverage:
+    1sigma: 0.999366144832598
+    2sigma: 0.9998221187276638
+    3sigma: 0.9999184098296309
+  zeta_range:
+  - 0.32065585255622864
+  - 0.9995731353775668
+- n: 16325496
+  r2: 0.9542455077171326
+  rmse: 31.10964584350586
+  nll: 6.654312610626221
+  mean_sigma: 309.4941101074219
+  coverage:
+    1sigma: 0.9994787294670864
+    2sigma: 0.9998546445388244
+    3sigma: 0.9999304155904359
+  zeta_range:
+  - 0.9995731353775668
+  - 1.0

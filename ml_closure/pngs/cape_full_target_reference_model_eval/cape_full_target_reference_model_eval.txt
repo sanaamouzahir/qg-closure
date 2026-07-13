@@ -1,0 +1,63 @@
+WHAT THIS FOLDER IS (2026-07-13, cape full-target reference eval)
+
+S4 a-priori evaluation package of the CAPE FULL-TARGET REFERENCE MODEL:
+the preserved best checkpoint (epoch 65) of the cape full-target
+Gaussian-filter training piff_cape_gauss, which was KILLED on 2026-07-13
+when Sanaa changed the target convention to Jacobian-only Pi. The
+checkpoint is kept frozen as the full-target reference — every figure
+here exists to be compared, panel for panel, against the Jacobian-only
+cape run (piff_cape_gj) currently training.
+
+MODEL / DATA
+  Checkpoint  ml_closure/runs_piff/piff_cape_gauss/best.pt (epoch 65;
+              best training-time val R2 0.8132)
+  Target      FULL Pi_FF (Jacobian + body terms), gaussian filter variant
+  Members     FPCape-const, FPCape-sine, FPCape-ramp, FPCape-ou, FPCape-tel
+  Val set     220 frames, 40,813,740 valid pixels (sponge/body masked)
+  Eval jobs   1832563 (eval_piff.py package), 1832564 (symlog replot),
+              config conf_piff_cape_cond_gaussian.yaml
+
+HEADLINE NUMBERS (global, pooled over all val pixels)
+  r2 0.8288   rmse 86.2   nll 6.67
+  mean predictive sigma 309.5 vs rmse 86.2  ->  sigma ~3.6x overdispersed;
+  empirical coverage 0.9992 at 1 sigma (nominal 0.68) — the same sigma
+  OVERDISPERSION flag raised on CP-ML-1 S4. Skill splits by inlet forcing:
+  r2 0.66/0.70 in the two lowest-zeta bins vs 0.92-0.95 in the top four,
+  sigma flat (~309.5) in every bin (full table in the yaml copy in
+  yamls/cape_full_target_reference_model_eval/).
+  ARD lengthscales: zeta 8.37, zeta_dot 5.92, grad 11.48.
+
+FIGURES
+  cape_full_target_ep65_calibration_reliability_and_spread_skill.png
+      Left: reliability diagram — empirical vs nominal coverage of the
+      +/-1,2,3 sigma predictive intervals, global and per zeta bin.
+      Input: model mean/sigma and truth on all 220 val frames. Purpose:
+      shows the overdispersion (curve far above the diagonal).
+      Right: spread-skill — binned predictive sigma vs empirical RMSE
+      in each bin; a calibrated model tracks the diagonal.
+
+  cape_full_target_ep65_reynolds_number_trace_of_eval_snapshots.png
+      Re_inlet(t) for all 5 cape members with dashed markers at the 6
+      snapshot times used in the field panels. Purpose: documents where
+      in the inlet-forcing range the field panels sit (they span the
+      val Re range, low to high).
+
+  cape_full_target_ep65_linear_field_{0..5}_t*.png
+      Original eval_piff 4-panel LINEAR-scale field figures: truth Pi*,
+      predictive mean, predictive sigma, |error|. Kept for lineage; the
+      linear scale saturates on the heavy-tailed near-obstacle Pi values
+      and hides the wake (see the field-plot triage of 2026-07-13).
+
+  cape_full_target_ep65_symlog_field5_{0..5}_t*.png
+      The replacement 5-panel SYMLOG figures from replot_eval_fields.py:
+      (1) filtered vorticity omega_bar* (linear — shows the flow),
+      (2) truth Pi* (symlog, linthresh = 99th pct of |Pi*| over valid
+      pixels), (3) predicted Pi* mean (same norm), (4) predicted sigma
+      (symlog, same linthresh), (5) |truth − prediction| (same norm).
+      Same frames as the linear set (field5_j <-> field_j one-to-one).
+      Purpose: the panels actually readable in the wake; these are the
+      ones to put next to the Jacobian-only run's panels.
+
+Machine-readable metrics: yamls/cape_full_target_reference_model_eval/
+cape_full_target_ep65_eval_summary.yaml (annotated copy of
+runs_piff/piff_cape_gauss/eval/summary.yaml).
