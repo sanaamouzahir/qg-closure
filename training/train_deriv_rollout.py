@@ -324,7 +324,10 @@ def geff_shell_ctx(rc: RootCtx, device):
         # fused sigma at |k|~308 with L_hat at |k|~217)
         n_sh = int(round(float(kmag.max()))) + 1
         idx = [min(int(round(r * (n_sh - 1))), n_sh - 1) for r in REL_SHELLS]
-        Lh = rc.L_hat.detach().cpu().to(torch.complex128)
+        # L_hat is stored with a leading batch dim (1, Ny, Nx//2+1) — flatten
+        # to the grid for ring indexing (smoke 1832637 catch)
+        Lh = rc.L_hat.detach().cpu().to(torch.complex128).reshape(
+            rc.Ny, rc.Nx // 2 + 1)
         two_pi_L = 2.0 * math.pi / rc.Lx
         ksh, Lsh = [], []
         for i in idx:
