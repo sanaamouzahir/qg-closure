@@ -1,0 +1,15 @@
+WHAT THIS FILE IS: the 2026-07-13 triage decomposition of the predicted
+uncertainty for the cape baseline model -- how much of sigma^2 comes from the learned
+constant NOISE term vs from the Gaussian-process POSTERIOR variance (the
+part that can actually vary across the flow).
+PURPOSE: if the flat noise term dominates, sigma is structurally unable to
+track the flow (the per-pixel shape miscalibration seen in
+pngs/model_uncertainty_vs_flow_sharpness/); the companion figure is in
+pngs/uncertainty_decomposition_noise_vs_gp_variance/.
+ARRAYS INSIDE:
+  members             the simulation members evaluated
+  noise_phys          the learned constant noise variance, physical units
+  posterior_var_mean  mean GP posterior variance per member
+  ratio               noise / posterior-variance ratio per member (large =
+                      sigma is mostly a flat floor)
+  decile_<member>     per-member decile profiles of the components

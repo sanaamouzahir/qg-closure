@@ -1,0 +1,30 @@
+RESIDUAL SPECTRA (AND THE HEAVY-TAIL STORY)
+===========================================
+THE QUESTION THIS FOLDER ANSWERS: at which SPATIAL SCALES does the model's
+error live -- large structures or fine grain?
+
+EVERY PNG HAS TWO PANELS, one line per simulation member:
+  LEFT:  the radial power spectrum of the residual (truth - prediction):
+         energy of the error vs spatial wavenumber k (small k = large
+         structures, large k = fine detail)
+  RIGHT: the ratio (residual power)/(truth power) vs k, with a horizontal
+         line at 1. Below 1 = the model captures that scale; near 1 = at
+         that scale the prediction adds nothing.
+INPUTS: best checkpoint + validation frames (masked pixels zero-filled,
+double-precision FFT).
+COMPARES: error spectrum vs truth spectrum, scale by scale, member by
+member.
+PURPOSE: tells us WHAT KIND of miss the remaining error is -- a ratio
+rising to 1 at high k with low values at small k means the model gets the
+big eddies and misses the fine grain (the expected, benign pattern for a
+smoothing closure). A bump at low k would be far more worrying.
+
+ABOUT KURTOSIS: the residual kurtosis quoted alongside these plots
+(cylinder ~416, cape ~2064 -- Gaussian would be 3) measures how extreme
+the rare large errors are; cape's errors are ~5x heavier-tailed. The
+number itself is in yamls/deep_diagnostics_summaries/ and in the
+per-member tables in csvs_and_npz/.
+
+FILES:
+  cylinder_steady_production_residual_power_spectra_and_error_to_truth_ratio.png
+  cape_baseline_residual_power_spectra_and_error_to_truth_ratio.png

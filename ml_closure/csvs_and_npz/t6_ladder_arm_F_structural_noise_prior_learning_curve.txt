@@ -1,0 +1,13 @@
+WHAT THIS FILE IS: the learning curve of T6 ladder arm F -- a controlled
+probe of WHY training was slow/failing, run on a fixed overfit setup
+(500 fixed crops of the steady-inlet cylinder member; original gate:
+R^2 > 0.95 within 50 epochs).
+WHAT THIS ARM TESTED: noise variance tied to the local vorticity gradient, sigma^2 = a + b*|grad omega|^2 with only two learned scalars. Verdict: first heteroscedastic arm that does NOT collapse; too slow for the gate (R^2 0.495 at epoch 49) -- candidate for a 150-epoch extension.
+ARRAYS INSIDE:
+  r2       train R^2 per epoch (the gate quantity)
+  rmse     train RMSE per epoch
+  arm      the arm letter (F)
+  epochs   number of epochs run
+  n_inducing  number of GP inducing points
+  likelihood  noise model used (gaussian / studentt / hetero)
+  lr, crops, warmup_epochs, sigma_cap_logrange  run settings

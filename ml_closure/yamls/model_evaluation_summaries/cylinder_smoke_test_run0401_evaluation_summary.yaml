@@ -1,0 +1,39 @@
+# WHAT THIS FILE IS: headline evaluation numbers for a cylinder 2-epoch smoke test -- disposable pipeline check (run codename smoke_T7_20260712_0401).
+# CONTENTS: global R^2 / RMSE / NLL (negative log-likelihood, lower = better),
+# uncertainty coverage at 1/2/3 sigma, mean predicted sigma, the same metrics
+# split into inlet-speed (zeta) bins, and the learned ARD lengthscales (how
+# relevant the model found each input feature; a huge lengthscale means the
+# feature is ignored).
+# FORMULAS: R^2 = 1 - sum((y-mu)^2)/sum((y-ybar)^2);
+# NLL = mean(0.5*(log(2*pi*sigma^2) + (y-mu)^2/sigma^2));
+# coverage@k = fraction of pixels with |y-mu| <= k*sigma.
+# COPY made 2026-07-13 during the diagnostics-library reorganization. The original file in runs_piff/ is untouched (running jobs still write there).
+# Original: runs_piff/smoke_T7_20260712_0401/eval/summary.yaml
+#
+ckpt: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/runs_piff/smoke_T7_20260712_0401/best.pt
+epoch: 1
+seed: 0
+zeta_ard_lengthscale: 0.6931471824645996
+global:
+  n: 17871000
+  r2: 0.0036665797233581543
+  rmse: 87.79704284667969
+  nll: 4467.5283203125
+  mean_sigma: 0.895515501499176
+  coverage:
+    1sigma: 0.7034677410329584
+    2sigma: 0.8028359912707739
+    3sigma: 0.8417472441385485
+zeta_bins:
+- n: 17871000
+  r2: 0.0036665797233581543
+  rmse: 87.79704284667969
+  nll: 4467.5283203125
+  mean_sigma: 0.895515501499176
+  coverage:
+    1sigma: 0.7034677410329584
+    2sigma: 0.8028359912707739
+    3sigma: 0.8417472441385485
+  zeta_range:
+  - -0.5
+  - 0.5

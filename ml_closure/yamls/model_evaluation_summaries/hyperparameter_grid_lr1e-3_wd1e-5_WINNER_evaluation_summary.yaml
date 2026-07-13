@@ -1,0 +1,39 @@
+# WHAT THIS FILE IS: headline evaluation numbers for hyperparameter-grid rung: learning rate 1.0e-3, weight decay 1.0e-5, 60 epochs, cylinder steady inlet -- the WINNING rung, later extended to 150 epochs as the production model (run codename grid_lr1.0e-3_wd1.0e-5).
+# CONTENTS: global R^2 / RMSE / NLL (negative log-likelihood, lower = better),
+# uncertainty coverage at 1/2/3 sigma, mean predicted sigma, the same metrics
+# split into inlet-speed (zeta) bins, and the learned ARD lengthscales (how
+# relevant the model found each input feature; a huge lengthscale means the
+# feature is ignored).
+# FORMULAS: R^2 = 1 - sum((y-mu)^2)/sum((y-ybar)^2);
+# NLL = mean(0.5*(log(2*pi*sigma^2) + (y-mu)^2/sigma^2));
+# coverage@k = fraction of pixels with |y-mu| <= k*sigma.
+# COPY made 2026-07-13 during the diagnostics-library reorganization. The original file in runs_piff/ is untouched (running jobs still write there).
+# Original: runs_piff/grid_lr1.0e-3_wd1.0e-5/eval/summary.yaml
+#
+ckpt: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/runs_piff/grid_lr1.0e-3_wd1.0e-5/best.pt
+epoch: 59
+seed: 0
+zeta_ard_lengthscale: 0.6931471824645996
+global:
+  n: 17871000
+  r2: 0.8323491811752319
+  rmse: 36.01475143432617
+  nll: 5.285799026489258
+  mean_sigma: 69.01956176757812
+  coverage:
+    1sigma: 0.9746609590957417
+    2sigma: 0.9900605450170668
+    3sigma: 0.995446309663701
+zeta_bins:
+- n: 17871000
+  r2: 0.8323491811752319
+  rmse: 36.01475143432617
+  nll: 5.285799026489258
+  mean_sigma: 69.01956176757812
+  coverage:
+    1sigma: 0.9746609590957417
+    2sigma: 0.9900605450170668
+    3sigma: 0.995446309663701
+  zeta_range:
+  - -0.5
+  - 0.5

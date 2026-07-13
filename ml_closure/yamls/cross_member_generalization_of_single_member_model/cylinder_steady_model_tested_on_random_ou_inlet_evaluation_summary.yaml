@@ -1,0 +1,148 @@
+# WHAT THIS FILE IS: a CROSS-MEMBER generalization test. The production
+# cylinder model (trained ONLY on the steady/constant inlet) is evaluated on
+# the 'random_ou' inlet member (FPC-ou), which it never saw in training.
+# CONTENTS AND FORMULAS: same as a normal evaluation summary -- global and
+# per-inlet-speed-bin R^2 / RMSE / NLL, coverage at 1/2/3 sigma, ARD
+# lengthscales.
+# PURPOSE: how much skill does a single-member model lose on unseen inlet
+# behaviours -- the baseline the conditioned ensemble models must beat.
+# COPY made 2026-07-13 during the diagnostics-library reorganization. The original file in runs_piff/ is untouched (running jobs still write there).
+# Original: runs_piff/prod_ext150/xeval/FPC-ou/summary.yaml
+#
+ckpt: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/runs_piff/prod_ext150/best.pt
+epoch: 149
+seed: 0
+zeta_ard_lengthscale: 0.6931471824645996
+ard_lengthscales:
+  zeta: 0.6931471824645996
+global:
+  n: 10626000
+  r2: 0.8420389294624329
+  rmse: 33.04563903808594
+  nll: 5.422327041625977
+  mean_sigma: 84.69124603271484
+  coverage:
+    1sigma: 0.9850528891398457
+    2sigma: 0.995094108789761
+    3sigma: 0.9974658385093168
+zeta_bins:
+- n: 966000
+  r2: 0.8527590036392212
+  rmse: 33.15979766845703
+  nll: 5.1699347496032715
+  mean_sigma: 61.169437408447266
+  coverage:
+    1sigma: 0.9786180124223602
+    2sigma: 0.9922474120082816
+    3sigma: 0.995935817805383
+  zeta_range:
+  - -0.008845783770084381
+  - 0.06127253919839859
+- n: 966000
+  r2: 0.8491904735565186
+  rmse: 34.13190460205078
+  nll: 5.1986403465271
+  mean_sigma: 62.87863540649414
+  coverage:
+    1sigma: 0.9757453416149068
+    2sigma: 0.9918726708074534
+    3sigma: 0.995944099378882
+  zeta_range:
+  - 0.06127253919839859
+  - 0.1256442666053772
+- n: 1207500
+  r2: 0.819557785987854
+  rmse: 36.20845413208008
+  nll: 5.291762351989746
+  mean_sigma: 70.08273315429688
+  coverage:
+    1sigma: 0.9809838509316771
+    2sigma: 0.9939478260869565
+    3sigma: 0.9967627329192547
+  zeta_range:
+  - 0.1256442666053772
+  - 0.16210466623306274
+- n: 966000
+  r2: 0.8628189563751221
+  rmse: 32.104557037353516
+  nll: 5.3410563468933105
+  mean_sigma: 76.60133361816406
+  coverage:
+    1sigma: 0.9841625258799171
+    2sigma: 0.9945372670807453
+    3sigma: 0.9970486542443064
+  zeta_range:
+  - 0.16210466623306274
+  - 0.20451703667640686
+- n: 1207500
+  r2: 0.8364570140838623
+  rmse: 32.91838073730469
+  nll: 5.405302047729492
+  mean_sigma: 82.20719909667969
+  coverage:
+    1sigma: 0.9858774327122153
+    2sigma: 0.9956016563146998
+    3sigma: 0.9977002070393375
+  zeta_range:
+  - 0.20451703667640686
+  - 0.23178359121084213
+- n: 966000
+  r2: 0.8376231789588928
+  rmse: 32.80320358276367
+  nll: 5.463549613952637
+  mean_sigma: 87.96074676513672
+  coverage:
+    1sigma: 0.9873188405797102
+    2sigma: 0.9957939958592132
+    3sigma: 0.9979026915113872
+  zeta_range:
+  - 0.23178359121084213
+  - 0.2850727140903473
+- n: 966000
+  r2: 0.8365052342414856
+  rmse: 32.045501708984375
+  nll: 5.509284973144531
+  mean_sigma: 92.98548889160156
+  coverage:
+    1sigma: 0.9884306418219462
+    2sigma: 0.9963426501035196
+    3sigma: 0.9980238095238095
+  zeta_range:
+  - 0.2850727140903473
+  - 0.306199312210083
+- n: 1207500
+  r2: 0.8586736917495728
+  rmse: 31.304821014404297
+  nll: 5.542135715484619
+  mean_sigma: 96.81600952148438
+  coverage:
+    1sigma: 0.988327950310559
+    2sigma: 0.9962360248447205
+    3sigma: 0.9981548654244307
+  zeta_range:
+  - 0.306199312210083
+  - 0.3262298107147217
+- n: 966000
+  r2: 0.8458142280578613
+  rmse: 31.921001434326172
+  nll: 5.58948278427124
+  mean_sigma: 101.73591613769531
+  coverage:
+    1sigma: 0.9891107660455487
+    2sigma: 0.9965828157349896
+    3sigma: 0.998315734989648
+  zeta_range:
+  - 0.3262298107147217
+  - 0.36220669746398926
+- n: 1207500
+  r2: 0.823279619216919
+  rmse: 33.186065673828125
+  nll: 5.65974235534668
+  mean_sigma: 109.51112365722656
+  coverage:
+    1sigma: 0.9905672877846791
+    2sigma: 0.9971412008281574
+    3sigma: 0.9985449275362319
+  zeta_range:
+  - 0.36220669746398926
+  - 0.4065241515636444

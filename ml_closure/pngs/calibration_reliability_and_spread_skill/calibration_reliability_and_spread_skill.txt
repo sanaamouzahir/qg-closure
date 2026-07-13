@@ -1,0 +1,33 @@
+CALIBRATION: RELIABILITY AND SPREAD-SKILL
+=========================================
+THE QUESTION THIS FOLDER ANSWERS: when the model says "I am this sure",
+is it telling the truth?
+
+TWO KINDS OF PNG HERE:
+
+1) *_calibration_and_spread_skill.png  -- two panels:
+   LEFT (reliability diagram): nominal coverage on x (what a perfect
+   Gaussian model would give at 1, 2, 3 sigma: 68.3%, 95.5%, 99.7%),
+   empirical coverage on y (the fraction of pixels whose true value really
+   fell inside mu +/- k*sigma). The diagonal = perfectly honest. Above the
+   diagonal = OVER-cautious (sigma too big); below = overconfident.
+   Dashed lines: the same curve computed separately per inlet-speed bin.
+   RIGHT (spread-skill): pixels are binned by their predicted sigma (x);
+   y = the ACTUAL root-mean-square error inside that bin. On the diagonal,
+   sigma is a faithful error forecast pixel by pixel.
+   INPUTS: best checkpoint + all validation frames.
+   FILES: cylinder_steady_production, cape_baseline,
+   hyperparameter_grid_winner_60epoch, cylinder_smoke_test_run0401/0455.
+
+2) *_reliability_per_member.png -- the reliability diagram alone, one
+   subplot per simulation member (inlet type), at eight sigma levels from
+   0.25 to 3. Title of each subplot shows coverage at 1 sigma (ideal 0.683).
+   PURPOSE: a model can look calibrated on average while being dishonest on
+   one inlet type; this splits it out. FILES: cylinder_steady_production
+   (only one member -- steady), cape_baseline (five members).
+
+KNOWN FINDING (both geometries): after global recalibration the coverage
+sticks near 0.95 -- the miscalibration is in the per-pixel SHAPE of sigma,
+not its overall size. See pngs/model_uncertainty_vs_flow_sharpness/ for
+what the shape problem looks like, and pngs/sigma_recalibration_before_after/
+for what a single scale factor can and cannot fix.

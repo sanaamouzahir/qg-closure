@@ -1,0 +1,80 @@
+# ==============================================================================
+# ENGLISH HEADER (added during the 2026-07-13 reorganization; original file:
+# ml_closure/conf_piff.yaml at commit bb2dfc1 -- the code state when this
+# model was trained. NOT the live config; the live one stays in ml_closure/.)
+# 
+# WHAT THIS IS: the training configuration for the PRODUCTION cylinder model
+# "cylinder_steady_inlet_only_150epochs" (run codename: prod_ext150).
+# 
+# THE MODEL: a CNN + sparse variational Gaussian process (SVGP) that predicts
+# the sub-grid-scale forcing Pi (the effect of turbulence smaller than the
+# coarse grid) for 2D flow past a cylinder, together with a per-pixel
+# uncertainty (sigma).
+# 
+# TRAINED ON: ONE simulation member only -- flow past cylinder with a steady
+# (constant-speed) inlet, codename FPC-const. 259 training frames.
+# 
+# KEY SETTINGS USED: learning rate 1.0e-3, weight decay 1.0e-5, 150 epochs
+# (the hyperparameter-grid winner, extended from 100 to 150 epochs).
+# 
+# VERDICT: passed the promotion bar -- validation R^2 0.8584 (bar 0.85),
+# NLL 5.16; after sigma recalibration (s = 0.521) NLL 4.91.
+# ==============================================================================
+#
+# conf_piff.yaml — Pi_FF spatial-closure config (ML SPEC 01 + CP-ML-1 plan 2026-07-11).
+# REPO RULE: floats in explicit-mantissa form (5.0e-3, never 5e-3); every consumer
+# float()-casts on read (PyYAML may hand back strings).
+
+data:
+  # List of run dirs carrying the Step-0 canonical artifacts
+  # (DATASET_MANIFEST.md, DNS_LES_s<scale>.npz, U_of_t.npz).
+  runs:
+    - /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/outputs/SGS_closure_ensemble/FPC-const
+  scale: 4                    # primary filter scale (spec S0)
+  crop: 64                    # crop size in coarse-grid points (spec S1.2)
+  wake_frac: 0.8              # wake-biased fraction (spec S1.6); rest uniform
+  wake_x_lo_D: -1.0           # wake window x in [x_c + lo*D, x_c + hi*D]
+  wake_x_hi_D: 12.0
+  wake_y_half_D: 3.0          # |y - y_c| <= this * D
+  t_train_lo: 30.0            # time split (spec S1.7): train [lo, hi)
+  t_train_hi: 100.0
+  t_val_lo: 100.0             # val [lo, hi]
+  t_val_hi: 120.0
+  lomo_holdout: null          # run-dir basename (e.g. FPC-sine) -> that run is val, rest train
+  sdf_clip_D: 2.0             # SDF clipped to +/- this * D, then divided by it
+  sponge_thresh: 1.0e-2       # chi_sponge_bar > thresh excluded (union with manifest strips)
+  crops_per_epoch_train: 4096
+  crops_per_epoch_val: 1024
+  batch_crops: 8              # crops per minibatch (pixels per step = batch * masked/crop)
+
+zeta:
+  re0: 3900.0                 # zeta = (Re(t_n) - re0) / re_scale (spec S1.4)
+  re_scale: 1700.0
+
+model:
+  in_channels: 4              # omega*, u*, v*, SDF
+  channels: [32, 32, 16]      # conv stack 4->32->32->F, F=16 (spec S2.1; do NOT deepen)
+  kernel: 5
+  film: true                  # false = Re-blind ablation (gamma=1, beta=0 frozen)
+  film_hidden: 16
+  n_inducing: 512             # SVGP M (spec S2.2)
+  kmeans_pixels: 10000        # pixels for inducing k-means init
+  kmeans_iters: 50
+
+train:
+  lr: 3.0e-4                  # grid: {1.0e-4, 3.0e-4, 1.0e-3}
+  weight_decay: 1.0e-4        # grid: {1.0e-5, 1.0e-4}; CNN weights ONLY, never GP hypers
+  epochs: 60
+  t0_restart: 5               # cosine-with-warm-restarts T0 (epochs)
+  seed: 0
+  device: cuda
+  outdir: runs_piff           # relative to ml_closure/ (flat, run-name subdir per run)
+  num_workers: 0
+  gp_chunk: 65536             # pixels per GP predictive chunk at eval
+  kurtosis_after_epoch: 1     # residual-PDF excess kurtosis computed after this epoch (spec S2.2)
+  init_noise_frac: 1.0e-1     # data-informed GP init (Sanaa ruling 2026-07-12), applied in the STANDARDIZED target space (recorded invertible y-standardization from exact train stats; constants in every ckpt): noise = frac, outputscale = 1-frac, mean = 0
+
+eval:
+  n_field_snapshots: 6        # 4-panel field figures (spec S4.3)
+  n_zeta_bins: 10             # deciles; degenerates gracefully when zeta is constant
+  sigma_levels: [1.0, 2.0, 3.0]

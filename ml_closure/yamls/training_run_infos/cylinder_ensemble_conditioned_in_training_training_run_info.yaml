@@ -1,0 +1,50 @@
+# WHAT THIS FILE IS: the dataset and training manifest for the conditioned cylinder ensemble, five inlet types, IN TRAINING as of 2026-07-13 -- this is a PARTIAL mid-training snapshot; finals land tonight (run codename piff_fpc_ens).
+# CONTENTS: which simulation members were trained on (runs), training/
+# validation frame and pixel counts, valid pixels per frame (after removing
+# sponge zones and the obstacle body), which member was held out if any
+# (lomo_holdout), learning rate / weight decay / epochs, whether FiLM
+# inlet-speed conditioning is on, and the Gaussian-process initialization
+# constants (including y_mean/y_std used to standardize the target).
+# COPY made 2026-07-13 during the diagnostics-library reorganization. The original file in runs_piff/ is untouched (running jobs still write there).
+# Original: runs_piff/piff_fpc_ens/run_info.yaml
+#
+seed: 0
+runs:
+- FPC-const
+- FPC-sine
+- FPC-ramp
+- FPC-ou
+- FPC-telS-A
+n_train_frames: 883
+n_val_frames: 250
+N_train_pixels: 213244500
+N_val_pixels: 60375000
+valid_per_frame:
+  FPC-const: 241500
+  FPC-sine: 241500
+  FPC-ramp: 241500
+  FPC-ou: 241500
+  FPC-telS-A: 241500
+lomo_holdout: null
+lr: 0.001
+weight_decay: 1.0e-05
+epochs: 150
+film: true
+ELBO_num_data: 213244500
+device: cuda
+init_hyperparams:
+  gp_mean_init: 0.0
+  gp_space_var: 1.0
+  noise_frac: 0.1
+  outputscale_init: 0.9
+  noise_init: 0.1
+  y_mean: -0.0015545728975994207
+  y_std: 124.9581876159689
+  stats_n_pixels: 213244500
+  zdot_sd: 0.18178086907250635
+  g_scale: 1.1048487580728912
+  conditioning_stats:
+    zdot_sd: 0.18178086907250635
+    zdot_n_frames: 883
+    g_scale: 1.1048487580728912
+    g_n_pixels: 213244500

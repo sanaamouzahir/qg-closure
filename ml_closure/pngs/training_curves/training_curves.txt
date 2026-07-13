@@ -1,0 +1,47 @@
+TRAINING CURVES
+================
+THE QUESTION THIS FOLDER ANSWERS: did each training run learn healthily,
+and where did it end up?
+
+EVERY PNG IN THIS FOLDER HAS THE SAME LAYOUT -- six panels, each a quantity
+per training epoch:
+  1. train ELBO      the training objective (evidence lower bound per data
+                     point; should rise then flatten)
+  2. val NLL         validation negative log-likelihood -- the MODEL
+                     SELECTION number (lower = better; combines accuracy
+                     AND honesty of the predicted uncertainty)
+                     formula: NLL = mean(0.5*(log(2*pi*sigma^2)+(y-mu)^2/sigma^2))
+  3. val RMSE        plain prediction error in physical units
+  4. val R^2         fraction of the target variance explained (1 = perfect)
+  5. val sigma       mean predicted uncertainty (should settle, not explode
+                     or crash)
+  6. feature spread  median distance between the CNN's internal features --
+                     the collapse alarm: if this dives toward zero the
+                     network has stopped distinguishing flow states.
+INPUTS: the model checkpoints during training + the validation frames.
+OUTPUT: one png per run, written by the trainer at the end of every epoch.
+COMPARES: nothing across runs directly -- compare pngs side by side.
+PURPOSE: the first thing to open for any run; if these six panels look
+healthy the run is worth evaluating further.
+
+FILES (model -> what to know):
+  cylinder_steady_production_training_curves_150epochs.png
+      THE production model. Best val NLL 5.59 on crops; full-frame R^2
+      0.8584 -- passes the 0.85 promotion bar.
+  cape_baseline_training_curves_100epochs.png
+      Cape baseline, five inlet types pooled. Ends at R^2 0.800, NLL 6.25.
+  hyperparameter_grid_*_training_curves_60epochs.png  (6 files)
+      The learning-rate x weight-decay grid that chose the production
+      settings. The _WINNER file (lr1e-3, wd1e-5, val NLL 5.6694) won;
+      lesson: learning rate is the only lever, weight decay changes nothing.
+  cylinder_smoke_test_2epochs_run0401/0440/0455_training_curves.png
+      2-epoch pipeline checks only -- ignore the numbers, they only prove
+      the machinery runs end to end. 0440/0455 were re-checks during the
+      target-standardization bug fix.
+  cape_smoke_test_2epochs_training_curves.png
+      Same, for the cape pipeline.
+
+NOT HERE YET: curves for the three runs still training tonight (conditioned
+cylinder ensemble, conditioned cape ensemble, leave-one-inlet-out folds).
+Their partial per-epoch numbers are already in csvs_and_npz/
+*_in_training_per_epoch_training_metrics.npz; final curves land tonight.

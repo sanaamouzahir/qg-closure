@@ -1,0 +1,19 @@
+REYNOLDS-NUMBER TRACE OF THE EVALUATION SNAPSHOTS
+=================================================
+THE QUESTION THIS FOLDER ANSWERS: which flow regimes do the six field
+panels of each evaluation actually sample?
+
+EVERY PNG SHOWS: the inlet Reynolds number of each evaluated member over
+simulation time (read from the simulation's inlet-speed control table),
+with black dashed vertical lines at the times of the six field snapshots
+shown in pngs/field_panels_truth_vs_prediction/.
+INPUTS: the member's stored inlet-speed table; no model involved.
+COMPARES: snapshot times vs the Re trajectory -- confirms the six panels
+were spread across the full Re range, not cherry-picked from one regime.
+PURPOSE: context figure. When a field panel looks bad, check here FIRST
+what regime it was in (e.g. the top of a ramp vs a quiet stretch).
+
+FILES: <model>_inlet_reynolds_trace_with_snapshot_times.png for the
+production model, cape baseline, grid winner, and the two evaluated smoke
+tests. The traces for the cross-member tests live with them in
+pngs/cross_member_generalization_of_single_member_model/.

@@ -1,0 +1,15 @@
+# WHAT THIS FILE IS: the end-of-training summary for hyperparameter-grid rung: learning rate 1.0e-3, weight decay 1.0e-4, 60 epochs, cylinder steady inlet (run codename grid_lr1.0e-3_wd1.0e-4).
+# CONTENTS: best validation NLL reached (best_val_nll, lower = better),
+# residual kurtosis (how heavy-tailed the prediction errors are; 3 = Gaussian,
+# hundreds = strong outliers in the wake), number of epochs, random seed, and
+# the final learned ARD feature lengthscales (zeta_ard_lengthscale is the
+# inlet-speed one; 0.6931 means it never moved off its initialization).
+# COPY made 2026-07-13 during the diagnostics-library reorganization. The original file in runs_piff/ is untouched (running jobs still write there).
+# Original: runs_piff/grid_lr1.0e-3_wd1.0e-4/final.yaml
+#
+best_val_nll: 5.686394691467285
+kurtosis: 415.6211242675781
+epochs: 60
+seed: 0
+training_path: joint (Plan A); Plan-B symptoms logged per epoch
+zeta_ard_lengthscale: 0.6931471824645996

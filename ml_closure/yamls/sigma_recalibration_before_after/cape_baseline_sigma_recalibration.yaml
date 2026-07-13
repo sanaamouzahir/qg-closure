@@ -1,0 +1,63 @@
+# WHAT THIS FILE IS: the post-hoc uncertainty recalibration record for
+# the cape baseline model: five inlet types pooled, unconditioned, 100 epochs (run codename cape_base_100ep).
+# WHAT IT DOES: fits ONE scale factor s that multiplies every predicted
+# sigma. s is fitted on the first half of the validation window by
+# s^2 = mean(z^2) with z = (y - mu)/sigma, then tested out-of-sample on the
+# second half. s < 1 means the raw model was OVER-estimating its uncertainty.
+# CONTENTS: sigma_scale (s), the fit and test windows, and before/after
+# metric blocks (NLL, coverage, R^2) on both halves. The checkpoint itself is
+# never modified -- consumers multiply sigma by s at read time.
+# COPY made 2026-07-13 during the diagnostics-library reorganization. The original file in runs_piff/ is untouched (running jobs still write there).
+# Original: runs_piff/cape_base_100ep/recalibration.yaml
+#
+ckpt: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/runs_piff/cape_base_100ep/best.pt
+sigma_scale: 0.5081135034561157
+fit_window:
+- 100.0
+- 110.0
+test_window:
+- 110.0
+- 120.0
+criterion: 'NLL-optimal variance scaling: s^2 = mean(z^2) on fit half'
+fit:
+  before:
+    n: 20451640
+    r2: 0.8091951012611389
+    rmse: 92.97441864013672
+    nll: 6.247513294219971
+    mean_sigma: 181.17852783203125
+    coverage:
+      1sigma: 0.9703417427648834
+      2sigma: 0.9923127925193285
+      3sigma: 0.9966403672272737
+  after:
+    n: 20451640
+    r2: 0.8091951012611389
+    rmse: 92.97441864013672
+    nll: 5.941371440887451
+    mean_sigma: 92.05914306640625
+    coverage:
+      1sigma: 0.9110033718567313
+      2sigma: 0.9711985444688054
+      3sigma: 0.9865302244709959
+test:
+  before:
+    n: 20451640
+    r2: 0.7906368970870972
+    rmse: 96.5267562866211
+    nll: 6.258116722106934
+    mean_sigma: 181.1846160888672
+    coverage:
+      1sigma: 0.9685823239603278
+      2sigma: 0.9922750449352717
+      3sigma: 0.9968234332307825
+  after:
+    n: 20451640
+    r2: 0.7906368970870972
+    rmse: 96.5267562866211
+    nll: 5.982326507568359
+    mean_sigma: 92.06224060058594
+    coverage:
+      1sigma: 0.9077078415227336
+      2sigma: 0.9695019568112875
+      3sigma: 0.9860232235654451

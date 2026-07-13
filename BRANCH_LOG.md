@@ -2,6 +2,31 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-13 — DIAGNOSTICS LIBRARY REORGANIZED FOR SANAA (reorg agent Fable; late-afternoon session)
+- Executed Sanaa's reorganization order on ml_closure/: the whole diagnostics output is now
+  a plain-English library. START POINT: ml_closure/README_FOR_SANAA.txt.
+- pngs/ = 16 folders, one QUESTION each (training curves, truth-vs-prediction fields linear
+  + symlog, calibration/spread-skill, sigma recalibration, cross-member generalization of
+  prod_ext150 (40 figs), coverage-by-distance, skill-by-inlet-speed, sigma-vs-gradient,
+  residual spectra, shedding-cycle drift, zeta-lengthscale trajectories, Re traces, + the
+  three triage folders). 139 pngs, every folder carries a per-figure English explainer .txt.
+- yamls/ = 46 headered copies (eval summaries, xeval summaries, final/run_info for ALL runs,
+  recalibrations, deep-diagnostics dumps); every copy has a '# ' English header block.
+- csvs_and_npz/ = 13 csv + 27 npz under descriptive names; every npz has a sibling .txt
+  listing arrays; csv column dictionary included. t6 arms renamed with verdicts
+  (arm_A_just_more_epochs ... arm_F_structural_noise_prior).
+- train_models/ = 6 plain-named model dirs (production cylinder, cape baseline, 2 conditioned
+  ensembles IN_TRAINING, LOMO folds IN_TRAINING, grid+t6+smoke archive with verdict table);
+  each has checkpoints -> runs_piff symlink + code_and_config_used/ (configs headered;
+  code extracted at bb2dfc1 for landed models, working copy ddd811b/017bd52 for in-flight).
+- codes/ = 29 symlinks (15 py + 14 sge) + one-line README; PHYSICAL move happens tonight
+  after the fleet lands (jobs pin old paths). CONVENTION.md locks the layout for all future
+  diagnostics (plots-first, English-first, no codenames in filenames, _in_training suffix).
+- SAFETY: pure copies — runs_piff/, root .py, conf_*.yaml, conf_xeval/ untouched (git-clean);
+  fleet 1832221/1832231/1832241 + queued jobs unaffected. Sweep coverage: 16/16 run dirs.
+- [QG][ACTED][sgs] email spooled (acted_20260713_reorg.mail).
+
+
 ## 2026-07-13 — FIELD-PLOT TRIAGE P1-P4 LANDED, NO FLAG (branch supervisor Fable; late-afternoon session)
 - Sanaa's four GREEN triage items on the eval field panels, all landed (jobs 1832249-58,
   ~0.15 GPU-h total; trainers 1832221/1832231 untouched).

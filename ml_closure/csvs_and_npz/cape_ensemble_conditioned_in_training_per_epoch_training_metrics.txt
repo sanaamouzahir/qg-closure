@@ -1,0 +1,26 @@
+WHAT THIS FILE IS: per-epoch training metrics for the run whose plain name
+is in this filename (see train_models/ for the model, pngs/training_curves/
+for the picture of these same arrays).
+NOTE: this run is STILL TRAINING (2026-07-13); this is a partial mid-training snapshot -- arrays stop at the last completed epoch. The final version lands tonight.
+ARRAYS INSIDE (one value per epoch unless noted):
+  train_elbo   training objective (ELBO per data point; higher = better fit)
+  val_nll      validation negative log-likelihood (lower = better; the
+               model-selection number)
+  val_rmse     validation root-mean-square error, physical units
+  val_r2       validation R^2 (1 = perfect, 0 = no better than the mean)
+  val_sigma    mean predicted uncertainty (is the model growing confident?)
+  zeta_ls      learned lengthscale of the inlet-speed feature (0.6931 =
+               still at init = feature not yet used)
+  zdot_ls      lengthscale of the inlet-acceleration feature (NaN if that
+               conditioning is off for this run)
+  grad_ls      lengthscale of the vorticity-gradient feature (NaN if off)
+  film_dgamma  size of the FiLM conditioning multiplier (0 = identity)
+  film_beta    size of the FiLM conditioning shift
+  feat_spread  median pairwise distance between learned features (collapse
+               probe: if this crashes toward 0 the CNN stopped separating
+               flow states)
+  lr           learning rate used that epoch
+  kurtosis     (scalar) residual kurtosis at end of training; NaN if run
+               still in warmup
+  ELBO_num_data (scalar) total number of valid training pixels
+  seed         (scalar) random seed

@@ -1,0 +1,40 @@
+# WHAT THIS FILE IS: a CROSS-MEMBER generalization test. The production
+# cylinder model (trained ONLY on the steady/constant inlet) is evaluated on
+# the 'steady_constant' inlet member (FPC-const), which it never saw in training.
+# CONTENTS AND FORMULAS: same as a normal evaluation summary -- global and
+# per-inlet-speed-bin R^2 / RMSE / NLL, coverage at 1/2/3 sigma, ARD
+# lengthscales.
+# PURPOSE: how much skill does a single-member model lose on unseen inlet
+# behaviours -- the baseline the conditioned ensemble models must beat.
+# COPY made 2026-07-13 during the diagnostics-library reorganization. The original file in runs_piff/ is untouched (running jobs still write there).
+# Original: runs_piff/prod_ext150/xeval/FPC-const/summary.yaml
+#
+ckpt: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/runs_piff/prod_ext150/best.pt
+epoch: 149
+seed: 0
+zeta_ard_lengthscale: 0.6931471824645996
+ard_lengthscales:
+  zeta: 0.6931471824645996
+global:
+  n: 17871000
+  r2: 0.8584504723548889
+  rmse: 33.09267044067383
+  nll: 5.160636901855469
+  mean_sigma: 60.385597229003906
+  coverage:
+    1sigma: 0.9745593419506463
+    2sigma: 0.9910768283811762
+    3sigma: 0.9956704157573723
+zeta_bins:
+- n: 17871000
+  r2: 0.8584504723548889
+  rmse: 33.09267044067383
+  nll: 5.160636901855469
+  mean_sigma: 60.385597229003906
+  coverage:
+    1sigma: 0.9745593419506463
+    2sigma: 0.9910768283811762
+    3sigma: 0.9956704157573723
+  zeta_range:
+  - -0.5
+  - 0.5

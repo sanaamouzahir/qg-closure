@@ -1,0 +1,40 @@
+# WHAT THIS FILE IS: a CROSS-MEMBER generalization test. The production
+# cylinder model (trained ONLY on the steady/constant inlet) is evaluated on
+# the 'ramping_up' inlet member (FPC-ramp), which it never saw in training.
+# CONTENTS AND FORMULAS: same as a normal evaluation summary -- global and
+# per-inlet-speed-bin R^2 / RMSE / NLL, coverage at 1/2/3 sigma, ARD
+# lengthscales.
+# PURPOSE: how much skill does a single-member model lose on unseen inlet
+# behaviours -- the baseline the conditioned ensemble models must beat.
+# COPY made 2026-07-13 during the diagnostics-library reorganization. The original file in runs_piff/ is untouched (running jobs still write there).
+# Original: runs_piff/prod_ext150/xeval/FPC-ramp/summary.yaml
+#
+ckpt: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/runs_piff/prod_ext150/best.pt
+epoch: 149
+seed: 0
+zeta_ard_lengthscale: 0.6931471824645996
+ard_lengthscales:
+  zeta: 0.6931471824645996
+global:
+  n: 10626000
+  r2: 0.5868903994560242
+  rmse: 40.436317443847656
+  nll: 6.118928909301758
+  mean_sigma: 176.59632873535156
+  coverage:
+    1sigma: 0.9952119329945417
+    2sigma: 0.9981116130246565
+    3sigma: 0.9989730848861283
+zeta_bins:
+- n: 10626000
+  r2: 0.5868903994560242
+  rmse: 40.436317443847656
+  nll: 6.118928909301758
+  mean_sigma: 176.59632873535156
+  coverage:
+    1sigma: 0.9952119329945417
+    2sigma: 0.9981116130246565
+    3sigma: 0.9989730848861283
+  zeta_range:
+  - 0.5
+  - 1.5

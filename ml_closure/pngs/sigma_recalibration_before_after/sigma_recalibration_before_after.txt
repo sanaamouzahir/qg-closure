@@ -1,0 +1,27 @@
+SIGMA RECALIBRATION: BEFORE / AFTER
+====================================
+THE QUESTION THIS FOLDER ANSWERS: how much better does the uncertainty get
+if we simply multiply every predicted sigma by one number?
+
+EVERY PNG HAS TWO PANELS: the reliability diagram (empirical vs nominal
+coverage, diagonal = honest) BEFORE (left, scale s = 1) and AFTER (right,
+sigma replaced by s * sigma).
+HOW s IS FOUND: on the FIRST half of the validation window, s^2 = the mean
+of the squared standardized errors z = (y - mu)/sigma. A perfectly
+calibrated model gives s = 1. s < 1 means the model was over-stating its
+uncertainty. The plot is drawn on the SECOND half (honest out-of-sample
+test). The fitted s and before/after numbers are in
+yamls/sigma_recalibration_before_after/.
+INPUTS: best checkpoint + validation frames. The checkpoint is never
+modified -- s lives in a side file that consumers apply at read time.
+
+FILES:
+  cylinder_steady_production_...png   s = 0.521 (sigma was ~2x too big);
+                                      NLL improves 5.16 -> 4.91
+  cape_baseline_...png                s = 0.508 (same ~2x over-caution)
+  hyperparameter_grid_winner_60epoch_...png  the winner before extension
+
+WHY IT MATTERS: one number fixes the overall size of sigma but coverage
+then sticks at ~0.95 -- proof the remaining problem is per-pixel SHAPE
+(sigma too flat across the domain), which motivates the gradient-based
+noise conditioning now training in the ensemble models.

@@ -1,0 +1,15 @@
+# WHAT THIS FILE IS: the end-of-training summary for the PRODUCTION cylinder model: steady (constant) inlet only, 150 epochs (run codename prod_ext150).
+# CONTENTS: best validation NLL reached (best_val_nll, lower = better),
+# residual kurtosis (how heavy-tailed the prediction errors are; 3 = Gaussian,
+# hundreds = strong outliers in the wake), number of epochs, random seed, and
+# the final learned ARD feature lengthscales (zeta_ard_lengthscale is the
+# inlet-speed one; 0.6931 means it never moved off its initialization).
+# COPY made 2026-07-13 during the diagnostics-library reorganization. The original file in runs_piff/ is untouched (running jobs still write there).
+# Original: runs_piff/prod_ext150/final.yaml
+#
+best_val_nll: 5.590097427368164
+kurtosis: 416.19451904296875
+epochs: 150
+seed: 0
+training_path: joint (Plan A); Plan-B symptoms logged per epoch
+zeta_ard_lengthscale: 0.6931471824645996

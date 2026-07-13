@@ -1,0 +1,13 @@
+WHAT THIS FILE IS: the valid-pixel mask audit for the cylinder geometry from
+the 2026-07-13 triage -- which pixels are EXCLUDED from training/evaluation
+and why.
+ARRAYS INSIDE:
+  category   integer map, one value per pixel:
+             0 = valid (used in training and metrics)
+             1 = analytic sponge strips (forcing zones at the domain edges)
+             2 = additional sponge pixels found via the filtered sponge
+                 indicator (chi_sponge above threshold)
+             3 = obstacle body (inside the cylinder)
+  fractions  pixel counts for the four categories, same order
+  n_valid    number of valid pixels
+(See pngs/valid_pixel_mask_sponge_audit/ for the picture.)

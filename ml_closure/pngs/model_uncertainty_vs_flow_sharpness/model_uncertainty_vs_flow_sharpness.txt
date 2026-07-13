@@ -1,0 +1,26 @@
+MODEL UNCERTAINTY VS FLOW SHARPNESS
+===================================
+THE QUESTION THIS FOLDER ANSWERS: the real errors are largest where the
+flow is sharpest (strong vorticity gradients) -- does the model's predicted
+uncertainty know that?
+
+EVERY PNG SHOWS (one log-log subplot per simulation member): pixels are
+grouped into ten bins by their local vorticity-gradient magnitude
+|grad omega| (x axis). Two lines per member:
+  - median PREDICTED sigma per bin        (what the model claims)
+  - median ACTUAL |error| per bin         (what really happens)
+The subplot title gives the two Spearman rank correlations: rho(sigma,
+gradient) and rho(|error|, gradient).
+INPUTS: best checkpoint + validation frames; the gradient is computed from
+the filtered vorticity input field.
+COMPARES: the SHAPE of sigma against the SHAPE of the true error, as a
+function of flow sharpness.
+PURPOSE AND JUSTIFICATION: this is the picture of the known per-pixel
+shape miscalibration -- |error| climbs steeply with the gradient while
+sigma stays comparatively flat. It is the evidence behind the structural
+noise prior (T6 ladder arm F: sigma^2 = a + b|grad omega|^2) and behind
+the gradient feature switched on in the conditioned ensembles now training.
+
+FILES:
+  cylinder_steady_production_predicted_uncertainty_vs_vorticity_gradient.png
+  cape_baseline_predicted_uncertainty_vs_vorticity_gradient.png

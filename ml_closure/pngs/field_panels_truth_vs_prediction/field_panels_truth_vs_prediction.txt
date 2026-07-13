@@ -1,0 +1,33 @@
+FIELD PANELS: TRUTH VS PREDICTION (linear color scale)
+======================================================
+THE QUESTION THIS FOLDER ANSWERS: does the predicted sub-grid forcing
+actually LOOK like the true one, and where in the flow do the errors live?
+
+EVERY PNG HAS FOUR PANELS (left to right), red/blue colormap, aspect-true:
+  1. TRUTH        the true sub-grid forcing Pi (from the fine simulation,
+                  filtered to the coarse grid), nondimensionalized by the
+                  inlet speed: Pi* = Pi * D^2 / U(t)^2
+  2. PREDICTION   the model's mean prediction mu, same color scale as truth
+  3. SIGMA        the model's per-pixel predicted uncertainty
+  4. |ERROR|      |truth - prediction|
+INPUTS: the run's best checkpoint + one full validation frame.
+COMPARES: panel 1 vs 2 (structure match), panel 3 vs 4 (does the model
+KNOW where it is wrong?).
+HOW FRAMES WERE CHOSEN: the six validation frames are spread evenly across
+the Reynolds-number range of the run (panel index 0 = lowest Re ... 5 =
+highest). The time t in the filename is the simulation time.
+PURPOSE: the human check that the metrics can't fake -- wake structure,
+vortex street, and whether sigma lights up where the error does.
+
+CAVEAT: on this LINEAR color scale the heavy-tailed wake makes most of the
+domain look empty. The same frames re-drawn on a log-like scale are in
+pngs/field_panels_truth_vs_prediction_symlog/ -- open those next.
+
+FILES: named <model>_truth_vs_prediction_panel_<0..5>_time_<t>.png for:
+  cylinder_steady_production   (the promoted model, cylinder steady inlet)
+  cape_baseline                (cape, five inlet types)
+  hyperparameter_grid_winner_60epoch  (the grid winner before the 150-epoch
+                               extension -- compare with production to see
+                               what the extra 90 epochs bought)
+  cylinder_smoke_test_run0401 / run0455  (2-epoch smoke tests -- expect
+                               them to look rough; kept for completeness)

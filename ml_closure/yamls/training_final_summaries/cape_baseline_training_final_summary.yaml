@@ -1,0 +1,15 @@
+# WHAT THIS FILE IS: the end-of-training summary for the cape baseline model: five inlet types pooled, unconditioned, 100 epochs (run codename cape_base_100ep).
+# CONTENTS: best validation NLL reached (best_val_nll, lower = better),
+# residual kurtosis (how heavy-tailed the prediction errors are; 3 = Gaussian,
+# hundreds = strong outliers in the wake), number of epochs, random seed, and
+# the final learned ARD feature lengthscales (zeta_ard_lengthscale is the
+# inlet-speed one; 0.6931 means it never moved off its initialization).
+# COPY made 2026-07-13 during the diagnostics-library reorganization. The original file in runs_piff/ is untouched (running jobs still write there).
+# Original: runs_piff/cape_base_100ep/final.yaml
+#
+best_val_nll: 6.493176460266113
+kurtosis: 2134.65478515625
+epochs: 100
+seed: 0
+training_path: joint (Plan A); Plan-B symptoms logged per epoch
+zeta_ard_lengthscale: 2.3080806732177734

@@ -1,0 +1,27 @@
+SKILL BINNED BY INLET SPEED
+===========================
+THE QUESTION THIS FOLDER ANSWERS: is the model equally good at low and
+high inlet speed (Reynolds number), or does it only serve the regime it
+saw most?
+
+EVERY PNG HAS TWO PANELS, x = inlet-speed coordinate zeta (the Reynolds
+number, centered at 3900 and scaled by 1700 -- zeta 0 means Re 3900), six
+quantile bins, one line per simulation member:
+  LEFT:  R^2 per zeta bin
+  RIGHT: NLL per zeta bin (lower = better).
+INPUTS: best checkpoint + validation frames + the inlet-speed table of
+each member (the speed is read from the simulation's control table, never
+estimated from the fields).
+COMPARES: skill across flow regimes; member vs member.
+PURPOSE: the pooled R^2 can hide a model that fails whenever the inlet is
+fast. For members with a modulated inlet this is the regime-resolved
+report card, and it is the direct test of whether the zeta conditioning
+(FiLM) is doing its job.
+
+FILES:
+  cylinder_steady_production_r2_and_nll_binned_by_inlet_speed.png
+      (steady member: the inlet barely moves, so this collapses to
+      essentially one bin -- kept for completeness)
+  cape_baseline_r2_and_nll_binned_by_inlet_speed.png
+      (five cape members with genuinely different speeds -- the
+      interesting one)

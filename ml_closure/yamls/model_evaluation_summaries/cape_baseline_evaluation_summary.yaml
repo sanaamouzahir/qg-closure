@@ -1,0 +1,99 @@
+# WHAT THIS FILE IS: headline evaluation numbers for the cape baseline model: five inlet types pooled, unconditioned, 100 epochs (run codename cape_base_100ep).
+# CONTENTS: global R^2 / RMSE / NLL (negative log-likelihood, lower = better),
+# uncertainty coverage at 1/2/3 sigma, mean predicted sigma, the same metrics
+# split into inlet-speed (zeta) bins, and the learned ARD lengthscales (how
+# relevant the model found each input feature; a huge lengthscale means the
+# feature is ignored).
+# FORMULAS: R^2 = 1 - sum((y-mu)^2)/sum((y-ybar)^2);
+# NLL = mean(0.5*(log(2*pi*sigma^2) + (y-mu)^2/sigma^2));
+# coverage@k = fraction of pixels with |y-mu| <= k*sigma.
+# COPY made 2026-07-13 during the diagnostics-library reorganization. The original file in runs_piff/ is untouched (running jobs still write there).
+# Original: runs_piff/cape_base_100ep/eval/summary.yaml
+#
+ckpt: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/runs_piff/cape_base_100ep/best.pt
+epoch: 29
+seed: 0
+zeta_ard_lengthscale: 2.016223430633545
+global:
+  n: 40903280
+  r2: 0.7999987602233887
+  rmse: 94.76719665527344
+  nll: 6.252819061279297
+  mean_sigma: 181.18162536621094
+  coverage:
+    1sigma: 0.9694620333626056
+    2sigma: 0.9922939187273001
+    3sigma: 0.9967319002290281
+zeta_bins:
+- n: 4090328
+  r2: 0.7199842929840088
+  rmse: 221.3717498779297
+  nll: 6.844274520874023
+  mean_sigma: 181.3399200439453
+  coverage:
+    1sigma: 0.9060869935125007
+    2sigma: 0.9630701987713455
+    3sigma: 0.9789122045958173
+  zeta_range:
+  - -0.9994327425956726
+  - -0.2849402427406543
+- n: 1115544
+  r2: 0.7849314212799072
+  rmse: 127.41801452636719
+  nll: 6.361598968505859
+  mean_sigma: 181.1891632080078
+  coverage:
+    1sigma: 0.951913147307502
+    2sigma: 0.985093371485123
+    3sigma: 0.9929827958377259
+  zeta_range:
+  - -0.2849402427406543
+  - 0.0
+- n: 11155440
+  r2: 0.8537297248840332
+  rmse: 75.78124237060547
+  nll: 6.205642223358154
+  mean_sigma: 181.1591796875
+  coverage:
+    1sigma: 0.9676245849558601
+    2sigma: 0.9934564660829156
+    3sigma: 0.99833310026319
+  zeta_range:
+  - 0.0
+  - 0.19473262729053942
+- n: 4090328
+  r2: 0.8572115898132324
+  rmse: 68.45281219482422
+  nll: 6.189490795135498
+  mean_sigma: 181.14927673339844
+  coverage:
+    1sigma: 0.9747528804535969
+    2sigma: 0.9949148332358676
+    3sigma: 0.998678834558011
+  zeta_range:
+  - 0.19473262729053942
+  - 0.32065585255622864
+- n: 4090328
+  r2: 0.8634175062179565
+  rmse: 60.77068328857422
+  nll: 6.174354553222656
+  mean_sigma: 181.1561279296875
+  coverage:
+    1sigma: 0.9806709877545272
+    2sigma: 0.9968503748354656
+    3sigma: 0.999146278733637
+  zeta_range:
+  - 0.32065585255622864
+  - 0.9995731353775668
+- n: 16361312
+  r2: 0.8574248552322388
+  rmse: 55.52912139892578
+  nll: 6.165134429931641
+  mean_sigma: 181.17181396484375
+  coverage:
+    1sigma: 0.9836301636445781
+    2sigma: 0.9975038065406979
+    3sigma: 0.9992603893868658
+  zeta_range:
+  - 0.9995731353775668
+  - 1.0

@@ -1,0 +1,22 @@
+ERROR PERSISTENCE ACROSS THE VORTEX-SHEDDING CYCLE
+==================================================
+THE QUESTION THIS FOLDER ANSWERS: do the model's errors blink in and out
+frame by frame, or do they stick to the flow and travel with the vortices?
+
+EVERY PNG SHOWS: the correlation between the error field at time t and the
+error field at time t + lag, as a function of lag (in simulation time
+units), one line per simulation member. Vertical marks at the shedding
+period T_shed (~3.0) and half of it.
+FORMULA: corr(lag) = <e(t) . e(t+lag)> / (|e(t)||e(t+lag)|), averaged over
+valid pixels and frame pairs, errors mean-centered.
+INPUTS: best checkpoint + consecutive validation frames.
+COMPARES: error decorrelation time vs the physical shedding clock.
+PURPOSE: if errors stay correlated for a large fraction of the shedding
+cycle, they are STRUCTURAL (the model consistently mis-handles the same
+flow feature, e.g. the separating shear layer) rather than random noise --
+and a rollout of the closure will drift rather than jitter. Also tells us
+how independent successive training frames really are.
+
+FILES:
+  cylinder_steady_production_error_persistence_across_vortex_shedding_cycle.png
+  cape_baseline_error_persistence_across_vortex_shedding_cycle.png

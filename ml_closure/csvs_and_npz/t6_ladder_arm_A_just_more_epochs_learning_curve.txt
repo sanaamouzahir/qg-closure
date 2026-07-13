@@ -1,0 +1,13 @@
+WHAT THIS FILE IS: the learning curve of T6 ladder arm A -- a controlled
+probe of WHY training was slow/failing, run on a fixed overfit setup
+(500 fixed crops of the steady-inlet cylinder member; original gate:
+R^2 > 0.95 within 50 epochs).
+WHAT THIS ARM TESTED: 150-epoch patience test. Verdict: plateaus ~0.89, cannot reach the 0.95 gate; crossing 0.85 at epoch 81 became the basis for re-gating the bar.
+ARRAYS INSIDE:
+  r2       train R^2 per epoch (the gate quantity)
+  rmse     train RMSE per epoch
+  arm      the arm letter (A)
+  epochs   number of epochs run
+  n_inducing  number of GP inducing points
+  likelihood  noise model used (gaussian / studentt / hetero)
+  lr, crops, warmup_epochs, sigma_cap_logrange  run settings

@@ -1,0 +1,63 @@
+# WHAT THIS FILE IS: the post-hoc uncertainty recalibration record for
+# hyperparameter-grid rung: learning rate 1.0e-3, weight decay 1.0e-5, 60 epochs, cylinder steady inlet -- the WINNING rung, later extended to 150 epochs as the production model (run codename grid_lr1.0e-3_wd1.0e-5).
+# WHAT IT DOES: fits ONE scale factor s that multiplies every predicted
+# sigma. s is fitted on the first half of the validation window by
+# s^2 = mean(z^2) with z = (y - mu)/sigma, then tested out-of-sample on the
+# second half. s < 1 means the raw model was OVER-estimating its uncertainty.
+# CONTENTS: sigma_scale (s), the fit and test windows, and before/after
+# metric blocks (NLL, coverage, R^2) on both halves. The checkpoint itself is
+# never modified -- consumers multiply sigma by s at read time.
+# COPY made 2026-07-13 during the diagnostics-library reorganization. The original file in runs_piff/ is untouched (running jobs still write there).
+# Original: runs_piff/grid_lr1.0e-3_wd1.0e-5/recalibration.yaml
+#
+ckpt: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/runs_piff/grid_lr1.0e-3_wd1.0e-5/best.pt
+sigma_scale: 0.5029730200767517
+fit_window:
+- 100.0
+- 110.0
+test_window:
+- 110.0
+- 120.0
+criterion: 'NLL-optimal variance scaling: s^2 = mean(z^2) on fit half'
+fit:
+  before:
+    n: 8935500
+    r2: 0.8347068428993225
+    rmse: 35.10539245605469
+    nll: 5.27980899810791
+    mean_sigma: 69.0196304321289
+    coverage:
+      1sigma: 0.9749654747915617
+      2sigma: 0.9902045772480556
+      3sigma: 0.9955942028985507
+  after:
+    n: 8935500
+    r2: 0.8347068428993225
+    rmse: 35.10539245605469
+    nll: 4.966095447540283
+    mean_sigma: 34.71506881713867
+    coverage:
+      1sigma: 0.955175423871076
+      2sigma: 0.9751096189357059
+      3sigma: 0.9846625258799172
+test:
+  before:
+    n: 8935500
+    r2: 0.830156683921814
+    rmse: 36.9017219543457
+    nll: 5.29179048538208
+    mean_sigma: 69.02067565917969
+    coverage:
+      1sigma: 0.9743564433999217
+      2sigma: 0.989916512786078
+      3sigma: 0.9952984164288512
+  after:
+    n: 8935500
+    r2: 0.830156683921814
+    rmse: 36.9017219543457
+    nll: 5.013415336608887
+    mean_sigma: 34.71560287475586
+    coverage:
+      1sigma: 0.9543603603603603
+      2sigma: 0.974508645291254
+      3sigma: 0.9843387611213699

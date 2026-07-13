@@ -1,0 +1,34 @@
+CROSS-MEMBER GENERALIZATION OF THE SINGLE-MEMBER MODEL
+======================================================
+THE QUESTION THIS FOLDER ANSWERS: the production cylinder model was trained
+ONLY on a steady inlet -- what happens when we run it on inlet behaviours
+it has never seen?
+
+THE TEST: the promoted model (cylinder_steady_production, codename
+prod_ext150) is evaluated, unchanged, on all five cylinder members:
+  steady_constant              the training member itself (control)
+  sine_oscillating             inlet speed oscillates sinusoidally
+  ramping_up                   inlet speed ramps up monotonically
+  random_ou                    inlet speed wanders randomly
+                               (Ornstein-Uhlenbeck process)
+  smoothed_telegraph_switching inlet speed switches between levels
+                               (smoothed telegraph signal)
+
+FILES PER MEMBER (named cylinder_steady_model_tested_on_<member>_inlet_*):
+  *_calibration_and_spread_skill.png   reliability + spread-skill on that
+      member (same layout as pngs/calibration_reliability_and_spread_skill/
+      -- see that folder's txt for how to read the two panels)
+  *_truth_vs_prediction_panel_<0..5>_time_<t>.png   four-panel field
+      comparison [truth | prediction | sigma | |error|], six frames spread
+      across that member's Reynolds range (same layout as
+      pngs/field_panels_truth_vs_prediction/)
+  *_reynolds_trace.png   that member's inlet Reynolds number over time,
+      with dashed marks at the six snapshot times -- shows how different
+      the member's flow regime actually is from the steady training regime
+
+THE NUMBERS: yamls/cross_member_generalization_of_single_member_model/
+holds the R^2 / NLL / coverage summary per member.
+PURPOSE AND JUSTIFICATION: this is the baseline the conditioned five-member
+ensemble models (training tonight) must beat -- if a steady-only model
+already generalizes, conditioning is unnecessary; where it fails tells us
+exactly what the conditioning features must fix.

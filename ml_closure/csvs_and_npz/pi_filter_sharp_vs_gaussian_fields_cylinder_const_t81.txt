@@ -1,0 +1,19 @@
+WHAT THIS FILE IS: fields from the 2026-07-13 filter triage -- the sub-grid
+forcing Pi recomputed two ways on one cylinder const frame (t=81): with the
+production sharp spectral-cutoff filter and with an all-Gaussian filter.
+PURPOSE: decide whether the vertical streaks seen in the Pi fields are
+benign ringing of the sharp cutoff (streaks vanish under Gaussian) or a
+data bug (streaks persist).
+ARRAYS INSIDE:
+  pi_sharp          Pi computed with the production sharp-cutoff filter
+  pi_gauss          Pi computed with the all-Gaussian filter
+  omega_bar         filtered vorticity (sharp cutoff)
+  omega_bar_gauss   filtered vorticity (Gaussian)
+  t, frame          time and frame index of the snapshot
+  rel_l2_vs_stored  relative L2 difference of recomputed vs stored Pi
+                    (sanity check that the recompute matches the pipeline)
+  streak_pi_sharp / streak_pi_gauss / streak_omega
+                    streak-amplitude measures for each field
+  gauss_delta_les   Gaussian filter width used (in coarse-grid spacings)
+  band_rows, band_cols  the row/column bands used for the streak measure
+(See pngs/pi_filter_sharp_vs_gaussian_streak_check/ for the picture.)

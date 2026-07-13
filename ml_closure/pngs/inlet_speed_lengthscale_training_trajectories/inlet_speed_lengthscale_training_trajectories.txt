@@ -1,0 +1,31 @@
+INLET-SPEED FEATURE LENGTHSCALE OVER TRAINING
+=============================================
+THE QUESTION THIS FOLDER ANSWERS: did the model ever learn to USE the
+inlet-speed information it is given?
+
+BACKGROUND IN ONE BREATH: the Gaussian-process head weighs each input
+feature with a learned "lengthscale" (ARD = automatic relevance
+determination). The inlet-speed feature (zeta) starts at lengthscale
+0.6931. If training never moves it off that number, the model is ignoring
+the inlet speed; if it moves, zeta has become an identifiable, used
+feature. (A lengthscale drifting to very large values means the feature
+was considered and PRUNED.)
+
+EVERY *_inlet_speed_feature_lengthscale_and_r2_over_training.png HAS TWO
+PANELS vs epoch: (1) the zeta lengthscale, red dotted line at the 0.6931
+init; (2) validation R^2 for context.
+INPUTS: parsed from the training logs (no GPU needed).
+COMPARES: lengthscale movement vs skill growth.
+PURPOSE: single-member runs CANNOT identify zeta (the inlet speed barely
+varies -- lengthscale stays pinned at 0.6931; that is expected, not a bug).
+The cape baseline was the FIRST run to move it (final value 2.016) --
+proof that multi-member training makes the conditioning learnable, and the
+green light that made the leave-one-inlet-out study worth running.
+
+FILES: one per run (production, cape baseline, all six grid rungs, the
+smoke tests -- named by model), plus
+  all_runs_overlay_inlet_speed_feature_lengthscale.png
+      every run's lengthscale trajectory on one axis, the one-glance
+      version of the whole story.
+The per-epoch numbers behind these plots are in csvs_and_npz/
+*_per_epoch_validation_metrics_and_inlet_speed_lengthscale.csv.
