@@ -19,7 +19,8 @@ ROOTS="data/ensemble_N5/FRC-kf4/forced_turbulence_dT_5em3 data/ensemble_N5_7lag/
 WARM="data/ensemble_N5_7lag/training_runs/rollout_ft_opt2_cond/best.pt"
 COMMON="--strides 1,2,3 --grad-mode trunc:4 --free-horizon 16
         --free-mode analytic --free-weight 1.0 --free-cap 10.0
-        --lr 5.0e-5 --compute-dtype float64 --model auto"
+        --lr 5.0e-5 --compute-dtype float64 --model auto
+        --out-root data/ensemble_N5_7lag"
 
 GO=0
 [ "${1:-}" = "--go" ] && GO=1
