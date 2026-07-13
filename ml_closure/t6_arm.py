@@ -43,7 +43,17 @@ HERE = Path(__file__).resolve().parent
 
 def main():
     ap = argparse.ArgumentParser(description="one T6 discrimination arm")
-    ap.add_argument('--arm', required=True, choices=['A', 'B', 'C', 'D', 'E'])
+    ap.add_argument('--arm', required=True, choices=['A', 'B', 'C', 'D', 'E', 'F'])
+    ap.add_argument('--noise-prior', default='head', choices=['head', 'structural'],
+                    help="ARM F: 'structural' = sigma^2(x) = softplus(a) + "
+                         "softplus(b) * s_feat(x) with s_feat the FIXED "
+                         "train-mean-normalized |grad omega*|^2 of the input "
+                         "field; only the two global scalars (a, b) learn. "
+                         "The ladder (C/D/E) showed any FREE per-pixel sigma "
+                         "lets the ELBO buy out signal pixels; a frozen "
+                         "physical pattern with 2 dof cannot target pixels — "
+                         "it can only globally trade, which the mean term "
+                         "resists (Sanaa GO 2026-07-12).")
     ap.add_argument('--epochs', type=int, default=50)
     ap.add_argument('--n-inducing', type=int, default=512)
     ap.add_argument('--likelihood', default='gaussian',
@@ -92,10 +102,6 @@ def main():
         # data-informed noise at init.
         model.likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
             noise=torch.full((1,), 0.1), learn_additional_noise=False).to(device)
-        noise_head = torch.nn.Linear(model.gp_input_dim, 1).to(device)
-        torch.nn.init.zeros_(noise_head.weight)
-        with torch.no_grad():
-            noise_head.bias.fill_(float(np.log(np.expm1(0.1))))   # softplus -> 0.1
 
         # ARM E (orchestrator ruling 3): sigma cap — clamp sigma^2 to
         # exp(+/-logrange) around the homoscedastic init (0.1). Clamp's zero
@@ -103,9 +109,41 @@ def main():
         s2_lo = 0.1 * float(np.exp(-args.sigma_cap_logrange))
         s2_hi = 0.1 * float(np.exp(+args.sigma_cap_logrange))
 
-        def het_sigma2(gpin, capped):
-            s2 = torch.nn.functional.softplus(noise_head(gpin)).squeeze(-1) + 1.0e-4
-            return s2.clamp(s2_lo, s2_hi) if capped else s2
+        if args.noise_prior == 'structural':
+            # ARM F: two scalars only. Init near the arm-2 homoscedastic point:
+            # softplus(a)=0.1, softplus(b)=0.01 (+10% mean s2 — NOT 1e-4: that
+            # sits so deep in softplus saturation that b is frozen for ~40 of
+            # 50 ep and the verdict would be confounded; closure-reviewer
+            # MEDIUM finding 2026-07-12). b also gets a 10x lr param group
+            # below: the experiment needs b MOBILE — if the collapse channel
+            # exists we want to see it, not mask it. Structural cap [1e-3, 10]
+            # in std space (gradient-zero outside, arm-E semantics).
+            noise_head = torch.nn.ParameterDict({
+                'a': torch.nn.Parameter(torch.tensor(float(np.log(np.expm1(0.1))))),
+                'b': torch.nn.Parameter(torch.tensor(float(np.log(np.expm1(1.0e-2))))),
+            }).to(device)
+            s2_lo, s2_hi = 1.0e-3, 10.0
+
+            def grad_feature(x, mask):
+                """FIXED per-pixel variance pattern: |grad omega*|^2 of input
+                channel 0, unit-spacing central differences, masked-flattened
+                in the SAME (B,H,W)[mask] order as masked_gp_inputs."""
+                gy, gx = torch.gradient(x[:, 0], dim=(1, 2))
+                return (gx * gx + gy * gy)[mask]
+
+            def het_sigma2(sfeat, capped):
+                s2 = (torch.nn.functional.softplus(noise_head['a'])
+                      + torch.nn.functional.softplus(noise_head['b']) * sfeat)
+                return s2.clamp(s2_lo, s2_hi) if capped else s2
+        else:
+            noise_head = torch.nn.Linear(model.gp_input_dim, 1).to(device)
+            torch.nn.init.zeros_(noise_head.weight)
+            with torch.no_grad():
+                noise_head.bias.fill_(float(np.log(np.expm1(0.1))))   # softplus -> 0.1
+
+            def het_sigma2(gpin, capped):
+                s2 = torch.nn.functional.softplus(noise_head(gpin)).squeeze(-1) + 1.0e-4
+                return s2.clamp(s2_lo, s2_hi) if capped else s2
     npix_km = model.init_inducing_kmeans(ds, 10000, int(conf['model']['kmeans_iters']),
                                          seed=0, device=device)
     st = dp.target_stats(runs, 'train', conf)
@@ -120,14 +158,40 @@ def main():
               f"(trainable), noise init = {float(model.likelihood.noise):.3f}; "
               f"VariationalELBO handles the non-conjugate likelihood by quadrature")
 
+    structural = noise_head is not None and args.noise_prior == 'structural'
+    sfeat_scale = 1.0
+    if structural:
+        # normalize s_feat to unit train mean (one pass over the fixed table)
+        tot, cnt = 0.0, 0
+        with torch.no_grad():
+            for b in batches(ds, 8):
+                g = grad_feature(b['x'].to(device), b['mask'].to(device))
+                tot += float(g.sum()); cnt += int(g.numel())
+        sfeat_scale = tot / max(cnt, 1)
+        print(f"[t6{args.arm}] structural prior: sfeat_scale (train mean |grad w|^2) "
+              f"= {sfeat_scale:.6e}; init softplus(a)=0.1, softplus(b)=1e-4; "
+              f"cap s2 in [{1.0e-3}, {10.0}] (std space)")
+
+    def noise_input(b_x, b_mask, gpin):
+        if structural:
+            return grad_feature(b_x, b_mask) / sfeat_scale
+        return gpin
+
     n_pix = int(sum(ds[i]['mask'].sum() for i in range(len(ds))))
     mll = gpytorch.mlls.VariationalELBO(model.likelihood, model.gp, num_data=n_pix)
     warmup = int(args.warmup_epochs) if noise_head is not None else 0
-    use_cap = warmup > 0            # ARM E; arm D (warmup 0) = uncapped legacy
+    use_cap = warmup > 0 or structural   # ARM E cap; arm F always capped
     params = list(model.parameters())
+    groups = [{'params': params, 'lr': float(args.lr)}]
     if noise_head is not None and warmup == 0:
-        params += list(noise_head.parameters())     # arm-D joint-from-scratch
-    opt = torch.optim.Adam(params, lr=float(args.lr))
+        if structural:
+            # b at 10x lr (mobility fix, see init comment); a at base lr
+            groups.append({'params': [noise_head['a']], 'lr': float(args.lr)})
+            groups.append({'params': [noise_head['b']], 'lr': 10.0 * float(args.lr)})
+        else:
+            groups.append({'params': list(noise_head.parameters()),
+                           'lr': float(args.lr)})   # arm-D joint-from-scratch
+    opt = torch.optim.Adam(groups, lr=float(args.lr))
     if noise_head is not None and warmup > 0:
         print(f"[t6{args.arm}] mean-warmup: head FROZEN (detached) for {warmup} ep, "
               f"then unfrozen with sigma^2 cap [{s2_lo:.4f}, {s2_hi:.4f}] (std space)")
@@ -140,13 +204,14 @@ def main():
         ys, mus, vars_, sds = [], [], [], []
         y_sd, y_mu = float(model.y_sd), float(model.y_mu)
         for b in batches(ds, 8):
-            gpin = model.masked_gp_inputs(b['x'].to(device), b['zeta'].to(device),
-                                          b['mask'].to(device))
-            yt = b['y'].to(device)[b['mask'].to(device)]
+            bx, bm = b['x'].to(device), b['mask'].to(device)
+            gpin = model.masked_gp_inputs(bx, b['zeta'].to(device), bm)
+            nin = noise_input(bx, bm, gpin)
+            yt = b['y'].to(device)[bm]
             for i0 in range(0, gpin.shape[0], gp_chunk):
                 ch = gpin[i0:i0 + gp_chunk]
                 f = model.gp(ch)
-                s2 = het_sigma2(ch, use_cap)
+                s2 = het_sigma2(nin[i0:i0 + gp_chunk], use_cap)
                 mus.append((f.mean * y_sd + y_mu).cpu().numpy())
                 vars_.append(((f.variance + s2) * y_sd * y_sd).cpu().numpy())
                 sds.append((s2.sqrt() * y_sd).cpu().numpy())
@@ -172,12 +237,12 @@ def main():
         head_live = noise_head is not None and (warmup == 0 or ep >= warmup)
         model.train()
         for b in batches(ds, int(conf['data']['batch_crops'])):
-            gpin = model.masked_gp_inputs(b['x'].to(device), b['zeta'].to(device),
-                                          b['mask'].to(device))
-            yt = b['y'].to(device)[b['mask'].to(device)]
+            bx, bm = b['x'].to(device), b['mask'].to(device)
+            gpin = model.masked_gp_inputs(bx, b['zeta'].to(device), bm)
+            yt = b['y'].to(device)[bm]
             opt.zero_grad(set_to_none=True)
             if noise_head is not None:
-                s2 = het_sigma2(gpin, use_cap)
+                s2 = het_sigma2(noise_input(bx, bm, gpin), use_cap)
                 if not head_live:
                     s2 = s2.detach()          # frozen warmup: no grads to head
                 loss = -mll(model.gp(gpin), model.standardize_y(yt), noise=s2)
@@ -189,6 +254,10 @@ def main():
             m = hetero_evaluate(int(conf['train']['gp_chunk']))
             extra = (f"  sigma(phys) min/med/max "
                      f"{m['sig_min']:.2f}/{m['sig_med']:.2f}/{m['sig_max']:.2f}")
+            if structural:
+                sa = float(torch.nn.functional.softplus(noise_head['a']))
+                sb = float(torch.nn.functional.softplus(noise_head['b']))
+                extra += f"  a {sa:.4f} b {sb:.4f}"
         else:
             m = evaluate(model, ds, device, int(conf['train']['gp_chunk']))
             extra = ""

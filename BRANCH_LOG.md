@@ -2,6 +2,35 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-12 — SANAA GO (night session): winner extension + recalibration + arm F + CAPE ML all FIRED (global supervisor Fable)
+- RULING (chat ~21:45, recorded in DECISIONS): GO on re-gate (reversal window closed),
+  structural-prior B-item, winner extension, sigma recalibration, AND the Pi_FF closure in
+  parallel on the cape cases. Autonomous overnight; Sanaa checks tomorrow.
+- RECALIBRATION (calibrate_piff.py NEW; pCal_win 1831569 done): NLL-optimal scalar s has the
+  closed form s^2 = mean(z^2); fit on val[100,110), tested on val[110,120]. WINNER RESULT:
+  s = 0.503 (sigma exactly halved, mean sigma 34.7 ~ RMSE 35.1), test NLL 5.29 -> 5.01, but
+  1-sigma coverage only 0.974 -> 0.955 vs 0.683 nominal. READ: the miscalibration is
+  PER-PIXEL SHAPE, not scale — no global scalar can fix it (rare huge wake errors dominate
+  RMSE; typical pixel error is far smaller). This is the quantitative motivation for arm F.
+- ARM F (structural noise prior, t6_arm.py extended; closure-reviewer: 7/7 PASS + 1 MEDIUM
+  fixed): sigma^2(x) = softplus(a) + softplus(b)*s_feat(x), s_feat = FIXED train-mean-
+  normalized |grad omega*|^2 of the input field; only scalars a,b learn; cap [1e-3,10] std
+  space. The reviewer's MEDIUM (b init at softplus^-1(1e-4) is saturation-frozen ~40/50 ep —
+  would confound the verdict) fixed: init softplus(b)=0.01 (+10% mean s2, negligible) + b at
+  10x lr (b must be MOBILE — if the collapse channel exists we want to SEE it). pT6_F 1831574.
+- CAPE Pi_FF ML: Step-0 canonical artifacts built for all 5 members (make_dataset_manifest.py
+  gained a cape-geometry branch — D := L_cape = 1, x_c = 0.2*Lx, y_c = tip height 4.0;
+  reviewer 5/5 PASS; step0_CA* 1831563-67). conf_piff_cape.yaml: 5 runs, winner lr/wd,
+  100 ep, zeta keeps the FPC normalization (table-Re = shared modulation coordinate; manifest
+  caveat records Re_cape = table_Re/1.2566). SMOKE 1831570 CLEAN (2 ep, R2 0.21 -> 0.43,
+  145M train px, 61 s/ep) — and residual kurtosis 2064 (vs FPC 395): cape is MORE
+  heteroscedastic; the arm-F question is even more load-bearing here.
+- IN FLIGHT overnight: pF_ext150 1831561 -> pEv_ext150 1831562 -> pCal_ext 1831575;
+  pCape_base 1831571 -> pEv_cape 1831572 -> pCal_cape 1831573; pT6_F 1831574. All -m ea.
+  New scripts: piff_step0_job.sh, piff_tool_job.sh (generic ml_closure tool wrapper).
+- Note for the record: one malformed submission (1831568, --help as ckpt arg) was qdel'd
+  within a minute; no side effects.
+
 ## 2026-07-12 — CAPE Pi_FF CHAIN LANDED CLEAN; audit verdicts RELAX x5; wake diags submitted (global supervisor Fable; evening session, cont.)
 - CHAIN (1831531-51) landed ~21:24 EDT, ~35 min wall / ~0.75 GPU-h: DNS_LES x15 on disk
   (2.0G/504M/127M per s2/s4/s8 per member), audit_A x5, restart_ic_t30.npy (t=30.15).

@@ -163,10 +163,22 @@ def main():
     dt_save = dt * save_rate
     Lx = float(cfg['grid']['Lx']); Ly = float(cfg['grid']['Ly'])
     nu = float(cfg['pde']['nu'])
-    r = float(cfg['mask']['r'])
-    D = 2.0 * r
-    # mask.circular IGNORES config x_center/y_center: center is the domain center.
-    x_c, y_c = Lx / 2.0, Ly / 2.0
+    mask_fn = cfg['mask']['function']
+    if mask_fn == 'circular':
+        r = float(cfg['mask']['r'])
+        D = 2.0 * r
+        # mask.circular IGNORES config x_center/y_center: center is the domain center.
+        x_c, y_c = Lx / 2.0, Ly / 2.0
+    elif mask_fn == 'cape':
+        # Cape length scale L_cape = 1 (charter line 29; matches qg.diag.length=1.0 —
+        # Re, St, T_sh all reported with L=1). Wake centerline = tip height y_scale
+        # (the approved lee-probe row); x_c = x_center fraction * Lx.
+        r = None
+        D = float(cfg['mask']['x_scale'])                  # L_cape = x_scale = 1.0
+        x_c = float(cfg['mask']['x_center']) * Lx
+        y_c = float(cfg['mask']['y_scale'])                # tip height (bottom-attached wake)
+    else:
+        _fail(f"unsupported mask.function {mask_fn!r} (circular | cape)")
     width = float(cfg['bc']['width'])
     penalty = float(cfg['pde']['penalty'])
     sponge_factor = float(cfg['bc']['sponge'])
@@ -286,15 +298,33 @@ def main():
             'measured_y_rows': list(y_meas) if y_meas else None,
             'measured_thresh': thresh,
         },
-        'mask': {'function': cfg['mask']['function'], 'r': r,
-                 'config_x_center_IGNORED_by_code': cfg['mask']['x_center'],
-                 'config_y_center_IGNORED_by_code': cfg['mask']['y_center']},
+        'mask': ({'function': mask_fn, 'r': r,
+                  'config_x_center_IGNORED_by_code': cfg['mask']['x_center'],
+                  'config_y_center_IGNORED_by_code': cfg['mask']['y_center']}
+                 if mask_fn == 'circular' else
+                 {'function': mask_fn,
+                  'x_center_frac': float(cfg['mask']['x_center']),
+                  'y_base': float(cfg['mask']['y_base']),
+                  'x_scale': float(cfg['mask']['x_scale']),
+                  'y_scale': float(cfg['mask']['y_scale']),
+                  'x_support': float(cfg['mask']['x_support'])}),
         'window': {'t_usable_lo': 30.0, 't_usable_hi': float(times_full[-1])},
         'seeds': {'run_seed': cfg.get('seed'), 'ic_seed': cfg['ic'].get('seed'),
                   'table_seed': tab_meta.get('seed')},
         'nan_check': {'pass': True, 'counts': nan_counts},
         'sha256': {'dataset': _sha256(out_npz), 'u_table': _sha256(out_table)},
     }
+
+    if mask_fn == 'circular':
+        geom_caveat = (
+            f"CAVEAT: mask.circular IGNORES config x_center/y_center; the cylinder sits at the\n"
+            f"  domain center (x_c, y_c) = ({x_c:.6f}, {y_c:.6f}); D = {D:.6f}.")
+    else:
+        geom_caveat = (
+            f"CAPE geometry: L_cape = x_scale = {D:.1f} is THE length scale (charter line 29;\n"
+            f"  matches qg.diag.length=1.0). x_c = x_center_frac*Lx = {x_c:.6f}; wake centerline\n"
+            f"  y_c = tip height y_scale = {y_c:.6f} (bottom-attached asymmetric wake — the\n"
+            f"  approved lee-probe row). D field below = L_cape.")
 
     md = f"""# DATASET_MANIFEST — {run_dir.name} (scale {scale})
 
@@ -317,8 +347,11 @@ machine-readable source of truth for dataset_piff.py — edit NOTHING by hand.
   packaging off-by-one is fixed HERE, once).
 - U(t_n) for normalization comes from `{out_table.name}` at step n = round(t/dt) —
   never from per-snapshot field statistics (spec S1.2).
-- CAVEAT: mask.circular IGNORES config x_center/y_center; the cylinder sits at the
-  domain center (x_c, y_c) = ({x_c:.6f}, {y_c:.6f}); D = {D:.6f}.
+- {geom_caveat}
+- CAVEAT (zeta): Re_snap is the TABLE Re (cylinder-convention modulation coordinate,
+  Re = U*D_cyl/nu with D_cyl=1.2566) for BOTH geometries — zeta stays a shared
+  modulation coordinate across FPC and FPCape. The cape-physical Re_cape = U/nu
+  (L=1) = table_Re/1.2566; never compare zeta to Re_cape directly.
 - Sponge (bc `{cfg['bc']['function']}`, width {width}): right-outlet x-strip
   x/Lx in [{sponge_x_frac[0]}, 1] and top y-strip y/Ly in [{sponge_y_frac[0]}, 1];
   measured filtered support (thresh {thresh}): x cols {x_meas}, y rows {y_meas} of {Nx}.
