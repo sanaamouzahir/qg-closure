@@ -2,6 +2,20 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
  
+## 2026-07-13 — session 13 (P0: dissipative projection, branch supervisor)
+- Sanaa P0 (global plan): --nn-dissipative-proj added to rollout_aposteriori.py — per-shell
+  deletion of the enstrophy-injecting radial component of the NN correction (sign mapped to the
+  applied correction; reviewer-verified). Zero extra FFTs; counts/removed-frac logged per step.
+- Gates: G4 closure-reviewer PASS (sign crux + off-path bit-identity + py_compile), G5 x3 PASS.
+  G3 driver gate = job 1832508 (standing b2 smoke + kf4@1.5e-2 vs documented refs, <=1% bar).
+- Submitted A/B ladder: 1832509 (dissproj_A) + 1832510 (dissproj_B) held on gate; 1832511
+  finalize (merge + PRE-REGISTERED bars verdict + figures). 10 draws x 3 dT x on/off @16 steps
+  (all 30 truth refs REUSED, hard-fail guard) + 64/128-step horizons at 5e-3 (refs EXTENDED,
+  saved next to the rep refs). ~7.5 GPU-h, 2 GPUs max concurrent. Ckpt = opt2_cond ep33.
+- Bars (fixed before results): proj-on -> 1e-2 10/10 stable; 1.5e-2 improves; 5e-3 cost < 5%.
+- Results land in diagnostics/Results/apost_dissproj_20260713/ (one npz per case) + pngs/
+  dissipative_projection_ladder/. Commit 10fed1b.
+
 ## 2026-07-13 — session 12 (Sanaa three-part order: TRUE R-terms + tex implementation audit + consolidated LANDED email)
 - PART A (item 2, R-ratio test): new diagnostics/truncation_term_ratios.py (wraps
   measure_truncation_magnitudes.py operators; 4 developed-flow DNS snapshots t~30/50/70/90
