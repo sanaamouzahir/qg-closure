@@ -42,9 +42,11 @@ NOMINAL = {1.0: 0.682689, 2.0: 0.954500, 3.0: 0.997300}
 def predict_frame(model, run, frame, device, gp_chunk):
     """Full-frame predictive mean/sigma on masked pixels; returns 2D fields
     (NaN outside mask) + flat arrays."""
-    x, y, mask, zeta = run.full_frame(frame)
-    gpin = model.masked_gp_inputs(x[None].to(device), zeta[None].to(device),
-                                  mask[None].to(device))
+    x, y, mask, zeta, zeta_dot, g = run.full_frame(frame)
+    gpin = model.masked_gp_inputs(
+        x[None].to(device), zeta[None].to(device), mask[None].to(device),
+        zeta_dot=(zeta_dot[None].to(device) if model.use_zeta_dot else None),
+        g=(g[None].to(device) if model.use_grad_feature else None))
     mus, vars_ = [], []
     for i0 in range(0, gpin.shape[0], gp_chunk):
         mu_p, var_p = model.predict_physical(gpin[i0:i0 + gp_chunk])
@@ -116,6 +118,11 @@ def main():
     model.load_state_dict(ckpt['model'])
     model.eval()
 
+    # the data must carry whatever conditioning the CKPT was trained with,
+    # regardless of the eval conf (ORDER-3 flags travel with the model)
+    conf.setdefault('model', {})['use_grad_feature'] = model.use_grad_feature
+    conf['zeta'].setdefault('tshed_smooth',
+                            ckpt['conf'].get('zeta', {}).get('tshed_smooth', 2.992))
     runs = build_runs(conf)
     frames = split_frames(runs, 'val', conf)
     print(f"[eval] {len(frames)} val frames from {[r.name for r in runs]}")
@@ -130,6 +137,7 @@ def main():
     summary = {'ckpt': str(Path(args.ckpt).resolve()), 'epoch': int(ckpt['epoch']),
                'seed': int(ckpt['seed']),
                'zeta_ard_lengthscale': model.zeta_ard_lengthscale(),
+               'ard_lengthscales': model.ard_lengthscales(),
                'global': metrics_block(y, mu, sg), 'zeta_bins': []}
     edges = np.unique(np.quantile(zt, np.linspace(0, 1, int(ec['n_zeta_bins']) + 1)))
     if len(edges) < 2:

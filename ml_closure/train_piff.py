@@ -40,7 +40,8 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from dataset_piff import (load_conf, build_runs, PiffCropDataset,
-                          count_masked_pixels, target_stats, describe, _f)
+                          count_masked_pixels, target_stats, describe, _f,
+                          conditioning_stats)
 from model_piff import PiffModel, gpytorch
 
 HERE = Path(__file__).resolve().parent
@@ -51,7 +52,15 @@ def batches(ds, batch_crops):
     for i0 in range(0, len(idx), batch_crops):
         sel = idx[i0:i0 + batch_crops]
         items = [ds[int(i)] for i in sel]
-        yield {k: torch.stack([it[k] for it in items]) for k in ('x', 'y', 'mask', 'zeta')}
+        keys = [k for k in ('x', 'y', 'mask', 'zeta', 'zeta_dot', 'g') if k in items[0]]
+        yield {k: torch.stack([it[k] for it in items]) for k in keys}
+
+
+def cond_kwargs(model, b, device):
+    """Conditioning tensors for the model forward, from a batch dict (None
+    when the corresponding ORDER-3 flag is off — exact legacy path)."""
+    return {'zeta_dot': b['zeta_dot'].to(device) if model.use_zeta_dot else None,
+            'g': b['g'].to(device) if model.use_grad_feature else None}
 
 
 def gaussian_nll(y, mu, var):
@@ -67,7 +76,7 @@ def evaluate(model, ds, device, gp_chunk):
     for b in batches(ds, 8):
         x, y = b['x'].to(device), b['y'].to(device)
         mask, zeta = b['mask'].to(device), b['zeta'].to(device)
-        gpin = model.masked_gp_inputs(x, zeta, mask)
+        gpin = model.masked_gp_inputs(x, zeta, mask, **cond_kwargs(model, b, device))
         yt = y[mask]
         for i0 in range(0, gpin.shape[0], gp_chunk):
             mu_p, var_p = model.predict_physical(gpin[i0:i0 + gp_chunk])
@@ -88,7 +97,8 @@ def probe_feature_spread(model, probe, device):
     collapse diagnostic)."""
     model.eval()
     f = model.masked_gp_inputs(probe['x'].to(device), probe['zeta'].to(device),
-                               probe['mask'].to(device))
+                               probe['mask'].to(device),
+                               **cond_kwargs(model, probe, device))
     n = min(f.shape[0], 2048)
     f = f[:n]
     d = torch.pdist(f.float())
@@ -106,7 +116,8 @@ def residual_kurtosis(model, ds, device, n_batches=64):
         if k >= n_batches:
             break
         gpin = model.masked_gp_inputs(b['x'].to(device), b['zeta'].to(device),
-                                      b['mask'].to(device))
+                                      b['mask'].to(device),
+                                      **cond_kwargs(model, b, device))
         mu_t = model.gp(gpin).mean
         mu = (mu_t * model.y_sd + model.y_mu).cpu().numpy()   # physical units
         res.append(b['y'].numpy()[b['mask'].numpy()] - mu)
@@ -171,6 +182,13 @@ def main():
         0.0, 1.0, noise_frac=_f(tc['init_noise_frac']))
     hyper0.update(std_const)
     hyper0['stats_n_pixels'] = ystats['n']
+    if model.use_zeta_dot or model.use_grad_feature:
+        cstats = conditioning_stats(runs, 'train', conf)
+        cond_const = model.set_conditioning_stats(
+            zdot_sd=cstats.get('zdot_sd'), g_scale=cstats.get('g_scale'))
+        hyper0.update(cond_const)
+        hyper0['conditioning_stats'] = cstats
+        print(f"[train] ORDER-3 conditioning stats: {json.dumps(cstats)}")
     info['init_hyperparams'] = hyper0
     with open(outdir / 'run_info.yaml', 'w') as f:
         yaml.safe_dump(info, f, sort_keys=False)
@@ -191,8 +209,8 @@ def main():
     probe = next(batches(val_ds, 8))                     # fixed collapse probe
     spread0, kurt = None, None
     hist = {k: [] for k in ('train_elbo', 'val_nll', 'val_rmse', 'val_r2',
-                            'val_sigma', 'zeta_ls', 'film_dgamma', 'film_beta',
-                            'feat_spread', 'lr')}
+                            'val_sigma', 'zeta_ls', 'zdot_ls', 'grad_ls',
+                            'film_dgamma', 'film_beta', 'feat_spread', 'lr')}
     best_nll = np.inf
 
     for ep in range(epochs):
@@ -203,7 +221,7 @@ def main():
         for b in batches(train_ds, bc):
             x, y = b['x'].to(device), b['y'].to(device)
             mask, zeta = b['mask'].to(device), b['zeta'].to(device)
-            gpin = model.masked_gp_inputs(x, zeta, mask)
+            gpin = model.masked_gp_inputs(x, zeta, mask, **cond_kwargs(model, b, device))
             yt = y[mask]
             if yt.numel() == 0:
                 continue
@@ -219,18 +237,27 @@ def main():
         if spread0 is None:
             spread0 = spread
         dg, bnorm = model.film_norms()
-        zls = model.zeta_ard_lengthscale()
+        ards = model.ard_lengthscales()
+        zls = ards['zeta']
         hist['train_elbo'].append(float(np.mean(elbos)))
         hist['val_nll'].append(vm['nll']); hist['val_rmse'].append(vm['rmse'])
         hist['val_r2'].append(vm['r2']); hist['val_sigma'].append(vm['mean_sigma'])
-        hist['zeta_ls'].append(zls); hist['film_dgamma'].append(dg)
+        hist['zeta_ls'].append(zls)
+        hist['zdot_ls'].append(ards.get('zeta_dot', np.nan))
+        hist['grad_ls'].append(ards.get('grad', np.nan))
+        hist['film_dgamma'].append(dg)
         hist['film_beta'].append(bnorm); hist['feat_spread'].append(spread)
         hist['lr'].append(opt.param_groups[0]['lr'])
 
         collapse = spread < spread0 / 10.0
+        extra_ls = ''
+        if model.use_zeta_dot:
+            extra_ls += f" zdot_ls {ards['zeta_dot']:.3f}"
+        if model.use_grad_feature:
+            extra_ls += f" grad_ls {ards['grad']:.3f}"
         print(f"[ep {ep:03d}] elbo/datum {hist['train_elbo'][-1]:+.4e}  "
               f"val NLL {vm['nll']:.4e} RMSE {vm['rmse']:.4e} R2 {vm['r2']:.4f} "
-              f"sigma {vm['mean_sigma']:.3e}  zeta_ls {zls:.3f}  "
+              f"sigma {vm['mean_sigma']:.3e}  zeta_ls {zls:.3f}{extra_ls}  "
               f"film |dg|={dg:.3e} |b|={bnorm:.3e}  spread {spread:.3e}"
               f"{'  [PLAN-B SYMPTOM: feature collapse >10x]' if collapse else ''}"
               f"  ({time.time()-t0:.0f}s)")
@@ -268,7 +295,8 @@ def main():
         yaml.safe_dump({'best_val_nll': float(best_nll), 'kurtosis': kurt,
                         'epochs': epochs, 'seed': seed,
                         'training_path': 'joint (Plan A); Plan-B symptoms logged per epoch',
-                        'zeta_ard_lengthscale': hist['zeta_ls'][-1]}, f, sort_keys=False)
+                        'zeta_ard_lengthscale': hist['zeta_ls'][-1],
+                        'ard_lengthscales_final': model.ard_lengthscales()}, f, sort_keys=False)
     print(f"[train] done; best val NLL {best_nll:.4e}; artifacts in {outdir}")
 
 

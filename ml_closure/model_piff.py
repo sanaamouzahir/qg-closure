@@ -38,12 +38,13 @@ def periodic_pad(x, p):
 
 class FiLMCNN(nn.Module):
     def __init__(self, in_channels=4, channels=(32, 32, 16), kernel=5,
-                 film=True, film_hidden=16):
+                 film=True, film_hidden=16, cond_dim=1):
         super().__init__()
         self.channels = tuple(int(c) for c in channels)
         self.kernel = int(kernel)
         self.pad = self.kernel // 2
         self.film = bool(film)
+        self.cond_dim = int(cond_dim)
         convs, cin = [], int(in_channels)
         for c in self.channels:
             convs.append(nn.Conv2d(cin, c, self.kernel, padding=0))
@@ -51,7 +52,7 @@ class FiLMCNN(nn.Module):
         self.convs = nn.ModuleList(convs)
         self.n_film = sum(self.channels)
         self.film_mlp = nn.Sequential(
-            nn.Linear(1, int(film_hidden)), nn.SiLU(),
+            nn.Linear(self.cond_dim, int(film_hidden)), nn.SiLU(),
             nn.Linear(int(film_hidden), 2 * self.n_film))
         # identity init: zero output layer => dgamma = beta = 0 exactly (T3)
         nn.init.zeros_(self.film_mlp[-1].weight)
@@ -62,9 +63,9 @@ class FiLMCNN(nn.Module):
         return self.channels[-1]
 
     def forward(self, x, zeta):
-        """x (B,4,H,W); zeta (B,) -> features (B,F,H,W)."""
+        """x (B,4,H,W); zeta (B,) or (B,cond_dim) -> features (B,F,H,W)."""
         if self.film:
-            gb = self.film_mlp(zeta.reshape(-1, 1))          # (B, 2*n_film)
+            gb = self.film_mlp(zeta.reshape(-1, self.cond_dim))  # (B, 2*n_film)
             dgamma, beta = gb.chunk(2, dim=-1)
         off = 0
         h = x
@@ -133,10 +134,25 @@ class PiffModel(nn.Module):
     def __init__(self, conf):
         super().__init__()
         mc = conf['model']
+        # Ensemble conditioning (Sanaa ORDER 3, 2026-07-13). Both flags default
+        # OFF -> exact pre-order model (all existing ckpts/configs load as-is).
+        # use_zeta_dot: zeta_dot = d(zeta)/dt (table-Re, T_shed-smoothed,
+        #   ensemble-std normalized via the recorded zdot_sd buffer) enters BOTH
+        #   the FiLM conditioner (cond_dim 2) and the GP as an ARD dim — the
+        #   wake-state-lag coordinate (ramp-up vs sine-down at equal zeta).
+        # use_grad_feature: local |grad omega_bar|* (crop-computed by the
+        #   dataset, train-mean normalized via g_scale) as one more ARD dim —
+        #   arm F's structural sigma prior moved INTO the kernel.
+        self.use_zeta_dot = bool(mc.get('use_zeta_dot', False))
+        self.use_grad_feature = bool(mc.get('use_grad_feature', False))
+        cond_dim = 1 + int(self.use_zeta_dot)
         self.cnn = FiLMCNN(in_channels=int(mc['in_channels']),
                            channels=mc['channels'], kernel=int(mc['kernel']),
-                           film=bool(mc['film']), film_hidden=int(mc['film_hidden']))
-        self.gp_input_dim = self.cnn.out_dim + 1     # F + zeta
+                           film=bool(mc['film']), film_hidden=int(mc['film_hidden']),
+                           cond_dim=cond_dim)
+        self.zeta_idx = self.cnn.out_dim                  # position of zeta in GP inputs
+        self.gp_input_dim = (self.cnn.out_dim + 1 + int(self.use_zeta_dot)
+                             + int(self.use_grad_feature))
         init_z = torch.randn(int(mc['n_inducing']), self.gp_input_dim)
         self.gp = PiffSVGP(init_z)
         if gpytorch is None:
@@ -151,6 +167,31 @@ class PiffModel(nn.Module):
         # numerically singular: absolute jitter 1e-6 is ~1e-10 relative).
         self.register_buffer('y_mu', torch.zeros(()))
         self.register_buffer('y_sd', torch.ones(()))
+        # recorded conditioning normalizations (same contract as y_mu/y_sd:
+        # buffers -> in every ckpt; defaults = identity). persistent only when
+        # the flag is on, so pre-ORDER-3 ckpts still load strict=True.
+        self.register_buffer('zdot_sd', torch.ones(()), persistent=self.use_zeta_dot)
+        self.register_buffer('g_scale', torch.ones(()), persistent=self.use_grad_feature)
+
+    def set_conditioning_stats(self, zdot_sd=None, g_scale=None):
+        """Recorded normalization constants for the conditioning inputs, from
+        exact train-split stats. Returns the manifest dict."""
+        out = {}
+        if self.use_zeta_dot:
+            zdot_sd = float(zdot_sd)
+            if not zdot_sd > 0.0:
+                raise ValueError(f"zdot_sd={zdot_sd}: ensemble has no zeta_dot "
+                                 f"variance (const-only pool?) — use_zeta_dot "
+                                 f"is meaningless here, refuse loudly")
+            self.zdot_sd.fill_(zdot_sd)
+            out['zdot_sd'] = zdot_sd
+        if self.use_grad_feature:
+            g_scale = float(g_scale)
+            if not g_scale > 0.0:
+                raise ValueError(f"bad g_scale={g_scale}")
+            self.g_scale.fill_(g_scale)
+            out['g_scale'] = g_scale
+        return out
 
     def set_y_standardization(self, y_mean, y_var):
         """Set the recorded standardization constants from exact train-target
@@ -178,22 +219,50 @@ class PiffModel(nn.Module):
             mu = mu.mean(dim=0)
         return mu * self.y_sd + self.y_mu, var * self.y_sd * self.y_sd
 
-    def features(self, x, zeta):
-        """(B,4,H,W),(B,) -> per-pixel GP inputs (B,H,W,F+1)."""
-        f = self.cnn(x, zeta)                        # (B,F,H,W)
+    def features(self, x, zeta, zeta_dot=None, g=None):
+        """(B,4,H,W),(B,)[,(B,)][,(B,H,W)] -> per-pixel GP inputs
+        (B,H,W,F+1[+zdot][+grad]). Column order: F CNN features, zeta,
+        then zeta_dot (normalized), then |grad omega_bar|* (normalized)."""
+        if self.use_zeta_dot:
+            if zeta_dot is None:
+                raise ValueError("use_zeta_dot=true but zeta_dot not supplied")
+            zd = zeta_dot / self.zdot_sd
+            cond = torch.stack([zeta, zd], dim=-1)   # (B,2) FiLM conditioner
+        else:
+            cond = zeta
+        f = self.cnn(x, cond)                        # (B,F,H,W)
         f = f.permute(0, 2, 3, 1)                    # (B,H,W,F)
-        z = zeta.reshape(-1, 1, 1, 1).expand(*f.shape[:3], 1)
-        return torch.cat([f, z], dim=-1)
+        cols = [f, zeta.reshape(-1, 1, 1, 1).expand(*f.shape[:3], 1)]
+        if self.use_zeta_dot:
+            cols.append(zd.reshape(-1, 1, 1, 1).expand(*f.shape[:3], 1))
+        if self.use_grad_feature:
+            if g is None:
+                raise ValueError("use_grad_feature=true but g not supplied")
+            cols.append((g / self.g_scale).unsqueeze(-1))   # (B,H,W,1)
+        return torch.cat(cols, dim=-1)
 
-    def masked_gp_inputs(self, x, zeta, mask):
-        """Flatten to masked pixels: returns (P, F+1). Loss/eval masking lives
-        HERE — inputs are never zeroed (spec S1.5)."""
-        return self.features(x, zeta)[mask]
+    def masked_gp_inputs(self, x, zeta, mask, zeta_dot=None, g=None):
+        """Flatten to masked pixels: returns (P, gp_input_dim). Loss/eval
+        masking lives HERE — inputs are never zeroed (spec S1.5)."""
+        return self.features(x, zeta, zeta_dot=zeta_dot, g=g)[mask]
 
     def zeta_ard_lengthscale(self):
-        """Learned ARD lengthscale of the zeta input dim (last) — reported in
-        every eval summary (spec S2.2)."""
-        return float(self.gp.covar_module.base_kernel.lengthscale[0, -1])
+        """Learned ARD lengthscale of the zeta input dim — reported in every
+        eval summary (spec S2.2). Indexed by position (zeta is no longer the
+        last dim when the ORDER-3 conditioning flags are on)."""
+        return float(self.gp.covar_module.base_kernel.lengthscale[0, self.zeta_idx])
+
+    def ard_lengthscales(self):
+        """Named ARD lengthscales of the conditioning dims (acceptance
+        predictions, ORDER 3d): zeta always; zeta_dot / grad when enabled."""
+        ls = self.gp.covar_module.base_kernel.lengthscale[0]
+        out = {'zeta': float(ls[self.zeta_idx])}
+        i = self.zeta_idx + 1
+        if self.use_zeta_dot:
+            out['zeta_dot'] = float(ls[i]); i += 1
+        if self.use_grad_feature:
+            out['grad'] = float(ls[i])
+        return out
 
     @torch.no_grad()
     def init_inducing_kmeans(self, dataset, n_pixels, iters, seed, device='cpu'):
@@ -205,9 +274,11 @@ class PiffModel(nn.Module):
         order = rng.permutation(len(dataset))
         for i in order:
             s = dataset[int(i)]
-            f = self.masked_gp_inputs(s['x'][None].to(device),
-                                      s['zeta'][None].to(device),
-                                      s['mask'][None].to(device))
+            f = self.masked_gp_inputs(
+                s['x'][None].to(device), s['zeta'][None].to(device),
+                s['mask'][None].to(device),
+                zeta_dot=(s['zeta_dot'][None].to(device) if self.use_zeta_dot else None),
+                g=(s['g'][None].to(device) if self.use_grad_feature else None))
             if f.shape[0] == 0:
                 continue
             take = min(f.shape[0], max(1, need // 4))
@@ -248,6 +319,7 @@ class PiffModel(nn.Module):
         MLP at the training zeta range midpoint 0."""
         with torch.no_grad():
             w = self.cnn.film_mlp[-1]
-            gb = self.cnn.film_mlp(torch.zeros(1, 1, device=w.weight.device))
+            gb = self.cnn.film_mlp(torch.zeros(1, self.cnn.cond_dim,
+                                               device=w.weight.device))
             dg, b = gb.chunk(2, dim=-1)
             return float(dg.norm()), float(b.norm())

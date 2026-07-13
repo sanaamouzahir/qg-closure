@@ -134,6 +134,37 @@ class RunData:
         zc = conf['zeta']
         self.zeta_snap = ((self.Re_snap - _f(zc['re0'])) / _f(zc['re_scale'])).astype(np.float64)
 
+        # zeta_dot = d(zeta)/dt from the table Re(t), boxcar-smoothed over
+        # ~1 T_shed (ORDER 3c, 2026-07-13): the wake-state-lag coordinate.
+        # O(N) running mean via cumsum (tables are ~1e6 rows), then centered
+        # gradient at table resolution, sampled at the snapshot steps. The
+        # ensemble-std normalization is a recorded MODEL buffer (zdot_sd),
+        # not applied here — this stays a pure per-run physical quantity.
+        tsm = _f(zc.get('tshed_smooth', 2.992))     # T_shed_mid, FPC ensemble
+        Re_tab = np.asarray(tab['Re'], dtype=np.float64)
+        w = max(1, int(round(tsm / dt_tab)))
+        csum = np.cumsum(np.insert(Re_tab, 0, 0.0))
+        idx = np.arange(len(Re_tab))
+        lo = np.maximum(idx - w // 2, 0)
+        hi = np.minimum(idx + (w - w // 2), len(Re_tab))
+        Re_sm = (csum[hi] - csum[lo]) / (hi - lo)
+        dRe_dt = np.gradient(Re_sm, dt_tab)
+        self.zeta_dot_snap = (dRe_dt[steps] / _f(zc['re_scale'])).astype(np.float64)
+
+        # |grad omega_bar| planes for the GP grad feature (ORDER 3c) — raw
+        # physical magnitude, centered differences, periodic (the domain is;
+        # obstacle/sponge pixels are excluded by the loss mask, not here).
+        # Normalization D^2/U(t_n) applied at crop time with the frame's U.
+        self.need_grad = bool(conf.get('model', {}).get('use_grad_feature', False))
+        if self.need_grad:
+            gm = np.empty_like(self.omega)
+            for k in range(self.T):
+                om = self.omega[k].astype(np.float64)
+                gx = (np.roll(om, -1, axis=1) - np.roll(om, 1, axis=1)) / (2.0 * self.dx)
+                gy = (np.roll(om, -1, axis=0) - np.roll(om, 1, axis=0)) / (2.0 * self.dy)
+                gm[k] = np.sqrt(gx * gx + gy * gy).astype(np.float32)
+            self.gradmag = gm
+
         # ---- static masks -------------------------------------------------- #
         sdf_cache = self.run_dir / f'SDF_s{self.scale}.npy'
         if sdf_cache.exists():
@@ -166,7 +197,10 @@ class RunData:
 
     def crop(self, frame, cy, cx, size):
         """Periodic (wrap) crop centered at (cy, cx). Returns x(4,s,s), y(s,s),
-        mask(s,s), zeta — all float32 torch tensors except mask (bool)."""
+        mask(s,s), zeta, zeta_dot, g(s,s)|None — float32 torch tensors except
+        mask (bool). g = |grad omega_bar|* = |grad omega_bar| * D^2/U (the
+        gradient of omega* in x/D coordinates), None unless
+        model.use_grad_feature."""
         iy = (cy - size // 2 + np.arange(size)) % self.Ny
         ix = (cx - size // 2 + np.arange(size)) % self.Nx
         sl = np.ix_(iy, ix)
@@ -176,10 +210,16 @@ class RunData:
             self.v[frame][sl].astype(np.float64), self.pi[frame][sl].astype(np.float64),
             U, self.D)
         x = np.stack([om, u, v, self.sdf_star[sl]]).astype(np.float32)
+        g = None
+        if self.need_grad:
+            gs = self.gradmag[frame][sl].astype(np.float64) * (self.D * self.D / _f(U))
+            g = torch.from_numpy(gs.astype(np.float32))
         return (torch.from_numpy(x),
                 torch.from_numpy(pi.astype(np.float32)),
                 torch.from_numpy(self.valid[sl]),
-                torch.tensor(self.zeta_snap[frame], dtype=torch.float32))
+                torch.tensor(self.zeta_snap[frame], dtype=torch.float32),
+                torch.tensor(self.zeta_dot_snap[frame], dtype=torch.float32),
+                g)
 
     def full_frame(self, frame):
         """Whole-domain channels/target/mask for a priori eval (model is
@@ -240,6 +280,28 @@ def target_stats(runs, split, conf):
     return {'n': int(n), 'mean': float(mean), 'var': float(var)}
 
 
+def conditioning_stats(runs, split, conf):
+    """Recorded normalization constants for the ORDER-3 conditioning inputs,
+    exact over the split (float64): ensemble std of zeta_dot over frames
+    (frame-level — zeta_dot is constant per frame) and mean of the normalized
+    |grad omega_bar|* feature over every valid pixel. Mirrors target_stats:
+    initialization/normalization constants, never per-sample statistics."""
+    frames = split_frames(runs, split, conf)
+    zd = np.array([runs[ri].zeta_dot_snap[fi] for ri, fi in frames], dtype=np.float64)
+    out = {'zdot_sd': float(zd.std()), 'zdot_n_frames': int(zd.size)}
+    if all(getattr(r, 'need_grad', False) for r in runs):
+        n, s1 = 0, 0.0
+        for ri, fi in frames:
+            r = runs[ri]
+            U = _f(r.U_snap[fi])
+            gv = r.gradmag[fi][r.valid].astype(np.float64) * (r.D * r.D / U)
+            n += gv.size
+            s1 += float(gv.sum())
+        out['g_scale'] = s1 / n
+        out['g_n_pixels'] = int(n)
+    return out
+
+
 class PiffCropDataset(Dataset):
     """Deterministic crop sampler. call set_epoch(ep) each epoch — the crop
     table is a pure function of (seed, split, epoch)."""
@@ -283,9 +345,12 @@ class PiffCropDataset(Dataset):
     def __getitem__(self, i):
         ri, fi, cy, cx = self.table[i]
         r = self.runs[ri]
-        x, y, m, zeta = r.crop(fi, cy, cx, self.size)
-        return {'x': x, 'y': y, 'mask': m, 'zeta': zeta,
-                'run': int(ri), 'frame': int(fi)}
+        x, y, m, zeta, zeta_dot, g = r.crop(fi, cy, cx, self.size)
+        out = {'x': x, 'y': y, 'mask': m, 'zeta': zeta, 'zeta_dot': zeta_dot,
+               'run': int(ri), 'frame': int(fi)}
+        if g is not None:
+            out['g'] = g
+        return out
 
     def epoch_hash(self):
         """Regression hash of the full epoch's tensors (T1)."""
@@ -293,8 +358,9 @@ class PiffCropDataset(Dataset):
         h.update(self.table.tobytes())
         for i in range(len(self)):
             s = self[i]
-            for k in ('x', 'y', 'mask', 'zeta'):
-                h.update(s[k].numpy().tobytes())
+            for k in ('x', 'y', 'mask', 'zeta', 'zeta_dot', 'g'):
+                if k in s:
+                    h.update(s[k].numpy().tobytes())
         return h.hexdigest()
 
 

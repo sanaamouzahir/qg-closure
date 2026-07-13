@@ -103,6 +103,66 @@ def test_t4_periodic_pad_equivariance():
 
 # --------------------------------------------------------------------------- #
 @needs_gpytorch
+def test_t8_conditioning_backcompat_and_integrity():
+    """ORDER-3 conditioning (2026-07-13). (a) Flags OFF = exact legacy model:
+    same GP input dim, same features on the same weights, 3-arg call path
+    works. (b) Flags ON: input dim F+3, FiLM identity at init still exact,
+    and the appended GP columns are exactly [zeta, zeta_dot/zdot_sd,
+    g/g_scale]."""
+    from model_piff import PiffModel
+    conf_off = copy.deepcopy(CONF)
+    torch.manual_seed(0)
+    m_off = PiffModel(conf_off)
+    F = m_off.cnn.out_dim
+    assert m_off.gp_input_dim == F + 1
+    x = torch.randn(2, 4, 64, 64)
+    zeta = torch.tensor([0.7, -1.3])
+    f_legacy = m_off.features(x, zeta)          # legacy 2-arg call must work
+    assert f_legacy.shape == (2, 64, 64, F + 1)
+
+    conf_on = copy.deepcopy(CONF)
+    conf_on['model']['use_zeta_dot'] = True
+    conf_on['model']['use_grad_feature'] = True
+    torch.manual_seed(0)
+    m_on = PiffModel(conf_on)
+    assert m_on.gp_input_dim == F + 3
+    m_on.set_conditioning_stats(zdot_sd=2.5, g_scale=0.5)
+    zdot = torch.tensor([1.0, -0.5])
+    g = torch.rand(2, 64, 64)
+    f_on = m_on.features(x, zeta, zeta_dot=zdot, g=g)
+    assert f_on.shape == (2, 64, 64, F + 3)
+    # appended columns exact
+    assert torch.equal(f_on[..., F], zeta.reshape(2, 1, 1).expand(2, 64, 64))
+    assert torch.allclose(f_on[..., F + 1],
+                          (zdot / 2.5).reshape(2, 1, 1).expand(2, 64, 64))
+    assert torch.allclose(f_on[..., F + 2], g / 0.5)
+    # FiLM identity at init with cond_dim=2 (T3 extended)
+    m_ref = PiffModel(conf_on)
+    m_ref.load_state_dict(m_on.state_dict())
+    m_ref.cnn.film = False
+    with torch.no_grad():
+        d = (m_on.cnn(x, torch.stack([zeta, zdot / 2.5], -1))
+             - m_ref.cnn(x, torch.stack([zeta, zdot / 2.5], -1))).abs().max()
+    assert float(d) == 0.0, f"FiLM(cond_dim=2) not identity at init: {float(d)}"
+    # missing conditioning args must fail loudly, never silently degrade
+    with pytest.raises(ValueError):
+        m_on.features(x, zeta)
+
+
+@needs_data
+def test_t8b_zeta_dot_const_member_is_zero():
+    """FPC-const: Re(t) constant -> zeta_dot identically 0 after smoothing
+    (the class-separator coordinate is exactly silent on the control)."""
+    conf = small_conf()
+    runs = dp.build_runs(conf)
+    zd = runs[0].zeta_dot_snap
+    # not exactly 0: the const table stores Re=3899.9955 (float), so the
+    # cumsum boxcar leaves ulp-level noise; modulated-member zeta_dot is O(0.1+)
+    assert np.max(np.abs(zd)) < 1e-6, f"const member zeta_dot max {np.max(np.abs(zd))}"
+
+
+# --------------------------------------------------------------------------- #
+@needs_gpytorch
 def test_t5_svgp_noise_recovery_and_coverage():
     """Synthetic 1D-feature GP regression with known noise: recovered noise
     within 20%, +/-2 sigma coverage in [90, 99]% (spec S5)."""
