@@ -141,9 +141,20 @@ def assemble_geff(model, sig: torch.Tensor, dt: torch.Tensor,
     return g                                                    # (B, n_sh) real
 
 
-def vn_penalty(g: torch.Tensor, lam: float, eps: float = EPS_MARGIN):
-    """L_stab = lam * mean_k relu(|G|-(1-eps))^2, per-batch mean. Returns
-    (loss_scalar, max_g_detached_per_sample) -- the max for the certificate
-    histogram (bar 3)."""
-    excess = torch.relu(g - (1.0 - eps))
-    return lam * (excess ** 2).mean(), g.detach().amax(dim=1)
+def vn_penalty(g: torch.Tensor, lam: float, eps: float = EPS_MARGIN,
+               valid: torch.Tensor = None):
+    """L_stab = lam * mean_k relu(|G|-(1-eps))^2 over VALID shells only.
+    valid (B, n_sh) bool: shells inside the frozen-coefficient linearization's
+    validity (|dt*sigma| <= ~0.5). Outside it the linear model provably
+    diverges from the true dynamics ((dT sigma)^(S-m) blow-up — the Wiener
+    tex's own point), so penalizing there is noise, not physics: the ep-0
+    smoke read mean |G| 8.6 on a demonstrably stable model because high
+    shells sit far outside validity. Returns (loss, max_g per sample over
+    valid shells) for the bar-3 histogram."""
+    if valid is None:
+        valid = torch.ones_like(g, dtype=torch.bool)
+    excess = torch.relu(g - (1.0 - eps)) * valid
+    denom = valid.sum().clamp_min(1)
+    gmax = torch.where(valid, g.detach(),
+                       torch.zeros_like(g)).amax(dim=1)
+    return lam * (excess ** 2).sum() / denom, gmax

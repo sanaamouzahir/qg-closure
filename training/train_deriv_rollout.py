@@ -367,7 +367,9 @@ def geff_window_penalty(rc: RootCtx, model, omega_stack, stride, vn_lambda,
     g = wc.assemble_geff(inner, sig.cpu(), dtv.cpu(), Lsh.cpu(), ksh.cpu(),
                          torch.tensor([rc.dx], dtype=torch.float64),
                          delta.cpu())
-    loss, gmax = wc.vn_penalty(g, vn_lambda)
+    # linearization validity: |dt*sigma| <= 0.5 per shell (see vn_penalty doc)
+    valid = (dtv.cpu().view(-1, 1) * sig.cpu().abs()) <= 0.5
+    loss, gmax = wc.vn_penalty(g, vn_lambda, valid=valid)
     return loss, float(gmax.max())
 
 
@@ -511,6 +513,16 @@ def unroll_losses(rc: RootCtx, one_step, omega_stack, truth, M,
                          / torch.linalg.vector_norm(tgt[c]).clamp_min(1e-30))
                         for c in range(3)]
                 g = (sum(rels) / 3.0).clamp_max(free_cap)
+                if not torch.isfinite(g):
+                    # skip the term, never poison the epoch average; name the
+                    # culprit once (smoke 1832667: +stab nan with 0 blown)
+                    if not getattr(unroll_losses, '_nan_named', False):
+                        unroll_losses._nan_named = True
+                        print(f"[free-analytic] NON-FINITE term at f={f}: "
+                              f"pred finite={[bool(torch.isfinite(pred[c]).all()) for c in range(3)]} "
+                              f"tgt finite={[bool(torch.isfinite(tgt[c]).all()) for c in range(3)]} "
+                              f"tgt norms={[float(torch.linalg.vector_norm(tgt[c])) for c in range(3)]}")
+                    continue
             else:
                 if z_prev is None:                    # Z at segment entry
                     z_prev = annulus_enstrophy(qm, ann_mask).clamp_min(1e-300)
