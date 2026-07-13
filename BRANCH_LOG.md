@@ -1,6 +1,31 @@
 # BRANCH_LOG — Physics-conditioned spatial stencil  (branch: exp/wiener-conditioning)
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
+ 
+## 2026-07-13 — session 12 (Sanaa three-part order: TRUE R-terms + tex implementation audit + consolidated LANDED email)
+- PART A (item 2, R-ratio test): new diagnostics/truncation_term_ratios.py (wraps
+  measure_truncation_magnitudes.py operators; 4 developed-flow DNS snapshots t~30/50/70/90
+  per replication member, f64, medians; forcing rebuilt from each hydra manifest). Jobs
+  dg_rterms 1832384 + dg_rterms2 1832385 (all.q CPU, ~3 min each, 0 GPU-h; GPU courtesy —
+  two SGS trainers live). FD validation through N^(5) <= 4e-3 => R5/R6 trustworthy here.
+- VERDICT: perfect-R3 one-step ceiling (t3+t4+t5)/(t4+t5) on kf4 = 66.6/30.7/19.1x at
+  5e-3/1e-2/1.5e-2 vs measured r3anal 16-step 71.4/35.1/132.6x. 5e-3 and 1e-2 agree within
+  7-14% — the truncation series PREDICTS the measured gains; the 1.5e-2 132.6x exceeds the
+  one-step ceiling 6.9x because the BARE arm enters super-linear error growth (relL2
+  x1.5/step over the last 4 steps) — accumulation property of the baseline, not the R-terms.
+  Non-monotonicity explained; nothing anomalous at 5e-3. 2/3-world measured (9.5/16.3/23.6)
+  sits BELOW all ceilings — consistent with p170 (annulus carries the correction value).
+  Figures+yaml: diagnostics/pngs+yamls/truncation_term_ratios_vs_measured_improvement/.
+- PART B (implementation audit of error_analysis_shallow_nn.tex, both repo copies
+  byte-identical): 26 claims — 20 IMPLEMENTED-AND-VERIFIED, 4 NOT-IMPLEMENTED (explicit
+  C_k; shell-average Omega^2 formula; r2 drift factor-20 scaling; r3 angular harmonics),
+  1 SUPERSEDED (F_spec, I3), 1 OPEN (conditioned ceilings: cond_local_v2 kf4@1.5e-2 0.065
+  vs predicted 0.023, pooled 0.214 vs ~0.05 — killed at plateau, open not falsified).
+  Hygiene: v3 CHECK console behind (ii)=0.72/(iii)=0.31 never archived (CSV = v2 pass).
+  Full table: Theoretical_guarantees/IMPLEMENTATION_AUDIT_2026-07-13.md.
+- PART C: consolidated [QG][LANDED][WIENER] email spooled (R-verdict + tables + last-model
+  two-metric explanation + horizons-per-dT + audit + figures + NEXT menu).
+- No training, no rebuilds, no GPU used this session.
 
 ## 2026-07-12 — session 11 (predecessor wedged+killed post-submit; fresh supervisor triaged both landings + psw3 verdict ladder; Sanaa 07-12 autonomy window)
 - CONTINUITY: the session-10 agent submitted 1830720 (apost_rep) + 1830721/22/23 (ro2p
