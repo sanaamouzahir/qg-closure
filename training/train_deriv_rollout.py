@@ -108,6 +108,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import time
 from datetime import datetime
 from pathlib import Path
@@ -118,6 +119,8 @@ from torch.utils.checkpoint import checkpoint as _torch_checkpoint
 
 import rollout_aposteriori as ra
 from rollout_aposteriori import run_arm
+from rollout_perfect_closure import analytic_n_derivs_hat   # P1(a) free-tail targets
+import wiener_certificate as wc                             # P1(b) von Neumann G_eff
 from rollout_timed_pareto import (N_spectral, build_L_hat, build_forcing,
                                   psi_from_omega)
 from model_deriv_closure import build_model
@@ -285,6 +288,83 @@ class _ZeroNN(torch.nn.Module):
                            dtype=x.dtype, device=x.device)
 
 
+class _RecordWrap(torch.nn.Module):
+    """P1(a) recorder: captures each forward's output channels so the free
+    tail can supervise against on-the-fly analytic targets WITHOUT re-running
+    the model. Attribute access proxies to the inner model (the stepper's
+    cond_local plumbing reads context_feats_from_spectral etc.)."""
+
+    def __init__(self, inner):
+        super().__init__()
+        self.inner = inner
+        self.last = None
+
+    def forward(self, *a, **kw):
+        out = self.inner(*a, **kw)
+        self.last = out
+        return out
+
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.inner, name)
+
+
+def geff_shell_ctx(rc: RootCtx, device):
+    """(kappa_sh, L_hat_sh) at the cond model's REL_SHELLS for this member;
+    ring-mean L_hat, physical |k|. Cached on rc (frozen geometry)."""
+    if getattr(rc, '_geff_ctx', None) is None:
+        from model_cond_local import REL_SHELLS
+        kxm = torch.arange(rc.Nx // 2 + 1, dtype=torch.float64)
+        kym = torch.fft.fftfreq(rc.Ny, d=1.0 / rc.Ny).to(torch.float64)
+        kmag = torch.sqrt(kxm[None, :] ** 2 + kym[:, None] ** 2)
+        # sigma_hat's shells run to the DIAGONAL corner (round(kmag) bins,
+        # n_sh ~ 363 at 512^2) -- NOT Ny//2 (G4 finding C1: mismatched shells
+        # fused sigma at |k|~308 with L_hat at |k|~217)
+        n_sh = int(round(float(kmag.max()))) + 1
+        idx = [min(int(round(r * (n_sh - 1))), n_sh - 1) for r in REL_SHELLS]
+        Lh = rc.L_hat.detach().cpu().to(torch.complex128)
+        two_pi_L = 2.0 * math.pi / rc.Lx
+        ksh, Lsh = [], []
+        for i in idx:
+            ring = (kmag.round() == i)
+            Lsh.append(Lh[ring].mean() if ring.any() else torch.tensor(0j))
+            ksh.append(i * two_pi_L)
+        rc._geff_ctx = (torch.tensor(ksh, dtype=torch.float64, device=device),
+                        torch.stack([l for l in Lsh]).to(device))
+    return rc._geff_ctx
+
+
+def geff_window_penalty(rc: RootCtx, model, omega_stack, stride, vn_lambda,
+                        device):
+    """P1(b): frozen-coefficient |G_eff| of the closed scheme at THIS window's
+    initial state (per-sample sigma-hat), differentiable through the cond
+    taps, base stencils and mix. Returns (loss, max_g float)."""
+    from qg.solver.opt.basis import to_spectral
+    from model_cond_local import REL_SHELLS
+    inner = model.inner if isinstance(model, _RecordWrap) else model
+    qh0 = to_spectral(omega_stack[0])
+    qh1 = to_spectral(omega_stack[1])
+    dtv = torch.tensor([stride * rc.dt_deep], dtype=torch.float64,
+                       device=device)
+    feats = inner.context_feats_from_spectral(qh0, qh0 - qh1, dtv,
+                                              rc.Lx, rc.Ly, rc.Ny, rc.Nx)
+    sig = feats[:, :len(REL_SHELLS)].to(torch.float64) / dtv.view(-1, 1)
+    # (sign kept -- G4 LOW: the model's own feats keep it)
+    delta = inner.cond(feats.to(inner.cond.head.weight.dtype))
+    kvec = inner.k_of_channel.to(delta.dtype)
+    amp = ((dtv.to(delta.dtype) / inner.dt_ref_cond.to(delta.dtype))
+           ** (inner.S - kvec).view(1, -1)) * (kvec > 0).to(delta.dtype).view(1, -1)
+    delta = delta * amp.view(1, -1, 1, 1)
+    ksh, Lsh = geff_shell_ctx(rc, device)
+    g = wc.assemble_geff(inner, sig, dtv, Lsh, ksh,
+                         torch.tensor([rc.dx], dtype=torch.float64,
+                                      device=device), delta)
+    loss, gmax = wc.vn_penalty(g, vn_lambda)
+    return loss, float(gmax.max())
+
+
 # --------------------------------------------------------------------------- #
 # unroll                                                                       #
 # --------------------------------------------------------------------------- #
@@ -305,7 +385,8 @@ def init_state(rc: RootCtx, omega_stack, device):
 def unroll_losses(rc: RootCtx, one_step, omega_stack, truth, M,
                   is_closure=True, trunc_k=0, use_checkpoint=False,
                   free_K=0, free_weight=1.0, ann_mask=None,
-                  backward_scale=None, free_cap=10.0):
+                  backward_scale=None, free_cap=10.0,
+                  free_mode='hinge', recorder=None):
     """Drive one_step M supervised steps (per-step relL2 vs truth), then
     free_K TRUTH-FREE steps collecting the annulus stability terms
     relu(log Z_ann(f)/Z_ann(f-1)) (OPTION 2 -- see module docstring).
@@ -323,8 +404,10 @@ def unroll_losses(rc: RootCtx, one_step, omega_stack, truth, M,
     in the free segment the already-collected finite growth terms keep
     their gradient -- a blow-up still teaches."""
     from qg.solver.opt.basis import to_physical
-    assert free_K == 0 or (is_closure and ann_mask is not None), \
-        "free rolling needs the closure arm and an annulus mask"
+    assert free_K == 0 or (is_closure and (
+        ann_mask is not None or (free_mode == 'analytic' and recorder is not None))), \
+        "free rolling needs the closure arm and an annulus mask (hinge mode) " \
+        "or a recorder (analytic mode)"
     assert backward_scale is None or trunc_k, \
         "segment backward is only defined at trunc boundaries"
     set_globals(rc)
@@ -406,31 +489,50 @@ def unroll_losses(rc: RootCtx, one_step, omega_stack, truth, M,
             if not torch.isfinite(om_new[0]).all():
                 blown = True
                 break
-            if z_prev is None:                        # Z at segment entry
-                z_prev = annulus_enstrophy(qm, ann_mask).clamp_min(1e-300)
-            z = annulus_enstrophy(qc, ann_mask).clamp_min(1e-300)
-            if not torch.isfinite(z):
-                # |omega_hat|^2 overflows LONG before the field itself goes
-                # non-finite (e^4.6/step growth at 1.5e-2 overflows the
-                # squared sum by step ~10 while omega is still ~1e150) --
-                # a finite-field check alone lets log(inf) poison backward
-                # (epoch-0 incident, run 1830425). Treat as blown.
-                blown = True
-                break
-            # cap the hinge: log-growth beyond free_cap/step is already
-            # unambiguous blow-up; an uncapped term makes the free segment's
-            # gradient scale be set by the most-exploded window
-            g = torch.relu(torch.log(z / z_prev)).clamp_max(free_cap)
+            if free_mode == 'analytic':
+                # P1(a) 2026-07-13: supervise the heads against the EXACT
+                # analytic N-derivatives of the PRE-step rolled state (the
+                # stack the model saw). recorder.last = the channels of the
+                # forward the stepper already ran (zero extra model passes).
+                # qm is the pre-step spectral state after the qm,qc swap.
+                from qg.solver.opt.basis import to_physical as _tp
+                with torch.no_grad():
+                    nde = analytic_n_derivs_hat(qm, rc.derivative, rc.L_hat,
+                                                rc.F_hat, max_order=3)
+                    tgt = torch.stack([_tp(h)[0] for h in nde[1:4]])  # (3,H,W)
+                pred = recorder.last[0]                               # (3,H,W)
+                rels = [(torch.linalg.vector_norm(pred[c] - tgt[c])
+                         / torch.linalg.vector_norm(tgt[c]).clamp_min(1e-30))
+                        for c in range(3)]
+                g = (sum(rels) / 3.0).clamp_max(free_cap)
+            else:
+                if z_prev is None:                    # Z at segment entry
+                    z_prev = annulus_enstrophy(qm, ann_mask).clamp_min(1e-300)
+                z = annulus_enstrophy(qc, ann_mask).clamp_min(1e-300)
+                if not torch.isfinite(z):
+                    # |omega_hat|^2 overflows LONG before the field itself goes
+                    # non-finite (e^4.6/step growth at 1.5e-2 overflows the
+                    # squared sum by step ~10 while omega is still ~1e150) --
+                    # a finite-field check alone lets log(inf) poison backward
+                    # (epoch-0 incident, run 1830425). Treat as blown.
+                    blown = True
+                    break
+                # cap the hinge: log-growth beyond free_cap/step is already
+                # unambiguous blow-up; an uncapped term makes the free
+                # segment's gradient scale be set by the most-exploded window
+                g = torch.relu(torch.log(z / z_prev)).clamp_max(free_cap)
             if backward_scale is not None:
                 stab.append(float(g))
             else:
                 stab.append(g)
             seg_stab.append(g)
-            z_prev = z
+            if free_mode != 'analytic':
+                z_prev = z
             if trunc_k and f % trunc_k == 0 and f < free_K:
                 flush_segment()
                 detach_state()
-                z_prev = z_prev.detach()
+                if free_mode != 'analytic':
+                    z_prev = z_prev.detach()
     flush_segment()
     return losses, stab, blown
 
@@ -790,6 +892,15 @@ def main():
                         '1.0e-3,1.0e-3,2.5e-4 -- the s1 hinge is inactive '
                         'on a stable model anyway; the list lets s3 trade '
                         'less accuracy for damping than s2)')
+    p.add_argument('--free-mode', choices=['hinge', 'analytic'],
+                   default='hinge',
+                   help="free-tail objective: 'hinge' = the opt2 annulus "
+                        "enstrophy hinge (legacy); 'analytic' = P1(a) "
+                        "on-the-fly exact N-derivative supervision of the "
+                        "rolled state (free_weight = its weight)")
+    p.add_argument('--vn-lambda', type=float, default=0.0,
+                   help="P1(b) von Neumann certificate penalty weight "
+                        "(0 = off; sweep {0.1, 1.0, 10.0})")
     p.add_argument('--free-cap', type=float, default=10.0,
                    help='clamp on the per-step log-growth hinge (gradient '
                         'is zero above the cap; pre-blowup sub-cap steps '
@@ -876,7 +987,8 @@ def main():
         raise SystemExit(0 if ok else 1)
 
     # ---- steppers: one per (root, stride), capture the trained model ----
-    steppers = {(rc.member, s): make_stepper(rc, s, model, device,
+    model_rec = _RecordWrap(model)          # P1(a): zero-cost output recorder
+    steppers = {(rc.member, s): make_stepper(rc, s, model_rec, device,
                                              arm='closure',
                                              dealias_nn=args.dealias_nn,
                                              nn_grad=True)
@@ -945,6 +1057,7 @@ def main():
         # (checkpoint recompute / the cond sigma-hat context would read
         # another member's globals).
         tot_stab, n_skip = 0.0, 0
+        geff_maxes = []                     # P1(b) certificate histogram data
         for c0 in range(0, len(samples), args.batch_size):
             chunk = samples[c0:c0 + args.batch_size]
             optim.zero_grad()
@@ -961,12 +1074,22 @@ def main():
                 # bounded by trunc_k) and returns floats; full mode: graph
                 # tensors, one backward here.
                 bscale = (1.0 / len(chunk)) if trunc_k else None
+                # P1(b): per-window von Neumann certificate penalty (frozen
+                # coefficients at the window's initial sigma-hat); its tiny
+                # graph (cond MLP + taps + mix) backwards independently.
+                if args.vn_lambda > 0.0:
+                    l_vn, gmax_w = geff_window_penalty(
+                        rc, model_rec, omega_stack, s, args.vn_lambda, device)
+                    if torch.isfinite(l_vn):
+                        (l_vn / len(chunk)).backward()
+                        geff_maxes.append(gmax_w)
                 losses, stab, blown = unroll_losses(
                     rc, steppers[(rc.member, s)], omega_stack, truth, M,
                     is_closure=True, trunc_k=trunc_k, use_checkpoint=use_cp,
                     free_K=K, free_weight=fw_s,
                     ann_mask=rc.annulus(device) if K else None,
-                    backward_scale=bscale, free_cap=args.free_cap)
+                    backward_scale=bscale, free_cap=args.free_cap,
+                    free_mode=args.free_mode, recorder=model_rec)
                 if blown:
                     n_blown += 1
                 if not losses and not stab:
@@ -1001,7 +1124,8 @@ def main():
                     n_skip += 1
                     optim.zero_grad()
         optim.zero_grad()
-        return tot / max(nb, 1), tot_stab / max(nb, 1), n_blown, n_skip
+        return (tot / max(nb, 1), tot_stab / max(nb, 1), n_blown, n_skip,
+                geff_maxes)
 
     def val_epoch():
         model.train(False)
@@ -1071,7 +1195,15 @@ def main():
     for ep in range(args.epochs):
         te0 = time.time()
         M_epoch = schedule[ep]
-        tr, tr_stab, n_blown, n_skip = train_epoch(ep, M_epoch, rng)
+        tr, tr_stab, n_blown, n_skip, geff_maxes = train_epoch(ep, M_epoch, rng)
+        if geff_maxes:
+            gm = np.asarray(geff_maxes, dtype=np.float64)
+            with open(run_dir / 'geff_hist.csv', 'a') as gf:
+                gf.write(f"{ep},{gm.size},{gm.mean():.6f},"
+                         f"{np.percentile(gm, 95):.6f},{gm.max():.6f}\n")
+            print(f"[ep {ep:03d}] |G_eff| max-per-window: mean {gm.mean():.4f} "
+                  f"p95 {np.percentile(gm, 95):.4f} max {gm.max():.4f} "
+                  f"(certificate: <= {1.0 - wc.EPS_MARGIN})")
         va, va_s, rf, n_blown_val, fb, ag = val_epoch()
         sched.step()
         improved = va < best
