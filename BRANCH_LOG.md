@@ -2,6 +2,23 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-12 — CAPE Pi_FF CHAIN LANDED CLEAN; audit verdicts RELAX x5; wake diags submitted (global supervisor Fable; evening session, cont.)
+- CHAIN (1831531-51) landed ~21:24 EDT, ~35 min wall / ~0.75 GPU-h: DNS_LES x15 on disk
+  (2.0G/504M/127M per s2/s4/s8 per member), audit_A x5, restart_ic_t30.npy (t=30.15).
+  Only log noise = the known benign imageio_ffmpeg pre-check (lines 1-3 every job log).
+- AUDIT_A VERDICTS: **RELAX all five** (S8/A rule: 2tau_int(s4) 0.56-2.80 >> 0.5 threshold ->
+  modulated dt_save=0.5 sufficient; n_pp 8.5-11.8 >= 8 OK). All tau_int fits resolved; phase
+  coverage no empty bins (tel 24-bin uniformity 5.5 = worst, still no gaps). Pi_FF is
+  OVERSAMPLED 2.5-9.4x everywhere -> N_eff 21-81 per member/scale vs theory 360 (sine worst:
+  21-38, slow sinusoidal modulation inflates tau_int). Context notes, no gates tripped:
+  l_corr s4/s8 slightly below the theory bracket lower edge in all members; sine U_c ratio
+  0.48 vs 0.85*U_mid (modulated-inlet lag bias suspect).
+- WAKE DIAGNOSTICS submitted per FPC precedent (wake_FPC* 1829699-702): wake_CA{co,si,ra,ou,te}
+  1831552-56, all.q, --scales 2 4 8 --t-min 30.
+- STILL FOR SANAA MONDAY: cape convergence-tier scope (does the 07-08 five-grid directive
+  extend to cape? IC is ready), per-member RUN report emails vs one consolidated (leaning
+  consolidated per her one-npz-per-case convention).
+
 ## 2026-07-12 — CAPE-A WAVE LANDED 5/5 CLEAN; shedding verdicts; Pi_FF+audit chain FIRED (global supervisor Fable; evening session)
 - LANDED ~19:16 EDT (jobs 1830412-20, ~27 h/member as budgeted): all five FPCape members
   ran 960k steps to T=120, NaN-guard FINAL CHECK CLEAN — the dt=1.25e-4 fix holds at full
