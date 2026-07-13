@@ -47,3 +47,18 @@ G-b: cape conditioned run's val NLL <= cape_base_100ep's 6.493 (the two new
 G-c: T6 re-gated bar (R2 >= 0.85 in 100 ep) passes on piff_fpc_ens; if it
      lands in [0.80, 0.85) the pool is harder than FPC-const alone — report
      against the bar with per-member breakdown, no silent re-gate.
+
+## ADDENDUM (14:45 EDT) — Gaussian-target redo
+
+Sanaa ruling: sharp filter abandoned; the runs above (piff_fpc_ens /
+piff_cape_cond, killed at ~ep 15/16) are replaced by piff_fpc_ens_gauss /
+piff_cape_gauss on DNS_LES_s4_gaussian.npz targets. P1-P3 and guards carry
+over UNCHANGED (they are about conditioning, not the filter), with two notes:
+(a) cross-convention metric comparisons are not apples-to-apples (different
+target variance) — P3's spread comparison uses the gaussian-model xevals
+against the prod_ext150 xevals as a GENERALIZATION-SHAPE comparison, stated
+with that caveat; (b) NEW prediction P4-gauss: freestream coverage moves
+toward nominal vs the sharp-trained twins at matched epoch (the ringing was
+inflating the noise floor); wake coverage roughly unchanged. Early sharp-run
+evidence preserved in the killed runs' logs: all three conditioning
+lengthscales were alive by ep 13 (zeta 1.9, zeta_dot 2.2, grad 2.7).

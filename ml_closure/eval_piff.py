@@ -121,6 +121,12 @@ def main():
     # the data must carry whatever conditioning the CKPT was trained with,
     # regardless of the eval conf (ORDER-3 flags travel with the model)
     conf.setdefault('model', {})['use_grad_feature'] = model.use_grad_feature
+    # the data variant (sharp vs gaussian filter) travels with the ckpt too —
+    # evaluating a gaussian-trained model on sharp targets is a different
+    # experiment and must be asked for explicitly, never happen by default
+    ck_var = ckpt['conf'].get('data', {}).get('variant')
+    if ck_var and not conf['data'].get('variant'):
+        conf['data']['variant'] = ck_var
     # tshed_smooth must equal the TRAINING value or zeta_dot is computed at a
     # different smoothing scale than the recorded zdot_sd normalizes (G4 LOW)
     ck_tsm = ckpt['conf'].get('zeta', {}).get('tshed_smooth', 2.992)

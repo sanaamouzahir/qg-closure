@@ -88,8 +88,16 @@ class RunData:
         npz_path = self.run_dir / man['files']['dataset']
         if npz_path.name != f"DNS_LES_s{self.scale}.npz":
             raise ValueError(f"{self.name}: manifest dataset {npz_path.name} != scale {self.scale}")
+        # data.variant (Sanaa 2026-07-13 filter ruling): '' = the manifest's
+        # sharp-filter canonical; 'gaussian' = DNS_LES_s<scale>_gaussian.npz
+        # (all-Gaussian rebuild, same folder, same keys/shapes — the manifest
+        # stays the linkage/shape authority, only the payload file swaps).
+        self.variant = str(dc.get('variant') or '')
+        if self.variant:
+            npz_path = self.run_dir / f"DNS_LES_s{self.scale}_{self.variant}.npz"
         if not npz_path.exists():
-            raise FileNotFoundError(f"{npz_path} missing — Step 0 incomplete")
+            raise FileNotFoundError(f"{npz_path} missing — "
+                                    f"{'Gaussian rebuild' if self.variant else 'Step 0'} incomplete")
         z = np.load(npz_path)
 
         for key in ('omega_bar', 'pi_ff', 'ubar', 'vbar'):
@@ -166,7 +174,10 @@ class RunData:
             self.gradmag = gm
 
         # ---- static masks -------------------------------------------------- #
-        sdf_cache = self.run_dir / f'SDF_s{self.scale}.npy'
+        # SDF cache keyed by variant too: the Gaussian chi_obs_bar is smoother
+        # than the sharp one, so their distance maps differ
+        vtag = f'_{self.variant}' if self.variant else ''
+        sdf_cache = self.run_dir / f'SDF_s{self.scale}{vtag}.npy'
         if sdf_cache.exists():
             self.sdf = np.load(sdf_cache)
             if self.sdf.shape != (self.Ny, self.Nx):
@@ -368,6 +379,7 @@ def describe(runs, conf, seed):
     """Loggable dataset summary (seed logged in every artifact — spec S1.8)."""
     return {
         'seed': int(seed),
+        'variant': conf['data'].get('variant') or 'sharp-canonical',
         'runs': [r.name for r in runs],
         'n_train_frames': len(split_frames(runs, 'train', conf)),
         'n_val_frames': len(split_frames(runs, 'val', conf)),
