@@ -18,7 +18,7 @@ CARD="$W/diagnostics/baseline_cards/T2_rollout.json"
 ROOTS="data/ensemble_N5/FRC-kf4/forced_turbulence_dT_5em3 data/ensemble_N5_7lag/FRC-256/forced_turbulence_dT_5em3"
 WARM="data/ensemble_N5_7lag/training_runs/rollout_ft_opt2_cond/best.pt"
 COMMON="--strides 1,2,3 --grad-mode trunc:4 --free-horizon 16
-        --free-mode analytic --free-weight 1.0 --free-cap 10.0
+        --free-mode analytic --free-weight 1.0e-2 --free-cap 10.0
         --lr 5.0e-5 --compute-dtype float64 --model auto
         --out-root data/ensemble_N5_7lag"
 
@@ -41,20 +41,17 @@ if [ "$GO" -ne 1 ]; then
 fi
 mkdir -p "$LOGS"
 
-SMK=$(qsub -terse -q ibgpu.q -l gpu=1 -N p1smk -j y \
-      -o "$LOGS/p1smk.\$JOB_ID.log" \
-      scripts/sge/train_deriv_rollout_job.sh \
-      --deep-roots $ROOTS --init-ckpt "$WARM" $COMMON \
-      --unroll-schedule 1:4 --epochs 1 --windows-per-epoch 8 \
-      --vn-lambda 1.0 --run-name p1_smoke_20260713)
-echo "smoke: $SMK  (units hold on it; a smoke FAILURE fails the trainers fast" \
-     "at import/first-window — monitors report either way)"
+# SMOKE GATING (process change after the 1832637/47/57 sequence): the smoke
+# is run STANDALONE and READ by the supervisor before this submitter is
+# invoked — SGE hold_jid releases on completion regardless of exit status,
+# which twice let broken-code trainers start. PASSED smoke on record:
+# p1smk2 1832677 (|G_eff| valid-shell mean 0.9992, stab finite, 0 blown).
 
 for spec in "lam01 0.1" "lam1 1.0" "lam10 10.0"; do
     set -- $spec
     TAG=$1; LAM=$2
     RN="rollout_ft_p1_$TAG"
-    TRAIN=$(qsub -terse -q ibgpu.q -l gpu=1 -N "p1_$TAG" -j y -hold_jid "$SMK" \
+    TRAIN=$(qsub -terse -q ibgpu.q -l gpu=1 -N "p1_$TAG" -j y \
             -m ea -M "${QG_NOTIFY_EMAIL:-sanaamz@mit.edu}" \
             -o "$LOGS/p1_$TAG.\$JOB_ID.log" \
             scripts/sge/train_deriv_rollout_job.sh \
