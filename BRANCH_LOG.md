@@ -2,6 +2,26 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-12 — CAPE-A WAVE LANDED 5/5 CLEAN; shedding verdicts; Pi_FF+audit chain FIRED (global supervisor Fable; evening session)
+- LANDED ~19:16 EDT (jobs 1830412-20, ~27 h/member as budgeted): all five FPCape members
+  ran 960k steps to T=120, NaN-guard FINAL CHECK CLEAN — the dt=1.25e-4 fix holds at full
+  duration. Shedding trackers (1830413-21) all clean: single Welch peak per member
+  (f_sh 0.149-0.176), drag locked at 2f_sh (0.80-0.86), no third harmonic, alias-free,
+  zero WARN/NaN. f_sh sits just below the cylinder band [0.189,0.48] in all five — expected
+  (bottom-attached asymmetric cape wake; cylinder St context-only per charter). Telegraph
+  member: mild estimator spread (Cl_mid 0.1485 vs Cl_inst 0.1587), within one Welch bin.
+- PI_FF CHAIN FIRED (sge-runner, submit_piff_capeA.sh authored: dry-run default, preflight
+  no-DNS_LES-overwrite guard): per member piff_s2->s4->s8 chained via hold_jid (max 5
+  concurrent GPU — courtesy cap) -> audA_<tag> on all.q holding on s8. Jobs 1831531-1831550;
+  + icx_CAco_t30 1831551 (FPCape-const index 67 -> t=30.15, precedent-matched IC for the
+  convergence tier). Cost ~0.75 GPU-h. DEVIATION from FPC precedent (documented): scales
+  chained sequentially per member instead of concurrent, to respect the 6-GPU-job ceiling;
+  audit holds on s8 (== all three scales via the chain). One bash-4.2 empty-array/set -u
+  bug in the new submitter caught on dry-run path, fixed before any submission.
+- [QG][LANDED][SGS] email spooled (shedding table + chain manifest). NEXT at chain landing
+  (~22:30 EDT): verify DNS_LES x15 + audit_A x5 + restart IC, then per-member [QG][RUN][SGS]
+  reports + wake diagnostics + convergence-tier decision for Sanaa Monday.
+
 ## 2026-07-12 — GRID LANDED, WINNER SELECTED, S4 EVAL PACKAGE DONE (global supervisor Fable; autonomy window, evening session)
 - GRID (1830888-93): all 6 exit 0, landed 07:13-09:24 EDT, ~6.5 GPU-h as budgeted. Val NLL /
   R2 at ep59 (best epoch = FINAL epoch on all six rungs — none saturated at 60 ep):
