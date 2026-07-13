@@ -1,0 +1,40 @@
+WHAT THIS DIAGNOSTIC IS (2026-07-13 field-plot triage, item P3)
+
+Question: are sponge-layer pixels excluded from (a) training crops/loss,
+(b) R2/NLL/coverage metrics, (c) kurtosis? Answer from the code audit: YES,
+everywhere, through one shared mask. The chain (file:line):
+
+  dataset_piff.py:184-188  RunData builds
+      strip  = analytic sponge strips (manifest x/y strip fractions)
+               UNION  filtered chi_sponge > sponge_thresh (1e-2)
+      valid  = ~strip AND signed-distance >= 0  (removes obstacle body)
+  dataset_piff.py:219      every crop returns mask = valid[crop window]
+  model_piff.py:244-247    masked_gp_inputs(...)[mask] — "Loss/eval masking
+                           lives HERE — inputs are never zeroed"
+  train_piff.py:229-234    training loss: gpin from masked_gp_inputs,
+                           targets yt = y[mask]  -> sponge never in the ELBO
+  train_piff.py:79-85      val metrics (evaluate): same masked path
+  train_piff.py:118-123    residual kurtosis: masked_gp_inputs +
+                           y[mask]  -> sponge never in the kurtosis
+  eval_piff.py:47-63       a-priori eval predictions on mask only;
+  eval_piff.py:66-76       metrics_block consumes those masked flats
+  diagnose_piff.py:70-84   per-member diagnostics: same masked path
+                           (kurtosis at :223 uses the masked flats)
+
+Nothing needed rerunning — the per-member tables were already computed on the
+correct mask. The deliverable is this audit trail plus the figures, which show
+WHAT is excluded so it can be seen.
+
+FILES
+  cylinder_excluded_pixels_sponge_body_strips.png  (FPC-const geometry)
+  cape_excluded_pixels_sponge_body_strips.png      (FPCape-const geometry)
+Color code: white = valid pixels (used in loss and every metric);
+dark blue = analytic sponge strips at the outlet/top; light blue = extra
+pixels where the filtered sponge mask chi_sponge exceeds 1e-2; black =
+obstacle body (signed distance < 0). Gray contours: vorticity of a developed
+frame, for orientation. Pixel fractions (printed in the legend):
+cylinder 92.1% valid / 7.5% strips / 0.2% chi-sponge / 0.2% body;
+cape 70.9% valid / 27.9% strips / 0.3% chi-sponge / 0.9% body.
+
+PRODUCED BY ml_closure/triage_mask_audit.py (job 1832256). Categories also in
+csvs_and_npz/valid_pixel_mask_categories_{cylinder,cape}.npz

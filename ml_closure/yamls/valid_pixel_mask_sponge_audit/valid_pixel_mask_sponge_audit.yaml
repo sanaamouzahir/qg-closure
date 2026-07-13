@@ -1,0 +1,20 @@
+# P3 of the 2026-07-13 field-plot triage: code audit of whether sponge-layer
+# pixels are excluded from training crops/loss, eval metrics (R2/NLL/coverage)
+# and kurtosis. Answer: YES everywhere, via one shared mask
+# (RunData.valid = ~(analytic strips UNION chi_sponge>1e-2) AND sdf>=0).
+# No numbers needed rerunning; the deliverable is this audit trail and the
+# mask figures. Full chain with file:line in the sibling pngs .txt.
+sponge_excluded_from:
+  training_loss: {yes: true, where: "train_piff.py:229-234 via masked_gp_inputs + y[mask]"}
+  val_metrics: {yes: true, where: "train_piff.py:79-85 (evaluate) same masked path"}
+  eval_package_metrics: {yes: true, where: "eval_piff.py:47-63 predictions on mask; :66-76 metrics_block"}
+  kurtosis: {yes: true, where: "train_piff.py:118-123; diagnose_piff.py:223 on masked flats"}
+  diagnostics_tables: {yes: true, where: "diagnose_piff.py:70-84 predict_frame masked"}
+mask_definition: "dataset_piff.py:184-188; crops return valid[window] at :219; masking applied at model_piff.py:244-247"
+pixel_fractions_percent:
+  FPC-const: {valid: 92.1, analytic_strips: 7.5, chi_sponge_extra: 0.2, body: 0.2}
+  FPCape-const: {valid: 70.9, analytic_strips: 27.9, chi_sponge_extra: 0.3, body: 0.9}
+jobs: [1832256]
+figures:
+  - pngs/valid_pixel_mask_sponge_audit/cylinder_excluded_pixels_sponge_body_strips.png
+  - pngs/valid_pixel_mask_sponge_audit/cape_excluded_pixels_sponge_body_strips.png

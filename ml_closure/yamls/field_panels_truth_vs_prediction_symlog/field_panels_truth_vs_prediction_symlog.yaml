@@ -1,0 +1,20 @@
+# P1 of the 2026-07-13 field-plot triage: the original eval field panels used
+# a linear color scale to the frame max of heavy-tailed Pi, so the wake was
+# invisible ("no flow" panels). Replotted as 5-panel figures
+# [omega_bar | truth Pi | predicted Pi | predicted sigma | |error|] with a
+# symlog norm (linthresh = 99th percentile of |Pi| over the frame's valid
+# pixels), cmap seismic, aspect-preserving, same orientation and the SAME
+# validation frames as the originals (field5_j <-> field_j). Old figures
+# untouched. Reusable tool: ml_closure/replot_eval_fields.py.
+tool: replot_eval_fields.py
+norm: symlog, linthresh = 99th pct of |Pi*| over valid pixels, shared across truth/prediction/error
+runs:
+  prod_ext150:   # the 150-epoch cylinder model, constant-inlet val window
+    frames: 6
+    outdir_legacy: runs_piff/prod_ext150/eval/field5_*.png
+    job: 1832252
+  cape_base_100ep:  # the cape base model, 5-member cape val set
+    frames: 6
+    outdir_legacy: runs_piff/cape_base_100ep/eval/field5_*.png
+    job: 1832253
+canonical_pngs: pngs/field_panels_truth_vs_prediction_symlog/

@@ -1,0 +1,34 @@
+# P2 of the 2026-07-13 field-plot triage: are the vertical streaks in the
+# Pi_FF panels a bug in the training data, or ringing of the sharp spectral
+# cutoff in the LES filter? One developed frame (t=81) per geometry was
+# recomputed in float64 through the exact production Pi_FF assembly with
+# (A) the production sharp-cutoff filter and (B) an all-Gaussian filter.
+# Verdict: streaks vanish completely under the Gaussian => they are
+# sinc/Gibbs ringing of the sharp axis-wise cutoff on the compact
+# high-amplitude obstacle (Brinkman) source. BENIGN — not a mask/dealias
+# bug; the stored training product matches the sharp recompute to ~3e-8,
+# so the running trainings (1832221/1832231) are safe. Filter-definition
+# discussion item, not a fix.
+verdict: benign_sharp_cutoff_ringing
+flag_raised: false
+frame_time: 81.0
+scale: 4
+gaussian_replacement_width_dx_les: 2.0
+precision: float64
+recompute_vs_stored_rel_l2:
+  FPC-const: 2.810e-08
+  FPCape-const: 2.621e-08
+median_abs_pi_on_obstacle_column_far_from_wake:
+  FPC-const: {sharp: 21.736, gaussian: 0.0898, background_sharp: 0.347}
+  FPCape-const: {sharp: 178.46, gaussian: 1.722, background_sharp: 48.18}
+streak_in_omega_bar:
+  answer: faintly yes, ~0.2 percent of field scale (sharp filter rings on
+    omega too); gone under the Gaussian (column/background 0.95x)
+  FPC-const: {column_over_background_sharp: 12.21, column_over_fieldscale_sharp: 2.44e-03,
+              column_over_background_gaussian: 0.95}
+  FPCape-const: {column_over_background_sharp: 3.73, column_over_fieldscale_sharp: 1.75e-03,
+                 column_over_background_gaussian: 0.98}
+jobs: [1832250, 1832251, 1832257]
+figures:
+  - pngs/pi_filter_sharp_vs_gaussian_streak_check/cylinder_const_inlet_sharp_vs_gaussian_filter_t81.png
+  - pngs/pi_filter_sharp_vs_gaussian_streak_check/cape_const_inlet_sharp_vs_gaussian_filter_t81.png

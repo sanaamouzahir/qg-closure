@@ -1,0 +1,42 @@
+WHAT THIS DIAGNOSTIC IS (2026-07-13 field-plot triage, item P4)
+
+The model's predictive variance is the sum of two parts:
+    total = posterior GP variance (input-dependent, epistemic)
+          + likelihood noise sigma_n^2 (ONE global constant)
+If the constant dominates, the predicted uncertainty is flat — it cannot mark
+where the model is actually wrong. This decomposition measures both parts in
+PHYSICAL target units (GP-space values times y_sd^2) per ensemble member,
+over up to 24 evenly-spaced validation frames each, for the two frozen
+checkpoints.
+
+FILES
+  noise_vs_gp_variance_barchart_cylinder_prod_ext150.png
+      The 150-epoch cylinder model (trained on the constant-inlet member
+      only). Two bars per member, log scale: red = sigma_n^2 (same constant
+      everywhere), blue = mean posterior GP variance. Number above bars =
+      noise / posterior ratio.
+  noise_vs_gp_variance_barchart_cape_base_100ep.png
+      Same for the cape base model (trained on all 5 cape members).
+  flat_sigma_before_figure_cylinder_prod_ext150.png
+  flat_sigma_before_figure_cape_base_100ep.png
+      The paper-quality "before" figures: median predicted uncertainty
+      (solid) vs median actual error (dashed) across vorticity-gradient
+      deciles, per member. Flat solid lines against rising dashed lines =
+      the predicted uncertainty does not track where the flow is hard.
+
+RESULT
+  Cape model, all 5 members IN distribution: sigma_n^2 dominates the
+  posterior GP variance by 493x to 1133x. Full collapse to homoscedastic —
+  the predicted sigma is one number. This is the "before" evidence for the
+  heteroscedastic upgrade.
+  Cylinder model: on its own training member the same collapse (577x). On
+  the 4 modulated members it never saw, the posterior GP variance inflates
+  to 1x-8x the noise (sine 0.2x ratio, ramp 0.1x, ou 1.0x, telS-A 0.1x in
+  noise/posterior terms) — the GP does react epistemically to
+  out-of-distribution inputs, but within distribution sigma is flat.
+  Numbers: sigma_n^2 = 3.64e3 (cylinder model), 3.28e4 (cape model),
+  physical units.
+
+PRODUCED BY ml_closure/triage_sigma_decomp.py (jobs 1832254/1832258 cylinder,
+1832255 cape). Raw numbers:
+csvs_and_npz/uncertainty_decomposition_{cylinder_prod_ext150,cape_base_100ep}.npz

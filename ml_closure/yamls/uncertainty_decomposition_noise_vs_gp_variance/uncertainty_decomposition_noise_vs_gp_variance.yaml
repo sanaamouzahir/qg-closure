@@ -1,0 +1,33 @@
+# P4 of the 2026-07-13 field-plot triage: decomposition of the predictive
+# variance into the global likelihood noise sigma_n^2 vs the input-dependent
+# posterior GP variance (both in physical target units, x y_sd^2), per
+# ensemble member over val frames, for the two frozen checkpoints.
+# Finding: within distribution the constant noise dominates (cape 493-1133x
+# on all 5 members; cylinder 577x on its training member) = collapse to
+# homoscedastic, the "before" figure for the paper. The cylinder model's
+# posterior variance inflates only on the 4 modulation classes it never saw
+# (epistemic out-of-distribution response).
+cylinder_prod_ext150:
+  ckpt: runs_piff/prod_ext150/best.pt
+  trained_on: [FPC-const]
+  sigma_n2_physical: 3.6406e+03
+  mean_posterior_gp_var_physical:
+    FPC-const: 6.3092e+00     # ratio noise/posterior 577x  (in distribution)
+    FPC-sine: 1.7382e+04      # 0.2x (out of distribution)
+    FPC-ramp: 2.7546e+04      # 0.1x
+    FPC-ou: 3.7087e+03        # 1.0x
+    FPC-telS-A: 2.7546e+04    # 0.1x
+  jobs: [1832254, 1832258]
+cape_base_100ep:
+  ckpt: runs_piff/cape_base_100ep/best.pt
+  trained_on: [FPCape-const, FPCape-sine, FPCape-ramp, FPCape-ou, FPCape-tel]
+  sigma_n2_physical: 3.2787e+04
+  mean_posterior_gp_var_physical:
+    FPCape-const: 3.2272e+01  # 1016x
+    FPCape-sine: 6.6448e+01   # 493x
+    FPCape-ramp: 3.7321e+01   # 879x
+    FPCape-ou: 2.8949e+01     # 1133x
+    FPCape-tel: 3.6304e+01    # 903x
+  jobs: [1832255]
+frames_per_member: 24
+figures: pngs/uncertainty_decomposition_noise_vs_gp_variance/

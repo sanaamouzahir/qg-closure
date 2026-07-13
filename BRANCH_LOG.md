@@ -2,6 +2,29 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-13 — FIELD-PLOT TRIAGE P1-P4 LANDED, NO FLAG (branch supervisor Fable; late-afternoon session)
+- Sanaa's four GREEN triage items on the eval field panels, all landed (jobs 1832249-58,
+  ~0.15 GPU-h total; trainers 1832221/1832231 untouched).
+- P2 (decisive, ran first): the vertical streaks in the Pi panels are sinc/Gibbs RINGING
+  of the LES filter's sharp axis-wise cutoff on the compact high-amplitude Brinkman
+  source — f64 A/B recompute (t=81, both geometries): streak cross collapses ~100-240x
+  under an all-Gaussian filter; sharp recompute matches stored piff_s4 to rel-L2 ~3e-8.
+  BENIGN — no mask/dealias bug, NO FLAG, running trainings consume exactly the defined
+  sharp-filter Pi_FF. omega_bar carries the same ringing at only ~0.2% of field scale.
+  Filter-definition discussion item recorded.
+- P1: replot_eval_fields.py (reusable) — 5-panel symlog field5_*.png next to the old
+  4-panel linear figures for prod_ext150 + cape_base_100ep; wake now visible.
+- P3: sponge audit — ALREADY excluded everywhere (loss/metrics/kurtosis/eval/diagnostics)
+  via RunData.valid; chain with file:line in yamls/valid_pixel_mask_sponge_audit/;
+  mask figures per geometry (cylinder 92.1% valid, cape 70.9%).
+- P4: sigma decomposition — cape model noise-dominated 493-1133x on ALL 5 members;
+  cylinder model 577x on its training member, posterior GP variance inflates only on
+  the 4 unseen modulation classes (epistemic OOD response). Homoscedastic-collapse
+  "before" figures at paper quality.
+- NEW STANDING ORDER APPLIED: canonical diagnostics tree ml_closure/pngs/<name>/ (+.txt),
+  yamls/<name>/, csvs_and_npz/ — populated for all four diagnostics; legacy copies kept.
+- [QG][LANDED][sgs] email spooled (landed_20260713_plot_triage.mail), relay-verified.
+
 ## 2026-07-13 — ORDERS 1-3 EXECUTED; CONDITIONED ENSEMBLE FLEET IN FLIGHT (global supervisor Fable; afternoon session)
 - SANAA RULINGS (chat): three [QG][GLOBAL] ORDERS (architecture email / results map +
   diagnostics / ensemble training under new template T4) + mid-session STANDING FULL

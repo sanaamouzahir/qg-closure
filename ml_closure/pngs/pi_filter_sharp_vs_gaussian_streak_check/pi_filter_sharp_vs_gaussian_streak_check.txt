@@ -1,0 +1,49 @@
+WHAT THIS DIAGNOSTIC IS (2026-07-13 field-plot triage, item P2)
+
+Sanaa saw suspicious VERTICAL STREAKS in the Pi_FF field panels. This check
+decides between two explanations: (a) ringing of the LES filter's sharp
+spectral cutoff (a property of the filter definition — benign), or (b) a
+mask/dealias bug in compute_pi_ff (which would poison the training data).
+
+METHOD
+For one developed-flow frame (t = 81, inside the 60-100 developed window),
+Pi_FF was recomputed at scale s=4 in float64 twice, through the exact
+production assembly (compute_pi_ff.py):
+  A) production filter:  Gaussian(1.5 dx_FR)  o  sharp cutoff |kx|,|ky| < pi/dx_LES  o  average-pool
+  B) test filter:        Gaussian(1.5 dx_FR)  o  Gaussian exp(-k^2 (2 dx_LES)^2 / 6) o  average-pool
+Only the cutoff stage differs. If the streaks are cutoff ringing they must
+vanish under (B); a masking bug would survive the filter swap.
+
+FILES
+  cylinder_const_inlet_sharp_vs_gaussian_filter_t81.png
+      4 stacked panels for the constant-inlet cylinder run (FPC-const), all
+      with the same x-extent so streak positions line up by eye:
+      1. filtered vorticity omega_bar (linear scale)
+      2. Pi_FF with the PRODUCTION sharp-cutoff filter (symlog)
+      3. Pi_FF with the all-Gaussian filter (same symlog)
+      4. difference sharp - Gaussian (same symlog)
+  cape_const_inlet_sharp_vs_gaussian_filter_t81.png
+      Same four panels for the constant-inlet cape run (FPCape-const).
+
+RESULT (the verdict)
+The streak cross through the obstacle vanishes COMPLETELY under the Gaussian
+filter; the difference panel IS the streak pattern. Median |Pi| on the
+obstacle column far from the wake: cylinder 21.7 (sharp) vs 0.09 (Gaussian),
+cape 178 (sharp) vs 1.7 (Gaussian) — a collapse of about two orders of
+magnitude. The recomputed sharp Pi matches the stored training product to
+rel-L2 ~3e-8, so the stored data is exactly what the production filter
+defines. VERDICT: the streaks are sinc/Gibbs ringing of the sharp axis-wise
+cutoff acting on the huge compact obstacle-penalty (Brinkman) source. BENIGN:
+not a bug, no training-data poison, the running ensemble trainings are safe.
+It is a real property of the sharp-filter Pi_FF definition and belongs in the
+filter-definition discussion.
+
+Is the streak in omega_bar itself? Faintly yes — the sharp filter rings on
+omega too (obstacle column 12x over background) but at only ~0.2% of the
+field scale, invisible on any normal plot; under the Gaussian it is gone
+(ratio 0.95, i.e. none). Pi amplifies the ringing because the filtered
+Brinkman source has amplitude ~1e4 and is spatially compact.
+
+PRODUCED BY ml_closure/triage_ab_filter.py + triage_streak_quant.py
+(jobs 1832250, 1832251, 1832257). Raw fields:
+csvs_and_npz/pi_filter_sharp_vs_gaussian_fields_{cylinder,cape}_const_t81.npz

@@ -1,0 +1,35 @@
+WHAT THIS DIAGNOSTIC IS (2026-07-13 field-plot triage, item P1)
+
+The original evaluation field panels (runs_piff/<run>/eval/field_*.png) used a
+LINEAR color scale stretched to the frame maximum of Pi. Pi_FF is heavy-tailed
+(near-obstacle values reach thousands while the wake lives at tens), so the
+wake was invisible and the panels read as "no flow". These figures are the
+replacement: same validation frames, SYMLOG color scale.
+
+PANELS (5 per figure, left to right)
+  1. filtered vorticity omega_bar* — linear scale, shows the actual flow
+  2. truth Pi* — symlog; linthresh = 99th percentile of |Pi*| over the
+     frame's valid (non-sponge, non-body) pixels; printed in the suptitle
+  3. predicted Pi* (model mean) — same symlog norm as truth
+  4. predicted sigma (total predictive uncertainty) — symlog, same linthresh
+  5. |truth - prediction| — same symlog norm as truth
+cmap seismic, aspect-preserving, origin and orientation identical to the
+original eval figures. Frame selection reproduces eval_piff exactly
+(validation frames sorted by inlet Reynolds number, 6-point spread), so
+field5_j corresponds one-to-one to the old field_j.
+
+FILES
+  cylinder_150epoch_model_field5_*.png — the 150-epoch cylinder model
+      (prod_ext150) on the constant-inlet cylinder validation window
+  cape_100epoch_model_field5_*.png — the cape base model (cape_base_100ep)
+      on the 5-member cape validation set (member + Re in each title)
+
+Note what is now visible: the vortex street in panel 1, the wake Pi structure
+in panels 2-3, the sharp-filter ringing cross through the obstacle (see the
+pi_filter_sharp_vs_gaussian_streak_check diagnostic — benign), and in panel 4
+that the predicted uncertainty is one flat value across the whole domain (see
+the uncertainty_decomposition_noise_vs_gp_variance diagnostic).
+
+PRODUCED BY ml_closure/replot_eval_fields.py (jobs 1832252, 1832253); the same
+figures also sit next to the originals in runs_piff/<run>/eval/field5_*.png.
+The old field_*.png are untouched.
