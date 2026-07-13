@@ -2,6 +2,29 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-13 — OVERNIGHT FLEET LANDED 7/7 CLEAN (global supervisor Fable; Monday resume session)
+- All 7 jobs exit 0 (22:32 Sat – 04:50 Sun EDT). The live-session watcher died with the
+  07-12 session, so the landing chain ran at Monday resume; consolidated [QG][LANDED]
+  email spooled 11:58 (landed_20260713_overnight_fleet.mail).
+- EXT150 (pF_ext150 1831561 -> pEv 1831562 -> pCal 1831575): winner extended to 150 ep.
+  Full-frame val R2 0.8584 / RMSE 33.1 / NLL 5.16 — **PASSES the re-gated 0.85-in-100-ep
+  bar** (was 0.8323 @ ep59). Recal: s=0.521, test NLL 5.17->4.91, 1sig cov 0.974->0.954
+  vs 0.683 nominal — shape-not-scale CONFIRMED on the production candidate. zeta_ls
+  0.6931 = init (expected, const-only). Package: ml_closure/runs_piff/prod_ext150/eval.
+- ARM F (pT6_F 1831574): gate FAIL (R2 0.495 @ ep49 vs 0.95-in-50) BUT **no collapse** —
+  first hetero arm that survives: b mobile (->6.35), sigma median stable 35-38, R2
+  monotone rising at cutoff. READ: structural prior closes the ELBO buy-out channel
+  (D/E's death), cost = ~4x slower mean learning. Candidate follow-on: 150-ep extension
+  (arm-A precedent). Curve: ml_closure/runs_piff/t6_arms/armF.npz.
+- CAPE BASELINE (pCape_base 1831571 -> pEv 1831572 -> pCal 1831573): 5-member, 100 ep.
+  Pooled val R2 0.800 / RMSE 94.8 / NLL 6.25 (best val NLL 6.493). **zeta ARD ls = 2.016
+  — first time OFF the 0.6931 init**: multi-member training makes zeta identifiable,
+  LOMO arm is now meaningful. Recal: s=0.508, NLL 6.26->5.98, cov 0.969->0.908.
+  Package: ml_closure/runs_piff/cape_base_100ep/eval.
+- HELD FOR SANAA (Monday list, in the email): promote prod_ext150; cape LOMO arm;
+  arm-F 150-ep extension; cape convergence-tier scope; Wiener option-1 + formalization.
+- Nothing in flight on our side. Status cron confirmed reverted to 12/16/20.
+
 ## 2026-07-12 — SANAA GO (night session): winner extension + recalibration + arm F + CAPE ML all FIRED (global supervisor Fable)
 - RULING (chat ~21:45, recorded in DECISIONS): GO on re-gate (reversal window closed),
   structural-prior B-item, winner extension, sigma recalibration, AND the Pi_FF closure in
