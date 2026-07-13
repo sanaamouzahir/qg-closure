@@ -93,14 +93,16 @@ def assemble_geff(model, sig: torch.Tensor, dt: torch.Tensor,
     ph = torch.exp(1j * j * theta.unsqueeze(-1))                # (B, n_sh, W)
     sym_base = torch.einsum('w,bsw->bs', base_x.to(dtypec),
                             ph.to(dtypec))                      # (B, n_sh)
-    exact = 1j * theta.to(dtypec)                               # ik in tap units
+    # theta > 0 always (REL_SHELLS are positive fractions); clamp replaces the
+    # old complex-abs guard (CUDA complex .abs() driver quirk, smoke 1832657)
+    exact = 1j * theta.clamp_min(1e-12).to(dtypec)              # ik in tap units
     if delta_taps is not None:
         # delta (B, C=2no, 2, W) -> per-channel x/y symbols; isotropic mean
         d = delta_taps.to(dev).to(dtypec)                       # (B, C, 2, W)
         sym_d = torch.einsum('bcdw,bsw->bcds', d, ph.to(dtypec)).mean(dim=2)
     else:
         sym_d = torch.zeros(B, 2 * no, n_sh, dtype=dtypec, device=dev)
-    denom = exact + (exact.abs() < 1e-30) * 1.0
+    denom = exact
     # channel-resolved rho: omega block rows 0..no-1, psi block no..2no-1
     rho = (sym_base.unsqueeze(1) + sym_d) / denom.unsqueeze(1)  # (B, 2no, n_sh)
 

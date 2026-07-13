@@ -361,9 +361,12 @@ def geff_window_penalty(rc: RootCtx, model, omega_stack, stride, vn_lambda,
            ** (inner.S - kvec).view(1, -1)) * (kvec > 0).to(delta.dtype).view(1, -1)
     delta = delta * amp.view(1, -1, 1, 1)
     ksh, Lsh = geff_shell_ctx(rc, device)
-    g = wc.assemble_geff(inner, sig, dtv, Lsh, ksh,
-                         torch.tensor([rc.dx], dtype=torch.float64,
-                                      device=device), delta)
+    # certificate math on CPU: 5 shells x B=1 is microscopic, and the older
+    # CUDA driver mishandles some complex128 kernels (smoke 1832657); autograd
+    # carries gradients across the device move back to the GPU parameters
+    g = wc.assemble_geff(inner, sig.cpu(), dtv.cpu(), Lsh.cpu(), ksh.cpu(),
+                         torch.tensor([rc.dx], dtype=torch.float64),
+                         delta.cpu())
     loss, gmax = wc.vn_penalty(g, vn_lambda)
     return loss, float(gmax.max())
 
