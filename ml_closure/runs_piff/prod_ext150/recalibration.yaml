@@ -1,0 +1,51 @@
+ckpt: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/runs_piff/prod_ext150/best.pt
+sigma_scale: 0.5205914974212646
+fit_window:
+- 100.0
+- 110.0
+test_window:
+- 110.0
+- 120.0
+criterion: 'NLL-optimal variance scaling: s^2 = mean(z^2) on fit half'
+fit:
+  before:
+    n: 8935500
+    r2: 0.8601703643798828
+    rmse: 32.28836441040039
+    nll: 5.15512752532959
+    mean_sigma: 60.383853912353516
+    coverage:
+      1sigma: 0.9748337530076661
+      2sigma: 0.991294051815791
+      3sigma: 0.9958471266297353
+  after:
+    n: 8935500
+    r2: 0.8601703643798828
+    rmse: 32.28836441040039
+    nll: 4.866835594177246
+    mean_sigma: 31.43531608581543
+    coverage:
+      1sigma: 0.9549856191595322
+      2sigma: 0.9759217727043814
+      3sigma: 0.986383974036148
+test:
+  before:
+    n: 8935500
+    r2: 0.8568514585494995
+    rmse: 33.87784957885742
+    nll: 5.166151523590088
+    mean_sigma: 60.387794494628906
+    coverage:
+      1sigma: 0.9742849308936266
+      2sigma: 0.9908596049465614
+      3sigma: 0.9954937048850092
+  after:
+    n: 8935500
+    r2: 0.8568514585494995
+    rmse: 33.87784957885742
+    nll: 4.907347679138184
+    mean_sigma: 31.437376022338867
+    coverage:
+      1sigma: 0.9540091768787421
+      2sigma: 0.9754597951989257
+      3sigma: 0.9859743718874153

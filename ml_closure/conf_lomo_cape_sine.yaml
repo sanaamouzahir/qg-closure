@@ -1,4 +1,4 @@
-# conf_piff_cape_cond.yaml — cape 5-member ensemble, ORDER-3 CONDITIONED rerun
+# conf_piff_cape.yaml — Pi_FF spatial closure, CAPE-A five-member set
 # (Sanaa GO 2026-07-12 chat: "work on this in parallel for the cape cases").
 # Deltas vs conf_piff.yaml (FPC-const): data.runs = 5 FPCape members; wake window
 # unchanged in D units (D = L_cape = 1, x_c = 5.0265, y_c = tip height 4.0 from the
@@ -7,10 +7,6 @@
 # modulation coordinate across geometries (manifest caveat) — cape zeta spans
 # ~[-1.0, 0.33]. lomo_holdout null = time-split baseline; the LOMO arm comes after.
 # REPO RULE: floats in explicit-mantissa form (5.0e-3, never 5e-3).
-# ORDER-3 (2026-07-13): conditioned rerun — use_zeta_dot + use_grad_feature on,
-# 150 ep (match the FPC ensemble horizon). tshed_smooth stays the SHARED FPC
-# value 2.992 (zeta/zeta_dot = table-Re modulation coordinate, geometry-free);
-# cape wake period is longer (f_sh 0.149-0.176 -> T_sh 5.7-6.7) — recorded caveat.
 
 data:
   runs:
@@ -29,7 +25,7 @@ data:
   t_train_hi: 100.0
   t_val_lo: 100.0
   t_val_hi: 120.0
-  lomo_holdout: null
+  lomo_holdout: FPCape-sine
   sdf_clip_D: 2.0
   sponge_thresh: 1.0e-2
   crops_per_epoch_train: 4096
@@ -39,7 +35,6 @@ data:
 zeta:
   re0: 3900.0
   re_scale: 1700.0
-  tshed_smooth: 2.992
 
 model:
   in_channels: 4
@@ -47,8 +42,6 @@ model:
   kernel: 5
   film: true
   film_hidden: 16
-  use_zeta_dot: true
-  use_grad_feature: true
   n_inducing: 512
   kmeans_pixels: 10000
   kmeans_iters: 50
@@ -56,7 +49,7 @@ model:
 train:
   lr: 1.0e-3                  # grid winner (FPC-const, 2026-07-12)
   weight_decay: 1.0e-5        # grid winner
-  epochs: 150                 # re-gated T6 horizon (R2 >= 0.85 in 100 ep)
+  epochs: 100                 # re-gated T6 horizon (R2 >= 0.85 in 100 ep)
   t0_restart: 5
   seed: 0
   device: cuda

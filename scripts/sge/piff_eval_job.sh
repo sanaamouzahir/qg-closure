@@ -35,10 +35,11 @@ if command -v nvidia-smi >/dev/null 2>&1; then
     echo "[piff_eval] selected GPU $IDLE_GPU on $HOSTNAME"
 fi
 
-CKPT="${1:?usage: piff_eval_job.sh <ckpt path>}"
+CKPT="${1:?usage: piff_eval_job.sh <ckpt path> [extra eval_piff.py args: --config ... --outdir ...]}"
+shift
 
 cd "$BRANCH/ml_closure"
-echo "[piff_eval] host $HOSTNAME date $(date -u +%FT%TZ) ckpt $CKPT"
-python -u eval_piff.py --ckpt "$CKPT"
+echo "[piff_eval] host $HOSTNAME date $(date -u +%FT%TZ) ckpt $CKPT extra: $*"
+python -u eval_piff.py --ckpt "$CKPT" "$@"
 echo "----------------------------------------------------------------------"
 echo "[piff_eval] done at $(date -u +%FT%TZ)"

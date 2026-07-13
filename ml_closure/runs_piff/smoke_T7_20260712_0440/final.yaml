@@ -1,0 +1,6 @@
+best_val_nll: .inf
+kurtosis: .nan
+epochs: 2
+seed: 0
+training_path: joint (Plan A); Plan-B symptoms logged per epoch
+zeta_ard_lengthscale: .nan

@@ -1,0 +1,25 @@
+seed: 0
+runs:
+- FPC-const
+n_train_frames: 259
+n_val_frames: 74
+N_train_pixels: 62548500
+N_val_pixels: 17871000
+valid_per_frame:
+  FPC-const: 241500
+lomo_holdout: null
+lr: 0.0003
+weight_decay: 0.0001
+epochs: 2
+film: true
+ELBO_num_data: 62548500
+device: cuda
+init_hyperparams:
+  gp_mean_init: 0.0
+  gp_space_var: 1.0
+  noise_frac: 0.1
+  outputscale_init: 0.9
+  noise_init: 0.1
+  y_mean: -0.001354597939620299
+  y_std: 87.27759533841362
+  stats_n_pixels: 62548500

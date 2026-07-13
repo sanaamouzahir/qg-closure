@@ -99,6 +99,15 @@ T2  a-posteriori evaluation: rollout_aposteriori.py on an approved ckpt,
     horizon <= 100 turnovers, refs reused via --load-refs when available.
 T3  ensemble mmap builds: scripts/sge/build_ensemble_mmap.sh with the
     established flags; forcing gate + slicing + filtering pipeline as-is.
+T4  Pi_FF SVGP ensemble training (SGS branch; drafted 2026-07-13 under
+    Sanaa's ORDER 3, which is its RED approval): train_piff.py via
+    piff_train_job.sh on an approved member pool with Step-0 canonical
+    artifacts; grid-winner lr 1.0e-3 / wd 1.0e-5; <= 150 epochs; M=512,
+    crop 64, scale 4; seed 0; run-name piff_<pool>_<variant>. Acceptance
+    = the re-gated T6 (val R2 >= 0.85 within 100 ep) read off the run
+    curve; ORDER-3 conditioning flags (use_zeta_dot / use_grad_feature)
+    are part of the template; acceptance PREDICTIONS written git-visibly
+    BEFORE submission; I18 monitor unit + SGS baseline card mandatory.
 Template changes are RED. A submission citing its template letter in the
 [QG][ACTED] email needs no further justification for the config.
 

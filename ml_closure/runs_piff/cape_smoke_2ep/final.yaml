@@ -1,0 +1,6 @@
+best_val_nll: 7.514242649078369
+kurtosis: 2063.95703125
+epochs: 2
+seed: 0
+training_path: joint (Plan A); Plan-B symptoms logged per epoch
+zeta_ard_lengthscale: 0.989392876625061

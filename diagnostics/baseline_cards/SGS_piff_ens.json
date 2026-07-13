@@ -1,0 +1,20 @@
+{
+  "card": "SGS_piff_ens",
+  "seeded_from": "prod_ext150 (150-ep extension of grid winner lr1e-3/wd1e-5, FPC-const) + arm-2/arm-A T6 curves + cape_base_100ep",
+  "note": "thresholds are on the piff trainer stdout grammar '[ep NNN] ... val NLL x RMSE x R2 x sigma x zeta_ls x ...'",
+  "milestones": [
+    {"epoch": 5,   "min_r2": 0.10, "max_nll": 9.0},
+    {"epoch": 20,  "min_r2": 0.50, "max_nll": 7.5},
+    {"epoch": 40,  "min_r2": 0.68, "max_nll": 7.0},
+    {"epoch": 100, "min_r2": 0.85, "max_nll": 6.8, "gate": "T6 re-gated (R2 >= 0.85 in 100 ep)"}
+  ],
+  "triggers": {
+    "explode": "any non-finite val NLL/RMSE/R2 in the log line",
+    "collapse": "val R2 < 0.02 for 10 consecutive epochs after ep 5 (arm C/D signature: constant-mean prediction)",
+    "planb": "literal 'PLAN-B SYMPTOM' in any line (feature collapse >10x)",
+    "conditioning_inert": "zeta_ls within 1e-4 of 0.6931 at every epoch >= 30 (P1 falsifier; FLAG not kill)",
+    "nll_runaway": "val NLL > running_min + 0.5 for 10 consecutive epochs (instability; report, human decides)"
+  },
+  "kill_policy": "monitor NEVER qdels; it emails verdicts. I14 qdel remains a supervisor action on evidence.",
+  "cape_deltas": {"max_nll_shift": 1.3, "note": "cape NLL scale ~6.3-6.6 healthy (y_sd 281 vs 87); add this shift to every max_nll above when run-name contains 'cape'"}
+}

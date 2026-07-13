@@ -168,6 +168,15 @@ def main():
         yaml.safe_dump(info, f, sort_keys=False)
 
     model = PiffModel(conf).to(device)
+    # conditioning normalization MUST precede the inducing k-means (G4 finding
+    # 2026-07-13): the centers live in feature space, and the zeta_dot/grad
+    # columns are built through the zdot_sd/g_scale buffers — identity buffers
+    # at kmeans time would place the centers in raw units on those dims
+    if model.use_zeta_dot or model.use_grad_feature:
+        cstats = conditioning_stats(runs, 'train', conf)
+        cond_const = model.set_conditioning_stats(
+            zdot_sd=cstats.get('zdot_sd'), g_scale=cstats.get('g_scale'))
+        print(f"[train] ORDER-3 conditioning stats: {json.dumps(cstats)}")
     npix = model.init_inducing_kmeans(train_ds, int(conf['model']['kmeans_pixels']),
                                       int(conf['model']['kmeans_iters']), seed, device=device)
     print(f"[train] inducing k-means init on {npix} pixels; M = {int(conf['model']['n_inducing'])}")
@@ -183,12 +192,8 @@ def main():
     hyper0.update(std_const)
     hyper0['stats_n_pixels'] = ystats['n']
     if model.use_zeta_dot or model.use_grad_feature:
-        cstats = conditioning_stats(runs, 'train', conf)
-        cond_const = model.set_conditioning_stats(
-            zdot_sd=cstats.get('zdot_sd'), g_scale=cstats.get('g_scale'))
         hyper0.update(cond_const)
         hyper0['conditioning_stats'] = cstats
-        print(f"[train] ORDER-3 conditioning stats: {json.dumps(cstats)}")
     info['init_hyperparams'] = hyper0
     with open(outdir / 'run_info.yaml', 'w') as f:
         yaml.safe_dump(info, f, sort_keys=False)

@@ -121,8 +121,13 @@ def main():
     # the data must carry whatever conditioning the CKPT was trained with,
     # regardless of the eval conf (ORDER-3 flags travel with the model)
     conf.setdefault('model', {})['use_grad_feature'] = model.use_grad_feature
-    conf['zeta'].setdefault('tshed_smooth',
-                            ckpt['conf'].get('zeta', {}).get('tshed_smooth', 2.992))
+    # tshed_smooth must equal the TRAINING value or zeta_dot is computed at a
+    # different smoothing scale than the recorded zdot_sd normalizes (G4 LOW)
+    ck_tsm = ckpt['conf'].get('zeta', {}).get('tshed_smooth', 2.992)
+    ev_tsm = conf['zeta'].get('tshed_smooth')
+    if ev_tsm is not None and abs(float(ev_tsm) - float(ck_tsm)) > 1e-12:
+        raise ValueError(f"eval tshed_smooth {ev_tsm} != training {ck_tsm}")
+    conf['zeta']['tshed_smooth'] = ck_tsm
     runs = build_runs(conf)
     frames = split_frames(runs, 'val', conf)
     print(f"[eval] {len(frames)} val frames from {[r.name for r in runs]}")

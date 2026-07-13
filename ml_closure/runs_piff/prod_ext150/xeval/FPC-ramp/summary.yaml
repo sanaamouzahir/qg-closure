@@ -1,0 +1,29 @@
+ckpt: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/runs_piff/prod_ext150/best.pt
+epoch: 149
+seed: 0
+zeta_ard_lengthscale: 0.6931471824645996
+ard_lengthscales:
+  zeta: 0.6931471824645996
+global:
+  n: 10626000
+  r2: 0.5868903994560242
+  rmse: 40.436317443847656
+  nll: 6.118928909301758
+  mean_sigma: 176.59632873535156
+  coverage:
+    1sigma: 0.9952119329945417
+    2sigma: 0.9981116130246565
+    3sigma: 0.9989730848861283
+zeta_bins:
+- n: 10626000
+  r2: 0.5868903994560242
+  rmse: 40.436317443847656
+  nll: 6.118928909301758
+  mean_sigma: 176.59632873535156
+  coverage:
+    1sigma: 0.9952119329945417
+    2sigma: 0.9981116130246565
+    3sigma: 0.9989730848861283
+  zeta_range:
+  - 0.5
+  - 1.5

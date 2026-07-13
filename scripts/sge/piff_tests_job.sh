@@ -30,9 +30,10 @@ export TMPDIR="$QG_ROOT/tmp"
 export MPLCONFIGDIR="$QG_ROOT/mplcache"
 export PYTHONUNBUFFERED=1
 
-ARM="${1:?usage: piff_tests_job.sh cpu|gpu}"
+ARM="${1:?usage: piff_tests_job.sh cpu|gpu|t8}"
 case "$ARM" in
-    cpu) KEXPR="t1 or t2 or t3 or t4" ;;
+    cpu) KEXPR="t1 or t2 or t3 or t4 or t8b" ;;   # t8b: zeta_dot const-member zero (data, no GPU)
+    t8)  KEXPR="t8" ;;                             # ORDER-3 conditioning gates, CPU-safe (all.q)
     gpu) KEXPR="t5 or t6"
          if command -v nvidia-smi >/dev/null 2>&1; then
              IDLE_GPU=$(nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits \
