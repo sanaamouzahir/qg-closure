@@ -15,12 +15,13 @@
 
 MAX_WAIT_H=${MAX_WAIT_H:-14}
 DEADLINE=$(( $(date +%s) + MAX_WAIT_H * 3600 ))
+SUFFIX=${WAIT_SUFFIX:-_gaussian}    # e.g. _gaussian_jonly (jacobian-only files)
 
-echo "[gwait] waiting for DNS_LES_s4_gaussian.npz in: $*"
+echo "[gwait] waiting for DNS_LES_s4${SUFFIX}.npz in: $*"
 while true; do
     missing=0
     for d in "$@"; do
-        [ -s "$d/DNS_LES_s4_gaussian.npz" ] || { missing=$((missing+1)); }
+        [ -s "$d/DNS_LES_s4${SUFFIX}.npz" ] || { missing=$((missing+1)); }
     done
     if [ "$missing" -eq 0 ]; then
         echo "[gwait] all present at $(date -u +%FT%TZ)"

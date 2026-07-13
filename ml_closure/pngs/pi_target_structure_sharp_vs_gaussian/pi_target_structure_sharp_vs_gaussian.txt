@@ -1,0 +1,17 @@
+pi_target_structure_sharp_vs_gaussian — what this shows
+
+One row of statistics per (member, filter). The question: did the Gaussian
+filter change the *learnability* of the cylinder target? A Gaussian-process
+model with one global noise term learns poorly when the target is a few
+extreme spots on a near-zero background (the ELBO's cheapest move becomes
+"call everything noise" — the collapse family seen in arms C/D/E and in the
+stalled cylinder-on-Gaussian run).
+
+Numbers per member/filter, over valid pixels of frames t in [100,120]:
+  - |Pi| quantiles 50/90/99/99.9: how extreme the tail is vs the median.
+  - excess kurtosis of Pi: heavy-tailedness (Gaussian field = 0).
+  - wake variance share: fraction of total Pi^2 inside the wake window
+    (x_c-D..x_c+12D, |y-y_c|<=3D) — where the crops are biased to look.
+  - px90: fraction of pixels carrying 90% of total Pi^2 — concentration
+    (smaller = more extreme concentration).
+The figure shows |Pi|/median CDFs (log-x) per member, sharp vs gaussian.

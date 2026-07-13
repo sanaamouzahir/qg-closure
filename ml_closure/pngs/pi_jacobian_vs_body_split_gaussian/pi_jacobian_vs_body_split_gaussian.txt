@@ -1,0 +1,14 @@
+pi_jacobian_vs_body_split_gaussian — what these figures show
+
+The closure target Pi (gaussian filter) is the commutator of the FULL
+right-hand side: turbulence (Jacobian) + obstacle penalty + sponge. The
+stalled cylinder training suggested the target is unlearnably concentrated
+(90% of energy in 0.08% of pixels). These figures split Pi into:
+  Pi_J    — the turbulence-only part: filter(J(psi,omega))_fine - J(filtered)
+  Pi_body — the rest (obstacle penalty + sponge commutator) = Pi_full - Pi_J
+Panels per member: Pi_full | Pi_J | Pi_body, same symlog scale, one developed
+frame; plus the |Pi|/median CDFs and the concentration stats per part.
+Inputs: DNS_FR.npz (fine fields) + the all-Gaussian filter. Outputs: these
+pngs + yamls/.../summary.yaml + a val-window Pi_J quick-look npz per member.
+Purpose: decide (pre-registered rule in the script header) whether the
+cylinder relaunch should train on the Jacobian-only target.

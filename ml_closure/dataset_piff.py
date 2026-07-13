@@ -201,6 +201,27 @@ class RunData:
         if self.n_valid == 0:
             raise ValueError(f"{self.name}: empty valid mask")
 
+    def signal_block_weights(self, block):
+        """Per-frame block-sampling weights ∝ sum of Pi^2 over (block x block)
+        tiles of VALID pixels (Sanaa 2026-07-13: Jacobian-only targets carry
+        90% of their energy in ~0.07% of pixels — geometric wake boxes no
+        longer guarantee signal in a batch; sample where the energy actually
+        is). Computed once, cached on the instance; float64 sums, tiny table
+        (T x Ny/b x Nx/b)."""
+        if getattr(self, '_sbw', None) is not None and self._sbw_block == block:
+            return self._sbw
+        b = int(block)
+        Ny, Nx = self.Ny - self.Ny % b, self.Nx - self.Nx % b
+        w = np.empty((self.T, Ny // b, Nx // b), dtype=np.float64)
+        vm = self.valid[:Ny, :Nx].reshape(Ny // b, b, Nx // b, b)
+        for t in range(self.T):
+            p2 = (self.pi[t][:Ny, :Nx].astype(np.float64) ** 2)
+            w[t] = (p2.reshape(Ny // b, b, Nx // b, b) * vm).sum(axis=(1, 3))
+        s = w.sum(axis=(1, 2), keepdims=True)
+        self._sbw = w / np.maximum(s, 1e-300)
+        self._sbw_block = b
+        return self._sbw
+
     def frames_in(self, t_lo, t_hi):
         """Frame indices with t in [t_lo, t_hi). Times read from the record —
         no uniform-t assumption."""
@@ -328,6 +349,14 @@ class PiffCropDataset(Dataset):
         self.wake_frac = _f(dc['wake_frac'])
         self.wxlo, self.wxhi = _f(dc['wake_x_lo_D']), _f(dc['wake_x_hi_D'])
         self.wyh = _f(dc['wake_y_half_D'])
+        # signal-biased sampling (2026-07-13): fraction of TRAIN crops whose
+        # centers are drawn from the per-frame Pi^2 block distribution. 0.0
+        # (default) = EXACT legacy path, bit-identical crop tables. TRAIN-ONLY
+        # (G4 finding 2): val crops keep the legacy distribution so the val
+        # curve / T6 gate stay comparable across runs. In the train three-way
+        # split the wake share is wake_frac*(1-signal_frac); remainder uniform.
+        self.signal_frac = _f(dc.get('signal_frac', 0.0)) if split == 'train' else 0.0
+        self.signal_block = int(dc.get('signal_block', 8))
         self.set_epoch(0)
 
     def set_epoch(self, epoch):
@@ -335,19 +364,55 @@ class PiffCropDataset(Dataset):
         rng = np.random.default_rng([self.seed, {'train': 0, 'val': 1}[self.split], int(epoch)])
         tbl = np.empty((self.n_crops, 4), dtype=np.int64)
         pick = rng.integers(0, len(self.frames), size=self.n_crops)
-        wake = rng.random(self.n_crops) < self.wake_frac
-        for i in range(self.n_crops):
-            ri, fi = self.frames[pick[i]]
-            r = self.runs[ri]
-            if wake[i]:
-                x = r.x_c + rng.uniform(self.wxlo, self.wxhi) * r.D
-                y = r.y_c + rng.uniform(-self.wyh, self.wyh) * r.D
-                cy = int(round(y / r.dy)) % r.Ny
-                cx = int(round(x / r.dx)) % r.Nx   # window may pass the outlet: wrap; loss mask handles sponge
-            else:
-                cy = int(rng.integers(0, r.Ny))
-                cx = int(rng.integers(0, r.Nx))
-            tbl[i] = (ri, fi, cy, cx)
+        if self.signal_frac <= 0.0:
+            # EXACT legacy path (signal_frac 0): same rng call sequence,
+            # bit-identical crop tables to pre-2026-07-13 code
+            wake = rng.random(self.n_crops) < self.wake_frac
+            for i in range(self.n_crops):
+                ri, fi = self.frames[pick[i]]
+                r = self.runs[ri]
+                if wake[i]:
+                    x = r.x_c + rng.uniform(self.wxlo, self.wxhi) * r.D
+                    y = r.y_c + rng.uniform(-self.wyh, self.wyh) * r.D
+                    cy = int(round(y / r.dy)) % r.Ny
+                    cx = int(round(x / r.dx)) % r.Nx   # window may pass the outlet: wrap; loss mask handles sponge
+                else:
+                    cy = int(rng.integers(0, r.Ny))
+                    cx = int(rng.integers(0, r.Nx))
+                tbl[i] = (ri, fi, cy, cx)
+        else:
+            # three-way split: signal-biased (Pi^2 block distribution) /
+            # geometric wake box / uniform. Wake share scaled by
+            # (1-signal_frac) so conf wake_frac keeps its legacy meaning.
+            wake_hi = self.signal_frac + self.wake_frac * (1.0 - self.signal_frac)
+            u = rng.random(self.n_crops)
+            for i in range(self.n_crops):
+                ri, fi = self.frames[pick[i]]
+                r = self.runs[ri]
+                if u[i] < self.signal_frac:
+                    b = self.signal_block
+                    w = r.signal_block_weights(b)[fi]
+                    wsum = float(w.sum())
+                    if wsum <= 0.999:
+                        # quiescent/zero-energy frame (G4 finding 1): the
+                        # normalized row cannot feed rng.choice — uniform crop
+                        cy = int(rng.integers(0, r.Ny))
+                        cx = int(rng.integers(0, r.Nx))
+                        tbl[i] = (ri, fi, cy, cx)
+                        continue
+                    flat = rng.choice(w.size, p=w.ravel())
+                    by, bx = divmod(int(flat), w.shape[1])
+                    cy = (by * b + int(rng.integers(0, b))) % r.Ny
+                    cx = (bx * b + int(rng.integers(0, b))) % r.Nx
+                elif u[i] < wake_hi:
+                    x = r.x_c + rng.uniform(self.wxlo, self.wxhi) * r.D
+                    y = r.y_c + rng.uniform(-self.wyh, self.wyh) * r.D
+                    cy = int(round(y / r.dy)) % r.Ny
+                    cx = int(round(x / r.dx)) % r.Nx
+                else:
+                    cy = int(rng.integers(0, r.Ny))
+                    cx = int(rng.integers(0, r.Nx))
+                tbl[i] = (ri, fi, cy, cx)
         self.table = tbl
 
     def __len__(self):

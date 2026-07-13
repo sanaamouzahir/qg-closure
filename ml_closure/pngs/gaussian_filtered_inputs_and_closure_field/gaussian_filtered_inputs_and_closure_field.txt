@@ -1,0 +1,28 @@
+gaussian_filtered_inputs_and_closure_field — what these figures show
+
+One figure per simulation member, all fields from DNS_LES_s4_gaussian.npz
+(the coarse data produced with the ALL-GAUSSIAN filter that replaced the
+sharp spectral cutoff on 2026-07-13 — the filter change that removed the
+vertical ringing streaks).
+
+Panels, left to right:
+  1. filtered vorticity omega_bar — the model's main input: the coarse
+     picture of the flow after the small eddies are smoothed away.
+  2. filtered x-velocity ubar and 3. filtered y-velocity vbar — the other
+     two flow inputs, derived from omega_bar exactly as the coarse solver
+     would (psi = inverse Laplacian, u = -dpsi/dy, v = +dpsi/dx, inlet
+     speed U(t) as the mean mode).
+  4. exclusion picture — obstacle mask (dark) and sponge zone (shaded):
+     the pixels the model never trains on and is never scored on.
+  5. the closure field Pi — the OUTPUT the model must learn: the push of
+     the discarded small eddies on the coarse flow,
+         Pi = filter(J + obstacle penalty + sponge)_fine
+            - (same terms)(filtered fields),
+     shown on a SYMLOG color scale (linear inside the 99th percentile of
+     |Pi|, logarithmic beyond) so both the wake structure and the extremes
+     are visible at once — a linear-to-max scale hides the wake entirely.
+
+Inputs: the member's DNS_LES_s4_gaussian.npz. Outputs: these pngs.
+Purpose: visual confirmation that the Gaussian-filter data is clean (no
+ringing streaks) and a reference gallery of what the model actually sees.
+Frame chosen at t ~ 81 (developed flow), title states exact t, U(t), Re(t).

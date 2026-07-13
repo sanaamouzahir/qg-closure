@@ -1,0 +1,41 @@
+seed: 0
+variant: gaussian
+runs:
+- FPCape-const
+- FPCape-sine
+- FPCape-ramp
+- FPCape-ou
+- FPCape-tel
+n_train_frames: 780
+n_val_frames: 220
+N_train_pixels: 144703260
+N_val_pixels: 40813740
+valid_per_frame:
+  FPCape-const: 185517
+  FPCape-sine: 185517
+  FPCape-ramp: 185517
+  FPCape-ou: 185517
+  FPCape-tel: 185517
+lomo_holdout: null
+lr: 0.001
+weight_decay: 1.0e-05
+epochs: 150
+film: true
+ELBO_num_data: 144703260
+device: cuda
+init_hyperparams:
+  gp_mean_init: 0.0
+  gp_space_var: 1.0
+  noise_frac: 0.1
+  outputscale_init: 0.9
+  noise_init: 0.1
+  y_mean: 6.2467659659630925
+  y_std: 263.62382511239406
+  stats_n_pixels: 144703260
+  zdot_sd: 0.19341012076214337
+  g_scale: 1.3069005490742012
+  conditioning_stats:
+    zdot_sd: 0.19341012076214337
+    zdot_n_frames: 780
+    g_scale: 1.3069005490742012
+    g_n_pixels: 144703260

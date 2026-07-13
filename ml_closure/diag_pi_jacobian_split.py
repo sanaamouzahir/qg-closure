@@ -123,7 +123,9 @@ def main():
                 sb_j = cpf._sources_on_grid(om_bar, deriv_LES, dt, 0.0, None, None, 0.0)
                 pi_j = (filt.from_spectral(sf_j, output='physical')
                         - to_physical(sb_j)).numpy()
-                full_f.append(pi_full); j_f.append(pi_j)
+                # filter/to_physical may carry a leading batch axis — always 2-D here
+                full_f.append(np.asarray(pi_full).squeeze())
+                j_f.append(np.asarray(pi_j).squeeze())
 
         chi_o_c = chi_obs_bar.numpy().squeeze() if chi_obs_bar is not None else np.zeros_like(full_f[0])
         chi_s_c = chi_sponge_bar.numpy().squeeze() if chi_sponge_bar is not None else np.zeros_like(full_f[0])

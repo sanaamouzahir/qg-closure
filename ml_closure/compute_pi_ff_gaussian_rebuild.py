@@ -80,6 +80,12 @@ def main():
     ap.add_argument('--alpha', type=float, default=1.5)
     ap.add_argument('--gauss-delta-les', type=float, default=2.0)
     ap.add_argument('--name', default='DNS')
+    ap.add_argument('--jacobian-only', action='store_true',
+                    help="Pi = gaussianfilter(J)_fine - J(gaussianfilter(fields)) ONLY "
+                         "(Sanaa convention ruling 2026-07-13: no body-force commutator "
+                         "in the target; physics quantities only). Output suffix "
+                         "_gaussian_jonly. chi masks still SAVED (the dataset needs "
+                         "them for the valid mask) — they just don't enter Pi.")
     args = ap.parse_args()
 
     cpf = load_cpf()
@@ -106,6 +112,11 @@ def main():
 
     grid_FR, deriv_FR = cpf._build_grid_and_derivative(gp, device='cpu')
 
+    # Jacobian-only mode: body forces OUT of the target in BOTH legs
+    src_penalty = 0.0 if args.jacobian_only else penalty
+    src_sponge = 0.0 if args.jacobian_only else sponge_eta
+    suffix = '_gaussian_jonly' if args.jacobian_only else '_gaussian'
+
     for scale in args.scales:
         t0 = time.time()
         canon_path = mdir / f'DNS_LES_s{scale}.npz'
@@ -113,7 +124,7 @@ def main():
             print(f"[gauss-rebuild] s{scale}: no canonical {canon_path.name} — SKIP "
                   f"(times/U_snap source missing; run step0 first)")
             continue
-        out_path = mdir / f'DNS_LES_s{scale}_gaussian.npz'
+        out_path = mdir / f'DNS_LES_s{scale}{suffix}.npz'
         if out_path.exists():
             print(f"[gauss-rebuild] s{scale}: {out_path.name} exists — SKIP (no overwrite)")
             continue
@@ -143,12 +154,16 @@ def main():
         with torch.no_grad():
             for t in range(T):
                 om = torch.tensor(omega_FR_np[0, t], dtype=grid_FR.ftype)
-                src_FR = cpf._sources_on_grid(om, deriv_FR, dt, penalty,
-                                              chi_obs_FR, chi_sponge_FR, sponge_eta)
+                src_FR = cpf._sources_on_grid(
+                    om, deriv_FR, dt, src_penalty,
+                    None if args.jacobian_only else chi_obs_FR,
+                    None if args.jacobian_only else chi_sponge_FR, src_sponge)
                 src_f = filt.from_spectral(src_FR, output='physical')
                 om_bar = filt.from_physical(om)
-                src_bar = cpf._sources_on_grid(om_bar, deriv_LES, dt, penalty,
-                                               chi_obs_bar, chi_sponge_bar, sponge_eta)
+                src_bar = cpf._sources_on_grid(
+                    om_bar, deriv_LES, dt, src_penalty,
+                    None if args.jacobian_only else chi_obs_bar,
+                    None if args.jacobian_only else chi_sponge_bar, src_sponge)
                 ob[t] = om_bar.numpy()
                 pi[t] = (src_f - to_physical(src_bar)).numpy()
                 if t % 50 == 0:
@@ -159,7 +174,10 @@ def main():
             'filter': (f"ALL-GAUSSIAN: exp(-k^2 (alpha*dx_FR)^2/6) * "
                        f"exp(-k^2 ({args.gauss_delta_les}*dx_LES)^2/6) o avg-pool "
                        f"(sharp cutoff REMOVED; P2-validated variant 2026-07-13)"),
-            'pi_definition': 'filter(J+Brinkman+Sponge)_fine - (J+Brinkman+Sponge)(filtered fields)',
+            'pi_definition': ('gaussianfilter(J)_fine - J(gaussianfilter(fields)) '
+                              'JACOBIAN-ONLY (Sanaa convention 2026-07-13)'
+                              if args.jacobian_only else
+                              'filter(J+Brinkman+Sponge)_fine - (J+Brinkman+Sponge)(filtered fields)'),
             'alpha': args.alpha, 'gauss_delta_les': args.gauss_delta_les,
             'scale': int(scale), 'source': f'{args.name}_FR.npz',
             'times_U_Re_from': canon_path.name,
@@ -169,9 +187,12 @@ def main():
             omega_bar=ob[None], pi_ff=pi[None],
             ubar=ubar[None], vbar=vbar[None],
             times=times_c, U_snap=canon['U_snap'], Re_snap=Re_snap,
-            chi_obs_bar=(chi_obs_bar.numpy().astype(np.float32)[None]
+            # squeeze then [None]: chi arrays in DNS_FR.npz may already carry a
+            # batch axis — guarantee (1, Ny, Nx) like the canonical files
+            # (2026-07-13 bug: double batch dim crashed signed_distance rank-2 check)
+            chi_obs_bar=(np.asarray(chi_obs_bar.numpy(), dtype=np.float32).squeeze()[None]
                          if chi_obs_bar is not None else np.zeros((1, cp['Ny'], cp['Nx']), np.float32)),
-            chi_sponge_bar=(chi_sponge_bar.numpy().astype(np.float32)[None]
+            chi_sponge_bar=(np.asarray(chi_sponge_bar.numpy(), dtype=np.float32).squeeze()[None]
                             if chi_sponge_bar is not None else np.zeros((1, cp['Ny'], cp['Nx']), np.float32)),
             meta=json.dumps(meta))
         print(f"[gauss-rebuild] s{scale}: wrote {out_path.name} "
