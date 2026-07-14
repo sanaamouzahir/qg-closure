@@ -2,6 +2,29 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-14 — session 14b (Sanaa order: full diagnostics on the SMALL-ENSEMBLE training + held-out 3-dT rollouts)
+- Ckpt under test: rollout_ft_p1_lam01/best.pt (lambda winner; trained kf4+FRC-256 ONLY; combo
+  held out). Jobs: a-priori eval_by_root 1833365; ladder apostP1b 1833422 (first attempt 1833364
+  FATAL: apost_smoke3/ IC837 refs no longer on disk — IC837 legs dropped, 9 verified replication
+  pairs kept = ALL 3 held-out combo ICs x 3 dT); spectral profile 1833423 (first attempt died on
+  --ckpt name=path CLI, fixed). All exit 0. Results: Results/apost_p1lam01_20260714/ (merged CSV),
+  Results/spectral_error_profile_p1lam01_20260714/, eval_by_root_val.csv next to the ckpt.
+- LADDER VERDICT (16-step, bare vs closure, medians over stable pairs): 5e-3 2.2x (9/9 stable),
+  1e-2 7.9x (8/9), 1.5e-2 4.2x (8/9; only combo_ic527 blows: step 11 @1.5e-2, step 16 @1e-2).
+  PROFILE FLIPPED vs opt2 ep33 (07-12 rep: 15.96x/0.50x/0.65x with 5 total blowups): the P1
+  rollout fine-tune TRADED the big 5e-3 gain for large-dT usability — large dT went from
+  parity-and-blowy to 4-8x stable. This is the 07-11 "large-dT accuracy = next lever" DELIVERED.
+- HELD-OUT COMBO (OOD): ic1355 clean (9.9/7.4/2.2x, stable all 3 dT); ic884 mixed (6.7x @1e-2,
+  sub-parity 0.47/0.69 elsewhere); ic527 bad (2 blowups + 0.02x @5e-3, corner drift 7.3) — the
+  SAME worst-draw as under opt2 (0.92x parity, 2 blowups), persistently hard, not a regression.
+- SPECTRAL (combo): Nddot low-k 0.21 @5e-3 / 0.30 @1.5e-2 vs mid-k 0.10/0.25 — the OOD error
+  lives at LOW k (regime-scale structures) => exactly what (Re,beta,mu)-conditioning targets.
+- A-PRIORI (eval_by_root): combo Nddot 0.173/0.158/0.313 vs kf4 0.116/0.111/0.289 — mild OOD
+  gap (1.1-1.5x). N3dot ~0.85 everywhere = the known a-priori price of rollout FT.
+- PRODUCTION (rollout_ft_p1_prod 1833313, 7 roots) WATCH FLAG at ep3: val clean and improving
+  (2.81e-3 -> 2.12e-3) but the free-run leg still blows ~1/3 of s3 windows on the new b-members
+  (guards absorbing, best.pt tracking). Left to run its 20 ep per Sanaa slow-down; verdict tonight.
+
 ## 2026-07-14 — session 14 (P1 lambda-sweep verdict + production fire, global supervisor)
 - The overnight P1 lambda ladder (vn-certificate penalty on the rollout fine-tune; 1832694
   lam01 / 1832697 lam1 / 1832700 lam10, ~4.6 h each, exit 0) landed: ZERO blow-ups and zero
