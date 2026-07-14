@@ -1,0 +1,280 @@
+what: 'cape artefact band: y/x structure characterization + in-band filter comparison
+  (ynotch vs ylp75 vs notch2d)'
+n_val_frames_per_run: 4
+quiescent_band_def: 'y - y_c > 3.0D above the cape tip (bottom-attached body: one-sided)'
+wake_region_def: sdf < 3.0D
+filter_defs:
+  ynotch: y-grid-Nyquist notch [1,2,1]/4 in-band (approved cylinder filter)
+  ylp75: spectral y low-pass in-band, kill k_y >= 0.75 k_Nyquist (cosine taper 0.70-0.80)
+  notch2d: ylp75 + mild x low-pass (Gaussian sigma 1.5 px) in-band
+wake_collateral_tolerance: 0.1
+runs:
+  FPCape-const:
+    member: FPCape-const
+    frames_t:
+    - 100.35000000000001
+    - 106.65
+    - 113.4
+    - 119.7
+    band_cols:
+    - 103
+    - 126
+    band_width_px: 24
+    band_width_D: 1.1780972450961724
+    band_x_station: 5.64504929941916
+    artefact_over_background_amplitude: 23.123275794112498
+    quiescent_rows_def: y - y_c > 3.0D above the tip, valid across the band, largest
+      contiguous block
+    quiescent_rows_y_range:
+    - 7.044039777970864
+    - 20.0521968592411
+    n_quiescent_rows: 266
+    pedestal_share_of_in_band_SS: 2.219985612403842e-05
+    row_lag1_corr_raw_undemeaned: -0.9968041998794455
+    row_lag1_corr_demeaned: -0.9863197349347504
+    yspec_fractions_raw:
+      frac_var_at_nyquist: 0.662376093604197
+      frac_var_top10_ky: 0.9753074842279057
+      frac_var_top25_ky: 0.989218514357259
+      frac_var_below_top25: 0.010781485642740951
+    acf_y_lags_0_16:
+    - 1.0
+    - -0.9863197349347504
+    - 0.9765915650034894
+    - -0.9677631734614436
+    - 0.9565708651808367
+    - -0.9474443809019258
+    - 0.9375777412107261
+    - -0.928621797459025
+    - 0.9188651946023483
+    - -0.9103152735602165
+    - 0.901143088463378
+    - -0.8922465525877732
+    - 0.8843391335068069
+    - -0.8749289013272109
+    - 0.8673218200658065
+    - -0.8588100428569259
+    - 0.8507613387444857
+    acf_x_lags_0_12:
+    - 1.0
+    - 0.1092130350421178
+    - -0.3634206477257576
+    - -0.1362369754733191
+    - -0.24416062107837536
+    - 0.1440778721513692
+    - 0.23086806793860581
+    - -0.13741646211620637
+    - -0.13729398609496432
+    - -0.021637001576561992
+    - -0.003660436116252752
+    - 0.061258169880614124
+    - 0.026459729587294662
+    xspec_fractions_in_band:
+      frac_var_at_nyquist: 0.0007784455829812885
+      frac_var_top10_ky: 0.00798504664121468
+      frac_var_top25_ky: 0.14455087546509082
+      frac_var_below_top25: 0.8554491245349092
+    secondary_x_stations:
+    - col: 327
+      x: 16.07611865704152
+      hp_rms_over_median: 7.95107351327228
+      cols_from_sponge_edge: 133
+      yspec_fractions:
+        frac_var_at_nyquist: 0.6578172888587799
+        frac_var_top10_ky: 0.9723223349344697
+        frac_var_top25_ky: 0.9862727134809572
+        frac_var_below_top25: 0.013727286519042758
+      row_lag1_corr_demeaned: -0.9805815233271643
+      verdict: checkerboard artefact
+    - col: 279
+      x: 13.719924166849175
+      hp_rms_over_median: 4.8817057777984205
+      cols_from_sponge_edge: 181
+    - col: 137
+      x: 6.749515466696821
+      hp_rms_over_median: 4.689653913346161
+      cols_from_sponge_edge: 323
+    sponge_edge_col: 460
+    filters:
+      ynotch:
+        frac_global_pi2_removed: 0.029482209079830325
+        frac_wake_pi2_removed: 0.035928694012008294
+        frac_quiescent_pi2_removed: 4.369928405417289e-05
+        removed_energy_share_quiescent: 0.0002662713162641749
+        removed_energy_share_wake: 0.999733728683736
+        frac_band_quiescent_pi2_removed: 0.9981945598476692
+        residual_band_amp_ratio: 0.6981290224746804
+        residual_yspec_fractions:
+          frac_var_at_nyquist: 8.04827866289221e-05
+          frac_var_top10_ky: 0.002160101874420018
+          frac_var_top25_ky: 0.005811789899336669
+          frac_var_below_top25: 0.9941882101006634
+      ylp75:
+        frac_global_pi2_removed: 0.0002874031348689132
+        frac_wake_pi2_removed: 0.0003440198220083383
+        frac_quiescent_pi2_removed: 2.885744423386909e-05
+        removed_energy_share_quiescent: 0.018037504368401798
+        removed_energy_share_wake: 0.9819624956315984
+        frac_band_quiescent_pi2_removed: 0.998043331744695
+        residual_band_amp_ratio: 1.0179399955728632
+        residual_yspec_fractions:
+          frac_var_at_nyquist: 9.055832982037665e-05
+          frac_var_top10_ky: 0.00252169897695673
+          frac_var_top25_ky: 0.023435105891704822
+          frac_var_below_top25: 0.9765648941082952
+      notch2d:
+        frac_global_pi2_removed: 0.09229588814155766
+        frac_wake_pi2_removed: 0.11250064105670633
+        frac_quiescent_pi2_removed: 2.8889479251420183e-05
+        removed_energy_share_quiescent: 5.622991737783082e-05
+        removed_energy_share_wake: 0.999943770082622
+        frac_band_quiescent_pi2_removed: 0.9980053041175105
+        residual_band_amp_ratio: 0.9514282377947083
+        residual_yspec_fractions:
+          frac_var_at_nyquist: 7.891411085085059e-05
+          frac_var_top10_ky: 0.0021831685110679524
+          frac_var_top25_ky: 0.01714438021275109
+          frac_var_below_top25: 0.9828556197872489
+    admissible_filters_wake_tol:
+    - ynotch
+    - ylp75
+    best_filter: ylp75
+  FPCape-ramp:
+    member: FPCape-ramp
+    frames_t:
+    - 100.35000000000001
+    - 106.65
+    - 113.4
+    - 119.7
+    band_cols:
+    - 104
+    - 116
+    band_width_px: 13
+    band_width_D: 0.6381360077604268
+    band_x_station: 5.424156065963627
+    artefact_over_background_amplitude: 5.575026760667129
+    quiescent_rows_def: y - y_c > 3.0D above the tip, valid across the band, largest
+      contiguous block
+    quiescent_rows_y_range:
+    - 7.044039777970864
+    - 20.0521968592411
+    n_quiescent_rows: 266
+    pedestal_share_of_in_band_SS: 2.058571752556606e-05
+    row_lag1_corr_raw_undemeaned: -0.9990187272350773
+    row_lag1_corr_demeaned: -0.9892945702245388
+    yspec_fractions_raw:
+      frac_var_at_nyquist: 0.6708482172016701
+      frac_var_top10_ky: 0.9779177837747253
+      frac_var_top25_ky: 0.9910868721290931
+      frac_var_below_top25: 0.008913127870906923
+    acf_y_lags_0_16:
+    - 1.0
+    - -0.9892945702245388
+    - 0.9797866619107845
+    - -0.9707255937853829
+    - 0.9612205752315945
+    - -0.9522166466245457
+    - 0.9431376454642205
+    - -0.9343525918734881
+    - 0.9256206943275553
+    - -0.917244142466459
+    - 0.9084937822765539
+    - -0.9003531445780515
+    - 0.8923456854985727
+    - -0.8839493181861611
+    - 0.8761463804410754
+    - -0.8682125721418338
+    - 0.8605484090917617
+    acf_x_lags_0_12:
+    - 1.0
+    - -0.2385637299233454
+    - -0.4785413333193158
+    - 0.4645936049788538
+    - -0.040747477482090844
+    - -0.3563034983345699
+    - 0.10885018242636194
+    - 0.1047267285023565
+    - -0.09507612568352154
+    - 0.005104297838075606
+    - 0.03257226847654501
+    - -0.007641771980920851
+    - 0.0010268545015716774
+    xspec_fractions_in_band:
+      frac_var_at_nyquist: 0.0
+      frac_var_top10_ky: 0.02878903509452334
+      frac_var_top25_ky: 0.17057784805532625
+      frac_var_below_top25: 0.8294221519446737
+    secondary_x_stations:
+    - col: 336
+      x: 16.517905123952584
+      hp_rms_over_median: 180.98353737877179
+      cols_from_sponge_edge: 124
+      yspec_fractions:
+        frac_var_at_nyquist: 0.00018119342396507072
+        frac_var_top10_ky: 0.00497983346792543
+        frac_var_top25_ky: 0.013239706503527782
+        frac_var_below_top25: 0.9867602934964722
+      row_lag1_corr_demeaned: 0.8130432757957368
+      verdict: smooth in y -- real flow (far-wake/outlet leakage), not grid artefact
+    - col: 286
+      x: 14.063535863335558
+      hp_rms_over_median: 56.14153221455864
+      cols_from_sponge_edge: 174
+    - col: 273
+      x: 13.425399855575131
+      hp_rms_over_median: 45.71380531599819
+      cols_from_sponge_edge: 187
+    sponge_edge_col: 460
+    filters:
+      ynotch:
+        frac_global_pi2_removed: 0.013724646122561005
+        frac_wake_pi2_removed: 0.017827537345551415
+        frac_quiescent_pi2_removed: 1.8548308030813942e-05
+        removed_energy_share_quiescent: 0.0003113535921376246
+        removed_energy_share_wake: 0.9996886464078621
+        frac_band_quiescent_pi2_removed: 0.9995047413930062
+        residual_band_amp_ratio: 0.0878199707004497
+        residual_yspec_fractions:
+          frac_var_at_nyquist: 5.174595989563324e-05
+          frac_var_top10_ky: 0.001348290986917573
+          frac_var_top25_ky: 0.003853698666017629
+          frac_var_below_top25: 0.9961463013339824
+      ylp75:
+        frac_global_pi2_removed: 0.00025277520051657384
+        frac_wake_pi2_removed: 0.0003232191084153626
+        frac_quiescent_pi2_removed: 1.7450635563853313e-05
+        removed_energy_share_quiescent: 0.015904774709169206
+        removed_energy_share_wake: 0.9840952252908309
+        frac_band_quiescent_pi2_removed: 0.9995942726922855
+        residual_band_amp_ratio: 0.14633626151716608
+        residual_yspec_fractions:
+          frac_var_at_nyquist: 9.673817649044439e-05
+          frac_var_top10_ky: 0.0028146621187899
+          frac_var_top25_ky: 0.06725678773252479
+          frac_var_below_top25: 0.9327432122674753
+      notch2d:
+        frac_global_pi2_removed: 0.048093822750675225
+        frac_wake_pi2_removed: 0.062485381911646355
+        frac_quiescent_pi2_removed: 1.7452492898855694e-05
+        removed_energy_share_quiescent: 8.360243135252106e-05
+        removed_energy_share_wake: 0.9999163975686478
+        frac_band_quiescent_pi2_removed: 0.999574993730993
+        residual_band_amp_ratio: 0.13222343278293638
+        residual_yspec_fractions:
+          frac_var_at_nyquist: 8.180526204075237e-05
+          frac_var_top10_ky: 0.0023701659041009846
+          frac_var_top25_ky: 0.059076343231633806
+          frac_var_below_top25: 0.9409236567683662
+    admissible_filters_wake_tol:
+    - ynotch
+    - ylp75
+    - notch2d
+    best_filter: ylp75
+recommended_cape_filter: ylp75
+cylinder_followup:
+  member: FPC-const
+  frame_t: 100.17
+  band_cols:
+  - 245
+  - 280
+  panel: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/pngs/ring_filter_prototype/FPC-const/fields_ynotch_t100.17.png
