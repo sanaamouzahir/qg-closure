@@ -155,6 +155,20 @@ def main():
                         'leverage of near-zero-target samples (Ndot zero-'
                         'crossings at ||N(t)|| extrema). 0 disables (exact '
                         'pre-6.1.2 relative loss).')
+    p.add_argument('--init-ckpt', type=Path, default=None,
+                   help='warm start from a train_deriv-lineage ckpt. If its '
+                        'grad_kernel is NARROWER than --grad-kernel, the '
+                        'stencils and cond head are widened EXACTLY '
+                        '(center-embed, zeros outside): the widened model '
+                        'computes the identical function at step 0, the new '
+                        'outer taps are pure added capacity.')
+    p.add_argument('--order-weights', type=str, default=None,
+                   help="per-order loss weights, e.g. '1,1,0' to ditch "
+                        "N3dot from the objective (Sanaa 2026-07-14; N3dot "
+                        "is 2.6%% of the closure and its FD floor is high). "
+                        "Weighted loss also drives best-ckpt selection; "
+                        "per-order columns stay logged unweighted. Default: "
+                        "equal weights.")
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--device', type=str, default='cuda')
     p.add_argument('--print-every', type=int, default=5)
@@ -249,6 +263,69 @@ def main():
                         grad_kernel=args.grad_kernel, dt=dt0,
                         dx=dx0, dy=dy0, physics_init=not args.no_physics_init,
                         learnable_stencils=args.learnable_stencils).to(args.device).to(adtype)
+    # ---- warm start (with exact widening if the ckpt stencil is narrower) ----
+    if args.init_ckpt is not None:
+        ck = torch.load(args.init_ckpt, map_location=args.device,
+                        weights_only=False)
+        w_in = int(ck['config'].get('grad_kernel', args.grad_kernel))
+        w_out = args.grad_kernel
+        if w_in == w_out:
+            model.load_state_dict(ck['model'])
+            print(f"[deriv-train] warm start from {args.init_ckpt} "
+                  f"(epoch={ck.get('epoch')})")
+        elif w_in < w_out:
+            pad = (w_out - w_in) // 2
+            sd_new = model.state_dict()
+            loaded = {}
+            for k, v_new in sd_new.items():
+                if k not in ck['model']:
+                    raise SystemExit(f"[init-ckpt] key {k} missing in ckpt")
+                v_old = ck['model'][k].to(v_new.dtype)
+                if tuple(v_old.shape) == tuple(v_new.shape):
+                    loaded[k] = v_old
+                elif k.endswith('grad.wx') or k.endswith('grad.wy'):
+                    # (C,1,w,w) -> (C,1,W,W): zeros outside == same conv output
+                    t = torch.zeros_like(v_new)
+                    t[..., pad:pad + w_in, pad:pad + w_in] = v_old
+                    loaded[k] = t
+                elif k.endswith('cond.head.weight'):
+                    C = v_old.shape[0] // (2 * w_in)
+                    t = torch.zeros_like(v_new)      # (C*2*W, hidden)
+                    t.view(C, 2, w_out, -1)[:, :, pad:pad + w_in, :] = \
+                        v_old.view(C, 2, w_in, -1)
+                    loaded[k] = t
+                elif k.endswith('cond.head.bias'):
+                    C = v_old.shape[0] // (2 * w_in)
+                    t = torch.zeros_like(v_new)
+                    t.view(C, 2, w_out)[:, :, pad:pad + w_in] = \
+                        v_old.view(C, 2, w_in)
+                    loaded[k] = t
+                else:
+                    raise SystemExit(f"[init-ckpt] non-widenable mismatch on "
+                                     f"{k}: {tuple(v_old.shape)} vs "
+                                     f"{tuple(v_new.shape)}")
+            model.load_state_dict(loaded)
+            print(f"[deriv-train] warm start from {args.init_ckpt} "
+                  f"(epoch={ck.get('epoch')}) WIDENED {w_in}->{w_out} "
+                  f"(exact function preserved; outer taps start at 0)")
+        else:
+            raise SystemExit(f"[init-ckpt] ckpt grad_kernel {w_in} > "
+                             f"--grad-kernel {w_out}: narrowing unsupported")
+
+    # ---- per-order loss weights (e.g. 1,1,0 = ditch N3dot) ----
+    order_w = None
+    if args.order_weights is not None:
+        order_w = torch.tensor([float(v) for v in
+                                args.order_weights.split(',')],
+                               dtype=adtype, device=args.device)
+        if order_w.numel() != args.out_orders or (order_w < 0).any() \
+                or order_w.sum() <= 0:
+            raise SystemExit(f"--order-weights needs {args.out_orders} "
+                             f"non-negative values with positive sum")
+        print(f"[deriv-train] order-weighted loss: "
+              f"{dict(zip(ORDER_NAMES, order_w.tolist()))} "
+              f"(weighted mean drives loss AND best-ckpt selection)")
+
     trainable = [q for q in model.parameters() if q.requires_grad]
     n_params = sum(q.numel() for q in trainable)
     print(f"[deriv-train] {args.model} trainable params={n_params:,}  in_ch={in_ch}  "
@@ -295,7 +372,11 @@ def main():
                 nd = model(x, dt=dT, dx=dxb, dy=dyb)        # (B, out_orders, H, W)
                 project = project_by_shape[(x.shape[-2], x.shape[-1])]  # by batch shape
                 nd = project(nd)
-                loss = relative_l2_perchannel(nd, y, floor)
+                if order_w is None:
+                    loss = relative_l2_perchannel(nd, y, floor)
+                else:
+                    vec = relative_l2_perchannel_vec(nd, y, floor)
+                    loss = (order_w * vec).sum() / order_w.sum()
                 if train:
                     optim.zero_grad(); loss.backward(); optim.step()
                 tot += loss.item()

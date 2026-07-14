@@ -34,6 +34,27 @@ Running record. Supervisor updates this at the end of every session. Newest entr
   accuracy engine. PROPOSED instrument arms (width-31 + spectral-grad @5e-3, kf4+256) to price
   the 0.031->0.008 wall = the local-vs-FFT (recursion cell) decision. Awaiting her word.
 
+## 2026-07-14 — session 15b (Sanaa chat ruling ~15:15: accuracy-first pivot)
+- RULING (verbatim intent): kill the jobs; check width-31 vs spectral-gradient COSTS and report;
+  if 31 is not-too-expensive AND much more accurate FOR ALL THREE dTs -> retrain cond_local_v2
+  "suuuper accurate" (grad_kernel 31, N3dot ditched from the loss, warm from the pretrained
+  model), then P1 rollout FT with vn lambda 0.1 on the widened ensemble pool. NO anchor arms.
+- KILLED 15:1x: all 9 anchor-sweep jobs 1833553-61 (code kept: --anchor-lambda stays in the
+  trainer, commit 1180ad8 — mechanism on the shelf). p1_prod 1833313 LEFT RUNNING (interpretation:
+  "the jobs" = the sweep; p1prod is 60% done + still the stability baseline — flag to Sanaa).
+- BUILT + GATED: train_deriv.py gains --init-ckpt (warm start with EXACT widening: center-embed
+  15->31 stencils + cond head; identity VERIFIED bit-exact, max|diff|=0.0; params 10,564->28,740)
+  and --order-weights (1,1,0 drops N3dot from loss AND best selection; per-order logging intact).
+  diagnostics/bench_grad31_cost.py measures fwd / fwd+bwd / full-closure-step walltime + peak mem
+  for cond_local k15 vs k31 vs cond_deriv(spectral) at 256^2/512^2. sge-checker PASS both scripts.
+- FIRED 15:41: bench 1833568 (~10 min) + I18 unit deriv7_cond_local_w31: trainer 1833569
+  (150 ep, ~950 s/ep at k15 -> slower at k31; verdict readable at ep~30 overnight; warm start is
+  function-identical so ANY early val drop = pure width-31 capacity), monitors 1833570/71.
+  Gate on landing: eval_deriv_by_root per-dT Nddot MUCH below cond_v2 (0.087 pooled med / kf4
+  0.057) at ALL THREE dTs + bench cost OK -> fire P1 FT (vn 0.1, widened pool, warm from w31).
+- Spectral arm: NOT trained (its accuracy ceiling = the known 0.008 FD floor; only its COST is
+  benchmarked). If w31 disappoints, the spectral/recursion decision comes back.
+
 ## 2026-07-14 — session 14c (Sanaa order: in-distribution NN vs TRUE-closure gap on the SAME rollout grid)
 - Question (Sanaa, verbatim intent): is the accuracy shortfall present IN-distribution, given the
   known true-closure injection promise? Answer: YES — the gap is in-distribution, not an OOD artifact.
