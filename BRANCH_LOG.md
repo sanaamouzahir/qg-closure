@@ -2,6 +2,24 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
  
+## 2026-07-14 — session 14 (paper consolidation, Sanaa direct order)
+- Full arXiv-style paper written: paper/main.tex (+ compiled main.pdf, Tectonic, clean).
+  Organization per Sanaa: Equations -> Schemes -> Error/Cost/Stability analysis per scheme ->
+  Goal (AB2CN2 cost at coarse dT, fine-dT RK4 accuracy+stability) -> Method (arch, Wiener
+  conditioning, VN-penalty loss) -> NN stability -> Ensemble training -> Results -> Future work.
+- Sources consolidated: main-branch LTE_RK4_AB4CN2_AB2CN2.tex + THEORETICAL_GUARANTEES.tex;
+  branch error_analysis_shallow_nn.tex, THEORETICAL_GUARANTEES.md, conditioned_parameterization
+  note, implementation audit, RESULTS_* ledgers, training/ sources.
+- Honesty invariants respected: unmet conditioning ceilings, P0 B1/B2 FAIL, 5e-3 horizon wall,
+  large-dT parity all in main text; P1 lambda-sweep described as in-flight, no results claimed;
+  reference-run loss = annulus hinge 1e-3 (NOT the P1 tail) stated explicitly.
+- Independent fresh-context verification pass: 9 discrepancies found and fixed (incl. pre-FT
+  5e-3 was 0.72x stable not blown; 18-root pool = {b2,b25,kf4,Re25k,combo,256}x3; opt2 schedule
+  4:6,8:8,12:8,16:8,21:10 / 40 ep; r2 timescale tau_kappa not tau_lambda).
+- Figures: placeholders with per-figure source-script attribution (no PNGs in repo; on cluster).
+  TODOs: co-authors, wall-clock pareto numbers, Suresh Babu title, repo link, cluster figures.
+- [SUBMIT][log] completion email to Sanaa (paper location + structure + verification record).
+
 ## 2026-07-13 — session 13 LANDED (P0 verdict)
 - Ladder landed (1832509/10 exit 0, 47/52 min; actual ~1.7 GPU-h). PRE-REGISTERED BARS:
   B1 FAIL (1e-2 9/10 ON, same as OFF — combo ic527 blowup step 13 identical), B2 FAIL
