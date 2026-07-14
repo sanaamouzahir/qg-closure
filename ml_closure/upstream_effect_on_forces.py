@@ -97,16 +97,31 @@ def main():
             out['St_local_norm'] = f_sh * args.D / float(U_cyl.mean())
 
     # ---- upstream contamination measured from the stored filtered fields -- #
-    les_path = next((rd / n for n in
-                     ('DNS_LES_s4_gaussian_jonly.npz', 'DNS_LES_s4.npz')
-                     if (rd / n).exists()), None)
+    les_path, d = None, None
+    for n in ('DNS_LES_s4.npz', 'DNS_LES_s4_gaussian.npz',
+              'DNS_LES_s4_gaussian_jonly.npz'):
+        if not (rd / n).exists():
+            continue
+        cand = np.load(rd / n, allow_pickle=True)
+        if ('ubar' in cand.files and 'times' in cand.files
+                and cand['ubar'].shape[0] == len(cand['times'])):
+            les_path, d = rd / n, cand   # need PER-FRAME velocities
+            break
+        print(f'[upstream] skip {n}: ubar frames {cand["ubar"].shape[0]} != '
+              f'times {len(cand["times"])}')
     if les_path is not None:
-        d = np.load(les_path, allow_pickle=True)
         times = np.asarray(d['times'], dtype=np.float64)
         fw = times >= args.t_min
         ny, nx = d['ubar'].shape[-2:]
         meta = d['meta'].item() if 'meta' in d.files else {}
-        Lx = float(meta.get('Lx', 8 * np.pi))
+        if isinstance(meta, (str, bytes)):      # meta stored as yaml/json text
+            try:
+                meta = yaml.safe_load(meta)
+            except Exception:
+                meta = {}
+        if not isinstance(meta, dict):
+            meta = {}
+        Lx = float(meta.get('Lx', 8 * np.pi))   # both domains are 8*pi squares
         x = (np.arange(nx) + 0.5) * (Lx / nx)
         band = (x >= args.xc - 4.0 * args.D) & (x <= args.xc - 1.5 * args.D)
         Ut = np.asarray(d['U_snap'], dtype=np.float64)[fw]
