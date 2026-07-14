@@ -2,7 +2,27 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
-## 2026-07-14 — session 15 (session-2 dd6b4e4f; four-way verdict + fix decision)
+## 2026-07-14 ~17:00 — session-1 (Sanaa chat rulings executed; manifold-coverage diagnostic)
+- SANAA RULINGS (chat ~16:5x): (1) plan confirmed = w31 cond retrain -> P1-prod-recipe FT
+  (vN lambda 0.1), ONLY change vs P1 = grad kernel 31; (2) fire the FT at TRUE VAL PLATEAU,
+  not at "reached cond_v2" (defeats the point — we want w31 well below cond_v2's 0.057-0.065);
+  verified watch_w31_plateau.sh already implements exactly this (stale>=6 on best_val col 5,
+  ref 0.1375 only as a go/no-go GATE, cols validated vs log.csv header); (3) on top of kernel-31,
+  find a principled handle on the stability-vs-accuracy trade — the shelved accuracy-anchor
+  (1180ad8) is the ready tool if the vN FT again trades away 5e-3 accuracy; acceptance check
+  for the FT = per-member a-priori Nddot before/after (the p1lam01 lesson, 2-4.5x degradation).
+- NEW DIAGNOSTIC (Sanaa mandate: price the width-31 wall before the run finishes):
+  diagnostics/stencil_manifold_coverage.py — operator-level Wiener projection of ik onto the
+  antisymmetric w-tap manifold (weight = pooled field spectra NORMALIZED PER-FIELD BY DERIVATIVE
+  NORM — the naive field-norm weight destroys psi_x, 0.31 rel vs FD 2e-4, bug caught in smoke;
+  comment in code, do not revert) + pipeline-level N^(m) medians with fd/opt/pooled-opt taps at
+  w in {7,15,31,63} vs the two spectral references. CALIBRATION: kf4@5e-3 opt_w15 Nddot 0.070
+  ~= trained cond_v2 0.057-0.065 — the bound tracks reality. Full run: job 1833659 (all.q CPU,
+  6 roots Re25k/combo/kf4 x {5em3,1p5em2}), one npz + one png.
+- w31 trainer note: epochs ~1h (ep0 3573s) -> plateau verdict is tomorrow-morning scale, not tonight.
+- Session hygiene: smoke tests ran on the head node before I re-read MEMORY (violates Sanaa's
+  07-14 front-end rule added by the other session) — full run correctly qsub'd; smokes go
+  through qsub from now on.
 - Job 1833472 apost_indist_condv2 landed 14:06 clean: PURE conditioned ckpt (deriv7_cond_local_v2,
   no rollout FT) through the exact 16-step ladder, same 6 in-dist pairs x 3 dT, truth refs reused.
 - FOUR-WAY (medians, x over bare): 5e-3 p1-NN 3.25x | cond_v2 5.97x (6/6 stable, paired +84%
