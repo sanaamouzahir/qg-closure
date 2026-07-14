@@ -2,6 +2,25 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-14 — session 15 (session-2 dd6b4e4f; four-way verdict + fix decision)
+- Job 1833472 apost_indist_condv2 landed 14:06 clean: PURE conditioned ckpt (deriv7_cond_local_v2,
+  no rollout FT) through the exact 16-step ladder, same 6 in-dist pairs x 3 dT, truth refs reused.
+- FOUR-WAY (medians, x over bare): 5e-3 p1-NN 3.25x | cond_v2 5.97x (6/6 stable, paired +84%
+  over p1-NN) | true 59.3x. 1e-2 and 1.5e-2: cond_v2 NON-FINITE on 6/6 (steps 11-14 resp. 6-8);
+  p1-NN stable 3-9x. Even at 5e-3 kf4 shows the creep: ic532 0.11x, ic912 0.01x (corner drift
+  0.59 / 10.4) vs FRC-256 10-20x. Artifacts: fourway_indist_table.csv + fourway_indist_verdict.png
+  (+ merge/plot scripts) in diagnostics/Results/apost_indist_condv2_20260714/.
+- VERDICT per pre-registered criteria = case (b): stabilization NECESSARY at 1e-2/1.5e-2, but the
+  current pure-stability rollout FT is too blunt (gave back the 5e-3 conditioning gain and the flat
+  kf4 a-priori Nddot 0.057). FIX: accuracy-anchored MULTI-OBJECTIVE rollout FT — rollout stability
+  objective + a-priori derivative loss as hard anchor, warm-start from cond_v2 (not p1).
+- FALSE ALARM closed: 11:20 monitor "ep0 EXPLODE" on rollout_ft_p1_prod tripped on train_relL2=inf,
+  which rollout-FT produces by design (blown train draws in the objective); val finite and falling
+  (2.8e-3 -> 1.9e-3 by ep8), n_blown_val=0 throughout. Job left running (lands ~19-20:00).
+- Email [QG][LANDED][wiener] spooled 14:2x (verify relay). Figure pushed to Sanaa's panel.
+- Two live sessions coordinated via next_steps.md claims: session-1 = Student-t/sgs (launched
+  1833541/42), session-2 = this Wiener accuracy lane. Next: implement + smoke the anchored FT.
+
 ## 2026-07-14 — session 14c (Sanaa order: in-distribution NN vs TRUE-closure gap on the SAME rollout grid)
 - Question (Sanaa, verbatim intent): is the accuracy shortfall present IN-distribution, given the
   known true-closure injection promise? Answer: YES — the gap is in-distribution, not an OOD artifact.
