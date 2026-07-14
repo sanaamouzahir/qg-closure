@@ -300,6 +300,18 @@ def main():
     ax.set_xlabel('t'); ax.set_ylabel('Re_inlet'); ax.legend(fontsize=7); ax.grid(alpha=0.3)
     fig.tight_layout(); fig.savefig(outdir / 'Re_trace.png', dpi=130); plt.close(fig)
 
+    # stage-1 conformal (Sanaa approval 2026-07-14): every eval summary
+    # surfaces the deployable conformal calibration and its held-out
+    # coverage. Computed by sigma_conformal_prototype.py on the
+    # recal-standardized pipeline (honesty test half) -- referenced here,
+    # NOT recomputed (this eval's sigma is the raw predictive one).
+    cpath = Path(args.ckpt).parent / 'conformal_calibration.yaml'
+    if cpath.exists():
+        cc = yaml.safe_load(cpath.read_text())
+        summary['conformal'] = {'source': str(cpath.resolve()),
+                                'coverage_test': cc.get('coverage_test')}
+        print("[eval] conformal calibration surfaced from", cpath)
+
     with open(outdir / 'summary.yaml', 'w') as f:
         yaml.safe_dump(summary, f, sort_keys=False)
     print(json.dumps(summary['global'], indent=2))
