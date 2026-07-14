@@ -2,6 +2,25 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-14 ~19:30 — session-1: option-6 verdict (negative, informative) + CERTIFICATE BUG FIX
+- vn_clip_taps.py (a4bcd0f, agent-built, jobs 1833782/88/90/91): NO small-symbol offline clip
+  exists. lam_sym 1.0: rms symbol change 0.02 but |G| stuck 1.02-1.09; lam_sym 1e-3: |G|<=1
+  everywhere BUT at O(1) symbol change that destroys a-priori skill (kf4 Nddot .058->.83).
+  The certificate-instability is load-bearing in the learned symbol at VALID mid-k shells =>
+  static surgery is out; option 5 (static damping tail) DEPRIORITIZED for the same reason.
+  The cure must be dt/state-conditioned = the anchored FT arms. best_vnclip.pt kept as a
+  certificate-falsification probe (a-posteriori rerun optional, low priority).
+- BUG FIX (18f9b8d, [yellow]): assemble_geff base-tap read was reshape(-1,W)[0] = TOP kernel
+  row (zero at init, norm 6e-3) instead of the central taps (norm 1.28). ALL prior rollout FTs
+  trained the vn penalty near-blind to base stencils (row-0 said 0.999 where truth is 1.03-1.09
+  on real contexts); their stabilization came mostly from the rollout loss. Fixed = channel-0
+  row-sum (exact ky=0 response); 1-D shims keep the old read. Verified job 1833803 (read==central
+  to 1e-5 through unchanged G math; verify_cert_tapread.py's synthetic-context PASS/FAIL line is
+  over-strict — numbers conclusive). vn_lambda 0.1 KEPT.
+- CONSEQUENCE: armed w31p1a/b = first FTs with a seeing certificate. w31 at ep3: med Nddot
+  .102->.062, best_val .0968 < gate .1375; ORDER-INVERSION email = false alarm (N3dot weight-0;
+  session-2 TODO: teach T1 card the order weights). Email report_20260714_vnclip_verdict queued.
+
 ## 2026-07-14 ~17:00 — session-1 (Sanaa chat rulings executed; manifold-coverage diagnostic)
 - SANAA RULINGS (chat ~16:5x): (1) plan confirmed = w31 cond retrain -> P1-prod-recipe FT
   (vN lambda 0.1), ONLY change vs P1 = grad kernel 31; (2) fire the FT at TRUE VAL PLATEAU,
