@@ -892,3 +892,22 @@ Running record. Supervisor updates this at the end of every session. Newest entr
 - Artifacts: ml_closure/pngs/ + yamls/jacobian_only_models_garbage_check_eval/;
   originals in runs_piff/piff_{fpc,cape}_gj/eval_snapshot_20260713/ + frozen ckpts.
 - Email: reporting/pending_mail/landed_20260713_garbage_check.mail ([QG][LANDED][sgs]).
+
+## 2026-07-14 MORNING — gjs finals verdict + LOMO redo + P1 prod fire (global supervisor)
+- Overnight landings triaged: piff_fpc_gjs (1 trigger ep40 milestone-miss, recovered; eval R2
+  0.823 NLL -2.224) and piff_cape_gjs (CLEAN; 0.9346 / -1.725). best.pt = last epoch BOTH.
+- FINALS PACKAGE (1833316/17 wake R2, 1833326/27 diag, 1833328/29 symlog): CYLINDER wake-
+  restricted R2 0.444 -> 0.9218 — the upstream repair flipped the cylinder verdict to wake-real
+  (per-member 0.881-0.957). CAPE 0.954 -> 0.9720. Arm-F sigma verdict: Spearman(sigma,|grad|)
+  0.75 fpc / 0.84-0.92 cape (was dead-flat) BUT floor-dominated (deciles 1-9 at the softplus(a)
+  floor; decile-10 response 2.7-4.2x vs error 8.8x; cov1 freestream 0.999 vs near-body 0.84).
+  Next lever PROPOSED: 2-parameter (a,b) post-hoc recal on val NLL — no retraining.
+- INCIDENT: replot_eval_fields + diagnose_piff crashed on structural ckpts (g_masked missing;
+  diagnose_piff also dropped conditioning flags). Patched to mirror eval_piff, reviewer PASS,
+  ca65584, reruns clean. Convention tree: pngs+yamls/jacobian_structural_sigma_final_models_eval/.
+- LOMO REDO fired (1833331, ~9-13 GPU-h, cold gjs-recipe folds, conf_lomo_cape_gjs_*): the sharp
+  ladder 1832241 died in the 07-13 ratified fleet kill and was never relaunched.
+- Wiener side (see wiener BRANCH_LOG c6dd323): lambda sweep verdict 0.1 wins; production
+  widened-pool fine-tune 1833313-15 fired per Sanaa's overnight authorization.
+- Emails: [QG][SUBMIT][WIENER] + [QG][SUBMIT][sgs] relayed 10:58; [QG][LANDED][sgs] finals
+  verdict spooled ~11:3x (verify relay). Figures pushed to Sanaa's session panel (plots first).

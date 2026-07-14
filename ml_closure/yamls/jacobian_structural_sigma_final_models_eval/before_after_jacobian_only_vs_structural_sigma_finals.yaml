@@ -1,0 +1,36 @@
+# Before/after table: the frozen 2026-07-13 J-only snapshots (garbage-check eval,
+# run codenames piff_fpc_gj ep131 / piff_cape_gj ep122) vs the FINAL warm retrains
+# with the arm-F structural noise prior (+ cylinder upstream loss-mask), run
+# codenames piff_fpc_gjs / piff_cape_gjs, best.pt = last epoch (ep99) both.
+# NOTE: the cylinder GLOBAL rows are not an apples-to-apples pair — the retrain
+# masks x < x_c - 1.5D out of the loss, which changes the pooled pixel population.
+# The WAKE-RESTRICTED rows (identical SDF > 1D mask both sides) are the honest
+# before/after, and they are the headline: cylinder 0.444 -> 0.922.
+cylinder:
+  before_jacobian_only_ep131:
+    r2_global: 0.7292866770509735
+    r2_wake_restricted: 0.4439906935130249
+  after_structural_sigma_ep99:
+    r2_global: 0.8232848836957701
+    r2_wake_restricted: 0.9218100521901035
+    nll_pooled: -2.224252700805664
+    coverage_1sigma: 0.9884753947797232
+  sigma_structure_after:      # arm-F verification (FPC-const, sigma-vs-|grad| deciles)
+    spearman_sigma_grad: 0.7523148379248646   # was ~0 (flat 1.0002x) on the full-target reference
+    sigma_dynamic_range: 2.7326459313619593   # decile-10/decile-1 of median sigma
+    abserr_dynamic_range: 8.774639006084078   # sigma under-responds ~3x in the tail
+    caveat: sigma sits at the sp(a) floor for deciles 1-9; only the top gradient
+      decile engages the sp(b)*g^2 term. Overdispersion now lives in the
+      freestream floor (cov1 freestream 0.9987 vs near-body 0.835).
+cape:
+  before_jacobian_only_ep122:
+    r2_global: 0.9057
+    r2_wake_restricted: 0.954
+  after_structural_sigma_ep99:
+    r2_global: 0.9345773589176211
+    r2_wake_restricted: 0.9720145933038558
+    nll_pooled: -1.7252259254455566
+    coverage_1sigma: 0.9941746727971191
+  sigma_structure_after:      # range over the 5 FPCape members
+    spearman_sigma_grad: [0.8388769506165623, 0.9207535254287946]
+    sigma_dynamic_range: [3.1466332554359884, 4.23622112639372]
