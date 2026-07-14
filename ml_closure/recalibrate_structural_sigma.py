@@ -86,11 +86,14 @@ def collect_decomposed(model, runs, frames, device, gp_chunk):
             np.concatenate(sfs), np.concatenate(ts))
 
 
-def total_var(vgp, sfeat, spa, spb, sa, sb):
-    """Recalibrated standardized predictive variance (numpy or torch)."""
+def total_var(vgp, sfeat, spa, spb, sa, sb, tau=1.0):
+    """Recalibrated standardized predictive variance (numpy or torch).
+    tau tempers the GP POSTERIOR variance component (Sanaa 2026-07-14: pv/nv
+    is order-1 on these models, so an uncalibrated posterior pathway carries
+    ~half the predictive variance; tau=1 reproduces the 2-parameter recal)."""
     noise = sa * spa + sb * spb * sfeat
     clip = noise.clamp if torch.is_tensor(noise) else lambda a, b: np.clip(noise, a, b)
-    return vgp + clip(CLAMP_LO, CLAMP_HI)
+    return tau * vgp + clip(CLAMP_LO, CLAMP_HI)
 
 
 def nll(r, v):
@@ -102,26 +105,30 @@ def coverage(r, v, k):
 
 
 def fit_two_scalars(r, vgp, sfeat, spa, spb, device, iters=600, lr=0.05, seed=0):
-    """Adam on (log s_a, log s_b); full-batch NLL. Data already float64."""
+    """Adam on (log s_a, log s_b, log tau_pv); full-batch NLL. Data already
+    float64. (Name kept for the callers; now three scalars — tau_pv tempers
+    the GP posterior variance, init 1.0.)"""
     g = torch.Generator().manual_seed(seed)   # subsample determinism
     n = r.shape[0]
     idx = torch.randperm(n, generator=g)[:min(n, 5_000_000)].numpy()
     rt = torch.as_tensor(r[idx], device=device)
     vt = torch.as_tensor(vgp[idx], device=device)
     st = torch.as_tensor(sfeat[idx], device=device)
-    log_s = torch.zeros(2, dtype=torch.float64, device=device, requires_grad=True)
+    log_s = torch.zeros(3, dtype=torch.float64, device=device, requires_grad=True)
     opt = torch.optim.Adam([log_s], lr=lr)
     for it in range(iters):
         opt.zero_grad()
-        sa, sb = torch.exp(log_s[0]), torch.exp(log_s[1])
-        v = total_var(vt, st, spa, spb, sa, sb)
+        sa, sb, tau = torch.exp(log_s[0]), torch.exp(log_s[1]), torch.exp(log_s[2])
+        v = total_var(vt, st, spa, spb, sa, sb, tau)
         loss = (0.5 * (torch.log(2 * np.pi * v) + rt ** 2 / v)).mean()
         loss.backward()
         opt.step()
         if it % 100 == 0 or it == iters - 1:
             print(f'[recal] iter {it:4d}  fit-NLL(std) {loss.item():.6f} '
-                  f' s_a {float(torch.exp(log_s[0])):.4g}  s_b {float(torch.exp(log_s[1])):.4g}')
-    return float(torch.exp(log_s[0])), float(torch.exp(log_s[1]))
+                  f' s_a {float(torch.exp(log_s[0])):.4g}  s_b {float(torch.exp(log_s[1])):.4g}'
+                  f'  tau_pv {float(torch.exp(log_s[2])):.4g}')
+    return (float(torch.exp(log_s[0])), float(torch.exp(log_s[1])),
+            float(torch.exp(log_s[2])))
 
 
 def main():
@@ -166,18 +173,19 @@ def main():
     print(f'[recal] honesty split at t={t_mid:.2f}: fit {int(fit_m.sum())} px, '
           f'test {int(test_m.sum())} px')
 
-    s_a, s_b = fit_two_scalars(r[fit_m], vgp[fit_m], sfeat[fit_m], spa, spb, device)
+    s_a, s_b, tau_pv = fit_two_scalars(r[fit_m], vgp[fit_m], sfeat[fit_m],
+                                       spa, spb, device)
 
-    out = {'s_a': s_a, 's_b': s_b,
+    out = {'s_a': s_a, 's_b': s_b, 'tau_pv': tau_pv,
            'softplus_a': spa, 'softplus_b': spb, 'y_sd': y_sd,
-           'formula': "var'_std = var_gp + clamp(s_a*softplus(a) + "
+           'formula': "var'_std = tau_pv*var_gp + clamp(s_a*softplus(a) + "
                       "s_b*softplus(b)*g^2/g2_scale, 1.0e-3, 10.0); "
                       "sigma_physical = sqrt(var'_std)*y_sd",
            'fit_window_t': [float(t_lo), float(t_mid)],
            'test_window_t': [float(t_mid), float(t_hi)]}
     for name, msk in (('fit_half', fit_m), ('test_half', test_m)):
         v0 = total_var(vgp[msk], sfeat[msk], spa, spb, 1.0, 1.0)
-        v1 = total_var(vgp[msk], sfeat[msk], spa, spb, s_a, s_b)
+        v1 = total_var(vgp[msk], sfeat[msk], spa, spb, s_a, s_b, tau_pv)
         out[name] = {
             'nll_before': float(np.mean(nll(r[msk], v0)) + np.log(y_sd)),
             'nll_after':  float(np.mean(nll(r[msk], v1)) + np.log(y_sd)),
@@ -195,7 +203,7 @@ def main():
     dec = {'grad_feature_hi': [], 'sigma_med_before': [], 'sigma_med_after': [],
            'abserr_med': []}
     v0 = total_var(vgp[test_m], sfeat[test_m], spa, spb, 1.0, 1.0)
-    v1 = total_var(vgp[test_m], sfeat[test_m], spa, spb, s_a, s_b)
+    v1 = total_var(vgp[test_m], sfeat[test_m], spa, spb, s_a, s_b, tau_pv)
     for i in range(10):
         m = (g_test >= edges[i]) & (g_test <= edges[i + 1] if i == 9 else g_test < edges[i + 1])
         if not m.any():   # zero-inflated g -> duplicate quantile edges
@@ -222,7 +230,8 @@ def main():
         fig, ax = plt.subplots(figsize=(5.5, 4.5))
         ax.plot(nominal, nominal, 'k--', label='perfect')
         ax.plot(nominal, emp0, 'o-', label='before')
-        ax.plot(nominal, emp1, 's-', label=f'after (s_a={s_a:.3g}, s_b={s_b:.3g})')
+        ax.plot(nominal, emp1, 's-',
+                label=f'after (s_a={s_a:.3g}, s_b={s_b:.3g}, tau_pv={tau_pv:.3g})')
         ax.set_xlabel('nominal coverage'); ax.set_ylabel('empirical coverage')
         ax.set_title('reliability, held-out half of val window'); ax.legend()
         fig.tight_layout()

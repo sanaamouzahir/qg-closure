@@ -72,7 +72,10 @@ def predict_frame_full(model, run, frame, device, gp_chunk, recal=None):
             spa = torch.nn.functional.softplus(model.noise_a).to(gm.dtype)
             spb = torch.nn.functional.softplus(model.noise_b).to(gm.dtype)
             noise = (recal['s_a'] * spa + recal['s_b'] * spb * sfeat).clamp(1.0e-3, 10.0)
-            var_p = (post.variance + noise) * model.y_sd * model.y_sd
+            # tau_pv tempers the GP posterior variance (3-param recal,
+            # Sanaa 2026-07-14); old 2-param sidecars imply tau_pv = 1.0
+            var_p = (recal.get('tau_pv', 1.0) * post.variance + noise) \
+                * model.y_sd * model.y_sd
             mu_p = post.mean * model.y_sd + model.y_mu
         else:
             mu_p, var_p = model.predict_physical(
@@ -135,9 +138,11 @@ def main():
     if args.recal == 'on' or (args.recal == 'auto' and recal_path.exists()):
         import yaml
         rc = yaml.safe_load(recal_path.read_text())
-        recal = {'s_a': float(rc['s_a']), 's_b': float(rc['s_b'])}
+        recal = {'s_a': float(rc['s_a']), 's_b': float(rc['s_b']),
+                 'tau_pv': float(rc.get('tau_pv', 1.0))}
         print(f"[replot] sigma recalibration ON: s_a={recal['s_a']:.4g} "
-              f"s_b={recal['s_b']:.4g} ({recal_path})")
+              f"s_b={recal['s_b']:.4g} tau_pv={recal['tau_pv']:.4g} "
+              f"({recal_path})")
 
     runs = build_runs(conf)
     frames = split_frames(runs, 'val', conf)
