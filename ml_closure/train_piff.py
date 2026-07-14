@@ -67,12 +67,38 @@ def gaussian_nll(y, mu, var):
     return 0.5 * (np.log(2 * np.pi * var) + (y - mu) ** 2 / var)
 
 
+# ---- Student-t observation model (B-item, Sanaa 2026-07-14) --------------- #
+# scipy is an existing pipeline dependency (dataset_piff / calibrate_piff /
+# diagnose_piff); scipy.stats.t gives the exact per-pixel NLL and the central-
+# coverage quantile. NLL/coverage under the t use the physical SCALE field
+# (sqrt(het_noise)*y_sd) + the scalar learned nu — NOT the Gaussian z=1.
+def student_t_nll(y, mu, scale, nu):
+    """Per-pixel negative log-likelihood under StudentT(df=nu, loc=mu,
+    scale=scale) in physical units."""
+    from scipy.stats import t as _t
+    return -_t.logpdf(y, df=float(nu), loc=mu, scale=scale)
+
+
+def t_central_halfwidth(prob, nu):
+    """Half-width (in SCALE units) of the central `prob` interval of the
+    Student-t at nu: q such that P(|X| <= q) = prob."""
+    from scipy.stats import t as _t
+    return float(_t.ppf(0.5 + 0.5 * float(prob), df=float(nu)))
+
+
+def t_coverage(y, mu, scale, nu, prob):
+    """Empirical coverage of the central `prob` t-interval mu +/- q*scale."""
+    q = t_central_halfwidth(prob, nu)
+    return float(np.mean(np.abs(y - mu) <= q * scale))
+
+
 @torch.no_grad()
 def evaluate(model, ds, device, gp_chunk):
     """Predictive metrics on a (fixed) crop dataset: per-pixel NLL, RMSE, R2,
     mean predictive sigma, and the per-datum val ELBO surrogate (NLL)."""
     model.eval()
-    ys, mus, vars_ = [], [], []
+    student = model.is_student_t()
+    ys, mus, vars_, scales, pvars, nvars = [], [], [], [], [], []
     for b in batches(ds, 8):
         x, y = b['x'].to(device), b['y'].to(device)
         mask, zeta = b['mask'].to(device), b['zeta'].to(device)
@@ -81,18 +107,33 @@ def evaluate(model, ds, device, gp_chunk):
         gm = (b['g'].to(device)[mask] if model.noise_prior == 'structural'
               else None)
         for i0 in range(0, gpin.shape[0], gp_chunk):
-            mu_p, var_p = model.predict_physical(
-                gpin[i0:i0 + gp_chunk],
-                g_masked=(gm[i0:i0 + gp_chunk] if gm is not None else None))
+            gm_c = gm[i0:i0 + gp_chunk] if gm is not None else None
+            mu_p, var_p = model.predict_physical(gpin[i0:i0 + gp_chunk], g_masked=gm_c)
             mus.append(mu_p.cpu().numpy())
             vars_.append(var_p.cpu().numpy())
+            if student:
+                scales.append(model.student_scale(gm_c).cpu().numpy())
+                # ratio diagnostic (std/GP space, consistent units): GP
+                # posterior var vs the het_noise scale^2 the t-NLL uses. Verifies
+                # the objective's noise-only scale omits a negligible post-var.
+                pvars.append(model.gp(gpin[i0:i0 + gp_chunk]).variance.cpu().numpy())
+                nvars.append(model.het_noise(gm_c).cpu().numpy())
         ys.append(yt.cpu().numpy())
     y = np.concatenate(ys); mu = np.concatenate(mus); var = np.concatenate(vars_)
     rmse = float(np.sqrt(np.mean((y - mu) ** 2)))
     r2 = float(1.0 - np.sum((y - mu) ** 2) / max(np.sum((y - y.mean()) ** 2), 1e-30))
-    nll = float(np.mean(gaussian_nll(y, mu, var)))
-    return {'nll': nll, 'rmse': rmse, 'r2': r2,
-            'mean_sigma': float(np.mean(np.sqrt(var))), 'n_pixels': int(y.size)}
+    out = {'rmse': rmse, 'r2': r2, 'mean_sigma': float(np.mean(np.sqrt(var))),
+           'n_pixels': int(y.size)}
+    if student:
+        scale = np.concatenate(scales); nu = model.student_nu()
+        out['nll'] = float(np.mean(student_t_nll(y, mu, scale, nu)))   # model-selection metric
+        out['coverage68'] = t_coverage(y, mu, scale, nu, 0.682689492)
+        out['nu'] = float(nu); out['mean_scale'] = float(np.mean(scale))
+        out['pv_ratio'] = float(np.mean(np.concatenate(pvars))
+                                / max(np.mean(np.concatenate(nvars)), 1e-30))
+    else:
+        out['nll'] = float(np.mean(gaussian_nll(y, mu, var)))
+    return out
 
 
 @torch.no_grad()
@@ -179,7 +220,12 @@ def main():
     if args.init_ckpt:
         wck = torch.load(args.init_ckpt, map_location='cpu', weights_only=False)
         missing, unexpected = model.load_state_dict(wck['model'], strict=False)
-        allowed = {'noise_a', 'noise_b', 'g2_scale', 'likelihood.noise_covar.noise'}
+        # the ONLY tolerated missing keys: the structural-noise head (when warm-
+        # starting a structural model from a non-structural ckpt) and, for the
+        # gaussian->student_t swap, the fresh Student-t dof (the head itself —
+        # noise_a/noise_b/g2_scale — carries over 1:1 from the gaussian ckpt).
+        allowed = {'noise_a', 'noise_b', 'g2_scale',
+                   'likelihood.noise_covar.noise', 'likelihood.raw_nu'}
         bad_m = [k for k in missing if k not in allowed]
         bad_u = [k for k in unexpected
                  if k not in {'likelihood.noise_covar.raw_noise',
@@ -207,6 +253,18 @@ def main():
             hyper0.update(model.set_noise_feature_scale(cstats['g2_scale']))
             print(f"[train] structural-noise s_feat scale (fresh): "
                   f"g2_scale={cstats['g2_scale']:.6e}")
+        if model.is_student_t():
+            # Student-t dof init from a residual-kurtosis moment match
+            # (excess-kurtosis of the t = 6/(nu-4) => nu = 4 + 6/kurt); the
+            # warm GP gives an honest residual PDF. Clamp to [4.5, 8] (nu>2
+            # already guaranteed by softplus+2); fallback 5.0 if kurt<=0.
+            k = residual_kurtosis(model, train_ds, device)
+            nu_init = float(np.clip(4.0 + 6.0 / k, 4.5, 8.0)) if k > 0 else 5.0
+            model.set_student_nu(nu_init)
+            hyper0['residual_excess_kurtosis'] = k
+            hyper0['student_nu_init'] = nu_init
+            print(f"[train] Student-t: residual excess kurtosis {k:.3e} -> "
+                  f"nu_init {nu_init:.3f} (learnable)")
     else:
         if model.use_zeta_dot or model.use_grad_feature:
             cstats = conditioning_stats(runs, 'train', conf)
@@ -261,7 +319,8 @@ def main():
     spread0, kurt = None, None
     hist = {k: [] for k in ('train_elbo', 'val_nll', 'val_rmse', 'val_r2',
                             'val_sigma', 'zeta_ls', 'zdot_ls', 'grad_ls',
-                            'film_dgamma', 'film_beta', 'feat_spread', 'lr')}
+                            'film_dgamma', 'film_beta', 'feat_spread', 'lr',
+                            'val_cov68', 'val_nu', 'val_pv_ratio')}
     best_nll = np.inf
 
     for ep in range(epochs):
@@ -303,6 +362,9 @@ def main():
         hist['film_dgamma'].append(dg)
         hist['film_beta'].append(bnorm); hist['feat_spread'].append(spread)
         hist['lr'].append(opt.param_groups[0]['lr'])
+        hist['val_cov68'].append(vm.get('coverage68', np.nan))
+        hist['val_nu'].append(vm.get('nu', np.nan))
+        hist['val_pv_ratio'].append(vm.get('pv_ratio', np.nan))
 
         collapse = spread < spread0 / 10.0
         extra_ls = ''
@@ -314,6 +376,9 @@ def main():
             import torch.nn.functional as _F
             extra_ls += (f" a {float(_F.softplus(model.noise_a)):.4f}"
                          f" b {float(_F.softplus(model.noise_b)):.4f}")
+        if model.is_student_t():
+            extra_ls += (f" nu {vm['nu']:.3f} cov68 {vm['coverage68']:.4f}"
+                         f" pv/nv {vm['pv_ratio']:.3e}")
         print(f"[ep {ep:03d}] elbo/datum {hist['train_elbo'][-1]:+.4e}  "
               f"val NLL {vm['nll']:.4e} RMSE {vm['rmse']:.4e} R2 {vm['r2']:.4f} "
               f"sigma {vm['mean_sigma']:.3e}  zeta_ls {zls:.3f}{extra_ls}  "

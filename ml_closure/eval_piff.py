@@ -32,7 +32,7 @@ import matplotlib.pyplot as plt
 
 from dataset_piff import load_conf, build_runs, split_frames, _f
 from model_piff import PiffModel
-from train_piff import gaussian_nll
+from train_piff import gaussian_nll, student_t_nll, t_central_halfwidth
 
 HERE = Path(__file__).resolve().parent
 NOMINAL = {1.0: 0.682689, 2.0: 0.954500, 3.0: 0.997300}
@@ -49,35 +49,61 @@ def predict_frame(model, run, frame, device, gp_chunk):
         g=(g[None].to(device) if model.use_grad_feature else None))
     gm = (g[None].to(device)[mask[None].to(device)]
           if getattr(model, 'noise_prior', 'none') == 'structural' else None)
-    mus, vars_ = [], []
+    student = model.is_student_t()
+    mus, vars_, scales, pvars, nvars = [], [], [], [], []
     for i0 in range(0, gpin.shape[0], gp_chunk):
-        mu_p, var_p = model.predict_physical(
-            gpin[i0:i0 + gp_chunk],
-            g_masked=(gm[i0:i0 + gp_chunk] if gm is not None else None))
+        gm_c = gm[i0:i0 + gp_chunk] if gm is not None else None
+        mu_p, var_p = model.predict_physical(gpin[i0:i0 + gp_chunk], g_masked=gm_c)
         mus.append(mu_p.cpu().numpy())
         vars_.append(var_p.cpu().numpy())
+        if student:
+            scales.append(model.student_scale(gm_c).cpu().numpy())
+            # std/GP-space post-var and het_noise scale^2 (ratio diagnostic)
+            pvars.append(model.gp(gpin[i0:i0 + gp_chunk]).variance.cpu().numpy())
+            nvars.append(model.het_noise(gm_c).cpu().numpy())
     mu, var = np.concatenate(mus), np.concatenate(vars_)
     m = mask.numpy()
     truth = y.numpy()
     mu2 = np.full_like(truth, np.nan); sg2 = np.full_like(truth, np.nan)
     mu2[m] = mu; sg2[m] = np.sqrt(var)
-    return {'truth': truth, 'mask': m, 'mu2d': mu2, 'sigma2d': sg2,
-            'y': truth[m], 'mu': mu, 'sigma': np.sqrt(var),
-            'zeta': float(zeta), 't': float(run.times[frame]),
-            'Re': float(run.Re_snap[frame])}
+    out = {'truth': truth, 'mask': m, 'mu2d': mu2, 'sigma2d': sg2,
+           'y': truth[m], 'mu': mu, 'sigma': np.sqrt(var),
+           'zeta': float(zeta), 't': float(run.times[frame]),
+           'Re': float(run.Re_snap[frame])}
+    if student:
+        out['scale'] = np.concatenate(scales)      # physical Student-t scale
+        out['post_var'] = np.concatenate(pvars)     # GP posterior var (std space)
+        out['noise_var'] = np.concatenate(nvars)    # het_noise scale^2 (std space)
+    return out
 
 
-def metrics_block(y, mu, sigma):
+def metrics_block(y, mu, sigma, scale=None, nu=None):
+    """Predictive metrics. Gaussian: NLL from (mu,sigma), coverage at
+    +/-1,2,3 sigma. Student-t (scale + nu given): NLL under the t, coverage of
+    the CENTRAL t-intervals at the same nominal probs (t-quantile half-widths,
+    NOT the Gaussian z=1)."""
     var = sigma ** 2
-    return {
+    blk = {
         'n': int(y.size),
         'r2': float(1.0 - np.sum((y - mu) ** 2) / max(np.sum((y - y.mean()) ** 2), 1e-30)),
         'rmse': float(np.sqrt(np.mean((y - mu) ** 2))),
-        'nll': float(np.mean(gaussian_nll(y, mu, var))),
         'mean_sigma': float(np.mean(sigma)),
-        'coverage': {f'{k:.0f}sigma': float(np.mean(np.abs(y - mu) <= k * sigma))
-                     for k in NOMINAL},
     }
+    if scale is not None and nu is not None:
+        blk['nll'] = float(np.mean(student_t_nll(y, mu, scale, nu)))
+        blk['nu'] = float(nu)
+        blk['mean_scale'] = float(np.mean(scale))
+        # central t-interval coverage at the SAME nominal probs (apples-to-apples
+        # reliability): half-width = t_nu.ppf(0.5 + p/2) in scale units
+        blk['coverage'] = {
+            f'{k:.0f}sigma': float(np.mean(
+                np.abs(y - mu) <= t_central_halfwidth(NOMINAL[k], nu) * scale))
+            for k in NOMINAL}
+    else:
+        blk['nll'] = float(np.mean(gaussian_nll(y, mu, var)))
+        blk['coverage'] = {f'{k:.0f}sigma': float(np.mean(np.abs(y - mu) <= k * sigma))
+                           for k in NOMINAL}
+    return blk
 
 
 def spread_skill(y, mu, sigma, n_bins=12):
@@ -147,13 +173,33 @@ def main():
     mu = np.concatenate([p['mu'] for p in preds])
     sg = np.concatenate([p['sigma'] for p in preds])
     zt = np.concatenate([np.full(p['y'].size, p['zeta']) for p in preds])
+    student = model.is_student_t()
+    nu = model.student_nu() if student else None
+    sc = np.concatenate([p['scale'] for p in preds]) if student else None
+
+    def _block(sel):
+        return metrics_block(y[sel], mu[sel], sg[sel],
+                             scale=(sc[sel] if student else None), nu=nu)
 
     # ---- 1. metrics: global + zeta deciles -------------------------------- #
     summary = {'ckpt': str(Path(args.ckpt).resolve()), 'epoch': int(ckpt['epoch']),
                'seed': int(ckpt['seed']),
+               'likelihood': model.likelihood_type,
+               'student_nu': nu,
                'zeta_ard_lengthscale': model.zeta_ard_lengthscale(),
                'ard_lengthscales': model.ard_lengthscales(),
-               'global': metrics_block(y, mu, sg), 'zeta_bins': []}
+               'global': _block(slice(None)), 'zeta_bins': []}
+    if student:
+        # Review Finding 1: verify the t-NLL's noise-only scale omits a
+        # negligible GP posterior variance (accept criterion #2 gate). Ratio in
+        # consistent std/GP space; nll_with_postvar folds post-var into the
+        # t-scale in PHYSICAL units (scale_total = y_sd*sqrt(noise_var+post_var)).
+        pv = np.concatenate([p['post_var'] for p in preds])
+        nv = np.concatenate([p['noise_var'] for p in preds])
+        summary['post_var_over_noise'] = float(np.mean(pv) / max(np.mean(nv), 1e-30))
+        scale_total = float(model.y_sd) * np.sqrt(nv + pv)
+        summary['global']['nll_with_postvar'] = float(
+            np.mean(student_t_nll(y, mu, scale_total, nu)))
     edges = np.unique(np.quantile(zt, np.linspace(0, 1, int(ec['n_zeta_bins']) + 1)))
     if len(edges) < 2:
         edges = np.array([zt[0] - 0.5, zt[0] + 0.5])   # constant zeta (FPC-const)
@@ -161,7 +207,7 @@ def main():
         m = (zt >= edges[i]) & (zt <= edges[i + 1] if i == len(edges) - 2 else zt < edges[i + 1])
         if m.sum() < 10:
             continue
-        blk = metrics_block(y[m], mu[m], sg[m])
+        blk = _block(m)
         blk['zeta_range'] = [float(edges[i]), float(edges[i + 1])]
         summary['zeta_bins'].append(blk)
 
@@ -169,17 +215,23 @@ def main():
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.5))
     ks = np.array(sorted(NOMINAL))
     nom = np.array([NOMINAL[k] for k in ks])
-    emp = np.array([np.mean(np.abs(y - mu) <= k * sg) for k in ks])
+    # half-width in scale/sigma units per nominal prob: Gaussian z=k, or the
+    # central Student-t quantile at nu (the correct yardstick for heavy tails)
+    hw = ({k: t_central_halfwidth(NOMINAL[k], nu) for k in ks} if student
+          else {k: float(k) for k in ks})
+    disp = sc if student else sg           # scale for t, sigma for gaussian
+    emp = np.array([np.mean(np.abs(y - mu) <= hw[k] * disp) for k in ks])
     ax1.plot(nom, emp, 'o-', label='global')
     for i in range(len(edges) - 1):
         m = (zt >= edges[i]) & (zt < edges[i + 1] + (1e-12 if i == len(edges) - 2 else 0))
         if m.sum() < 100:
             continue
-        e = [np.mean(np.abs(y[m] - mu[m]) <= k * sg[m]) for k in ks]
+        e = [np.mean(np.abs(y[m] - mu[m]) <= hw[k] * disp[m]) for k in ks]
         ax1.plot(nom, e, '.--', alpha=0.5, label=f'zeta[{edges[i]:.2f},{edges[i+1]:.2f}]')
     ax1.plot([0, 1], [0, 1], 'k:', lw=1)
     ax1.set_xlabel('nominal coverage'); ax1.set_ylabel('empirical coverage')
-    ax1.set_title('reliability (+/-1,2,3 sigma)'); ax1.legend(fontsize=6); ax1.grid(alpha=0.3)
+    ax1.set_title(f"reliability ({'Student-t central' if student else '+/-1,2,3 sigma'})")
+    ax1.legend(fontsize=6); ax1.grid(alpha=0.3)
     ctr, es = spread_skill(y, mu, sg)
     ax2.plot(ctr, es, 'o-')
     lim = [0, max(ctr.max(), es.max()) * 1.05]

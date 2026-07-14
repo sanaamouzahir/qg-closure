@@ -119,6 +119,40 @@ if gpytorch is not None:
             return gpytorch.distributions.MultivariateNormal(
                 self.mean_module(x), self.covar_module(x))
 
+    class StructuralStudentTLikelihood(gpytorch.likelihoods._OneDimensionalLikelihood):
+        """Heteroscedastic Student-t observation model for the arm-F structural
+        noise head (B-item, kurtosis ~1e4 verdict). scale^2(x) = het_noise(g)
+        is passed in as the `noise` kwarg — EXACTLY the FixedNoiseGaussian-
+        Likelihood contract, so the structural head (noise_a/noise_b/g2_scale)
+        is reused verbatim, never duplicated. ONE extra learned dof parameter
+        nu = softplus(raw_nu) + 2 (>2 so the variance exists). Training uses the
+        _OneDimensionalLikelihood Gauss-Hermite quadrature for expected_log_prob
+        (deterministic, low variance); marginal() draws likelihood samples (the
+        leading sample dim is reduced by law-of-total-variance in
+        PiffModel.predict_physical, the arm-C path). float64-safe: scale/nu are
+        cast to the incoming function-sample dtype."""
+
+        def __init__(self, nu_init=5.0):
+            super().__init__()
+            import math as _math
+            nu0 = max(float(nu_init), 2.0 + 1.0e-3)
+            self.register_parameter(                       # softplus(raw_nu)+2 == nu0
+                'raw_nu', torch.nn.Parameter(
+                    torch.tensor(_math.log(_math.expm1(nu0 - 2.0)))))
+
+        @property
+        def nu(self):
+            return torch.nn.functional.softplus(self.raw_nu) + 2.0
+
+        def forward(self, function_samples, *args, noise=None, **kwargs):
+            if noise is None:
+                raise ValueError("StructuralStudentTLikelihood needs the "
+                                 "structural noise (scale^2) via the `noise` kwarg")
+            scale = noise.clamp_min(1.0e-12).sqrt().to(function_samples.dtype)
+            nu = self.nu.to(function_samples.dtype)
+            return torch.distributions.StudentT(
+                df=nu, loc=function_samples, scale=scale)
+
 else:
     class PiffSVGP:  # placeholder that fails loudly (spec S2.2: no hand-rolled SVGP)
         def __init__(self, *a, **k):
@@ -157,6 +191,17 @@ class PiffModel(nn.Module):
             raise ValueError(f"noise_prior {self.noise_prior!r}")
         if self.noise_prior == 'structural' and not self.use_grad_feature:
             raise ValueError("structural noise prior needs use_grad_feature")
+        # observation model (B-item, Sanaa 2026-07-14): gaussian (default, zero
+        # behavior change) or student_t (heavy-tailed, scale^2 = the SAME
+        # structural het_noise head, one extra learned dof nu). student_t is
+        # only meaningful with the structural scale it reuses.
+        self.likelihood_type = str(mc.get('likelihood', 'gaussian'))
+        if self.likelihood_type not in ('gaussian', 'student_t'):
+            raise ValueError(f"model.likelihood {self.likelihood_type!r} "
+                             f"(gaussian | student_t)")
+        if self.likelihood_type == 'student_t' and self.noise_prior != 'structural':
+            raise ValueError("model.likelihood=student_t requires "
+                             "noise_prior=structural (scale^2 = het_noise)")
         cond_dim = 1 + int(self.use_zeta_dot)
         self.cnn = FiLMCNN(in_channels=int(mc['in_channels']),
                            channels=mc['channels'], kernel=int(mc['kernel']),
@@ -171,12 +216,15 @@ class PiffModel(nn.Module):
             raise ImportError(str(_GPYTORCH_ERR))
         if self.noise_prior == 'structural':
             import math as _math
-            self.likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
-                noise=torch.full((1,), 0.1), learn_additional_noise=False)
             self.noise_a = torch.nn.Parameter(
                 torch.tensor(_math.log(_math.expm1(0.1))))   # softplus -> 0.1
             self.noise_b = torch.nn.Parameter(
                 torch.tensor(_math.log(_math.expm1(0.01))))  # softplus -> 0.01
+            if self.likelihood_type == 'student_t':
+                self.likelihood = StructuralStudentTLikelihood()
+            else:
+                self.likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
+                    noise=torch.full((1,), 0.1), learn_additional_noise=False)
         else:
             self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
         # recorded, invertible y-standardization constants (2026-07-12 ruling
@@ -228,6 +276,33 @@ class PiffModel(nn.Module):
             self.g_scale.fill_(g_scale)
             out['g_scale'] = g_scale
         return out
+
+    def is_student_t(self):
+        return getattr(self, 'likelihood_type', 'gaussian') == 'student_t'
+
+    def student_nu(self):
+        """Learned degrees-of-freedom nu = softplus(raw_nu)+2 (float), or None
+        for the Gaussian likelihood."""
+        return float(self.likelihood.nu) if self.is_student_t() else None
+
+    @torch.no_grad()
+    def set_student_nu(self, nu_value):
+        """Set the Student-t dof from a value (INIT only; raw_nu stays
+        learnable). Inverts softplus: raw_nu = log(expm1(nu-2))."""
+        if not self.is_student_t():
+            raise ValueError("set_student_nu on a non-student_t likelihood")
+        import math as _math
+        nu0 = max(float(nu_value), 2.0 + 1.0e-3)
+        self.likelihood.raw_nu.data.fill_(_math.log(_math.expm1(nu0 - 2.0)))
+        return float(self.likelihood.nu)
+
+    def student_scale(self, g_masked):
+        """Physical Student-t SCALE field = sqrt(het_noise(g)) * y_sd (the
+        structural scale mapped out of standardized space). NLL/coverage under
+        the t use this + student_nu(); the predictive VARIANCE is
+        scale^2 * nu/(nu-2) (finite for nu>2), returned by predict_physical."""
+        s = self.het_noise(g_masked).clamp_min(1.0e-12).sqrt()
+        return s * self.y_sd.to(g_masked.dtype)
 
     def set_noise_feature_scale(self, g2_scale):
         """Recorded train-mean of g^2 (s_feat normalization, structural prior)."""
@@ -362,7 +437,8 @@ class PiffModel(nn.Module):
             raise ValueError(f"bad init stats: var={y_var}, noise_frac={nf}")
         self.gp.mean_module.constant.data.fill_(y_mean)
         self.gp.covar_module.outputscale = (1.0 - nf) * y_var
-        self.likelihood.noise = nf * y_var
+        if not self.is_student_t():          # StudentT carries no scalar .noise
+            self.likelihood.noise = nf * y_var
         return {'gp_mean_init': y_mean, 'gp_space_var': y_var, 'noise_frac': nf,
                 'outputscale_init': (1.0 - nf) * y_var, 'noise_init': nf * y_var}
 
