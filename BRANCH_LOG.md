@@ -911,3 +911,21 @@ Running record. Supervisor updates this at the end of every session. Newest entr
   widened-pool fine-tune 1833313-15 fired per Sanaa's overnight authorization.
 - Emails: [QG][SUBMIT][WIENER] + [QG][SUBMIT][sgs] relayed 10:58; [QG][LANDED][sgs] finals
   verdict spooled ~11:3x (verify relay). Figures pushed to Sanaa's session panel (plots first).
+
+## 2026-07-14 16:40 — Student-t mid-run triage + retroactive I18 monitors (session-1 resume)
+- Discovered pStuT pair (1833541 fpc / 1833542 cape) launched WITHOUT the I18 monitor unit and
+  are 100-ep runs (~245-280 s/ep -> land ~21:15/~22:00), not the ~2 GPU-h estimated at submit.
+- Monitors attached retroactively: LIVE 1833600 (fpc) / 1833602 (cape), FINALIZE 1833601/1833603
+  on hold_jid, piff_monitor_job.sh, default SGS_piff_ens card. sge-checker audit FAILED first
+  naming (pMon{L,F}_StuT_{fpc,cape} collide at 10 chars) — submitted as pMon{L,F}_{fpc,cape}_StuT.
+- Mid-run read at ep~28 fpc / ~25 cape — AGAINST on all 3 pre-registered criteria:
+  (a) pv/nv 0.5-1.4 fpc, 0.15->0.35 cape: reviewer's NLL gate FAILS, per-epoch t-NLL void,
+      verdict must use eval nll_with_postvar;
+  (b) nu monotone-collapsing toward 2 (fpc 3.86->2.14, cape 4.48->2.56) = structural misfit
+      absorbed as tail weight, consistent with kurtosis 2e4/1.6e5 >> any finite-nu t;
+  (c) cov68 ~0.92 both geoms, UNMOVED from Gaussian warm-start ep0, vs target [0.63,0.73];
+  (d) fpc mean fit degrading (RMSE .683->.732, R2 .699->.655, outside ±0.005); cape flat.
+- NOT killed (nu-curve is the result; corrected NLL only at final eval; node has headroom).
+- Email: reporting/pending_mail/monitor_20260714_studentt_midrun.mail ([QG][MONITOR][sgs]).
+- If REJECT lands: proposed diagnosis = overdispersion in the GP/FiLM variance pathway
+  (pv/nv order-1), not the noise tail; write-up with landing email, no action without Sanaa.
