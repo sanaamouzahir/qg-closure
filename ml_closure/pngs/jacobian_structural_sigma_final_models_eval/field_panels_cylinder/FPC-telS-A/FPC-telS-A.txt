@@ -1,0 +1,7 @@
+PER-CASE EVAL PANELS for member FPC-telS-A — final cylinder jacobian only structural sigma model (run
+codename piff_fpc_gjs), 4 frames evenly over this member's val window
+(t 100-120). Six panels: filtered vorticity | truth Pi_J | prediction |
+sigma with the (s_a,s_b) TWO-PARAMETER RECALIBRATION APPLIED | |error|
+(symlog) | RELATIVE error by Sanaa's exact 2026-07-14 rule
+(|err|/|truth| where |truth|>1e-4; 0 where both <1e-4; |err|/1e-4 where
+only truth is tiny — that last case is my continuation choice, flagged).
