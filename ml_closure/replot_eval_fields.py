@@ -42,7 +42,7 @@ from matplotlib.colors import SymLogNorm
 
 from dataset_piff import load_conf, build_runs, split_frames
 from model_piff import PiffModel
-from wake_restricted_r2_check import full_frame_slice
+from eval_piff import full_frame_slice
 
 HERE = Path(__file__).resolve().parent
 

@@ -33,7 +33,17 @@ import matplotlib.pyplot as plt
 from dataset_piff import load_conf, build_runs, split_frames, _f
 from model_piff import PiffModel
 from train_piff import gaussian_nll, student_t_nll, t_central_halfwidth
-from wake_restricted_r2_check import full_frame_slice
+
+
+def full_frame_slice(run):
+    """Reproduce dataset_piff.RunData.full_frame's periodic crop indices so
+    per-run 2D masks line up pixel-for-pixel with predict_frame outputs.
+    (Same helper as wake_restricted_r2_check.full_frame_slice; defined here
+    because that module imports eval_piff -- importing it back is circular.)"""
+    size = max(run.Ny, run.Nx)
+    iy = (run.Ny // 2 - size // 2 + np.arange(size)) % run.Ny
+    ix = (run.Nx // 2 - size // 2 + np.arange(size)) % run.Nx
+    return np.ix_(iy, ix)
 
 HERE = Path(__file__).resolve().parent
 NOMINAL = {1.0: 0.682689, 2.0: 0.954500, 3.0: 0.997300}
