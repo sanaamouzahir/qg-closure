@@ -66,12 +66,18 @@ def gaussian_nll(y, mu, var):
 @torch.no_grad()
 def predict_frame(model, run, frame, device, gp_chunk):
     """Full-frame predictive mean/sigma on masked pixels (copy of eval_piff)."""
-    x, y, mask, zeta = run.full_frame(frame)[:4]   # 6-tuple since ORDER-3; diagnostics need the first 4
-    gpin = model.masked_gp_inputs(x[None].to(device), zeta[None].to(device),
-                                  mask[None].to(device))
+    x, y, mask, zeta, zeta_dot, g = run.full_frame(frame)
+    gpin = model.masked_gp_inputs(
+        x[None].to(device), zeta[None].to(device), mask[None].to(device),
+        zeta_dot=(zeta_dot[None].to(device) if model.use_zeta_dot else None),
+        g=(g[None].to(device) if model.use_grad_feature else None))
+    gm = (g[None].to(device)[mask[None].to(device)]
+          if getattr(model, 'noise_prior', 'none') == 'structural' else None)
     mus, vars_ = [], []
     for i0 in range(0, gpin.shape[0], gp_chunk):
-        mu_p, var_p = model.predict_physical(gpin[i0:i0 + gp_chunk])
+        mu_p, var_p = model.predict_physical(
+            gpin[i0:i0 + gp_chunk],
+            g_masked=(gm[i0:i0 + gp_chunk] if gm is not None else None))
         mus.append(mu_p.cpu().numpy())
         vars_.append(var_p.cpu().numpy())
     mu, var = np.concatenate(mus), np.concatenate(vars_)
