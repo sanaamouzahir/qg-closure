@@ -1,0 +1,9 @@
+CYLINDER FIELD PANELS — final Jacobian-only + structural-sigma model
+(run codename piff_fpc_gjs), 6 val snapshots across the 5 FPC members.
+field_panel_truth_vs_prediction_<model>_<k>_t<time>.png : filtered input,
+  Pi_J truth, prediction, error (seismic, aspect-equal, linear scale).
+field_panel_truth_vs_prediction_symlog_...  : same frames, symlog color
+  scale (linthresh = 99th pct |Pi_J|) so wake structure shows against the
+  heavy-tailed amplitude distribution (Sanaa color-scale rule).
+Relative-error versions (Sanaa 2026-07-14 order) land here as
+field_panel_relative_error_... once the replot job finishes.

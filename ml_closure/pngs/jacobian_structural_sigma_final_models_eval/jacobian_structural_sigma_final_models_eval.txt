@@ -1,57 +1,16 @@
-WHAT THIS FOLDER IS
-Final-model evaluation of the two Jacobian-only + structural-sigma retrains
-that landed overnight 2026-07-14 (run codenames piff_fpc_gjs = cylinder,
-piff_cape_gjs = cape; best.pt = last epoch, ep99 of 100, for BOTH — the
-early-NLL-freeze pathology of the previous runs is gone). These are the
-production candidates: Jacobian-only gaussian targets, arm-F structural
-noise prior sigma^2(x) = softplus(a) + softplus(b)*|grad omega|^2, and (on
-the cylinder only) the upstream loss-mask x < x_c - 1.5D that removes the
-undersized-sponge reflection band from the loss.
+FINAL-MODEL EVALUATION of the two Jacobian-only + structural-sigma retrains
+(2026-07-14; cylinder = run codename piff_fpc_gjs, cape = piff_cape_gjs;
+best.pt = last epoch ep99 both). HEADLINES: cylinder wake-restricted R2
+0.444 -> 0.922 (upstream repair worked); cape 0.954 -> 0.972; sigma now
+tracks flow sharpness but is floor-dominated -> (a,b) recalibration is the
+next lever. Numbers in yamls/jacobian_structural_sigma_final_models_eval/.
 
-HEADLINES
-- Cylinder wake-restricted R2 (same SDF > 1D mask as the 07-13 garbage
-  check): 0.444 -> 0.922. The upstream repair + retrain flipped the
-  cylinder verdict from "real-but-flattered" to genuinely wake-real.
-- Cape wake-restricted R2: 0.954 -> 0.972; global 0.906 -> 0.935.
-- Arm-F structural prior: sigma now TRACKS flow sharpness (Spearman
-  sigma-vs-|grad omega| 0.75 cylinder / 0.84-0.92 cape; it was dead-flat,
-  ratio 1.0002x, on the full-target reference). BUT the response is
-  floor-dominated: sigma sits at the softplus(a) floor for ~90% of pixels
-  and only the top gradient decile engages the b-term, under-responding
-  ~3x where the error jumps 8.8x. Coverage@1sigma is still ~0.99 both
-  models: the remaining overdispersion is the FREESTREAM FLOOR
-  (cov1 freestream 0.999 vs near-body 0.84) — a per-term (a,b)
-  recalibration is the identified next lever, not more training.
-
-THE FIGURES
-calibration_reliability_<model>.png
-  Reliability diagram + spread-skill of the pooled val set. Perfect
-  calibration = diagonal; both models sit above it (overdispersed).
-inlet_reynolds_trace_val_frames_<model>.png
-  Inlet Re(t) of the val members; shows which modulation regimes the val
-  frames sample.
-field_panel_truth_vs_prediction_<model>_<k>_t<time>.png
-  4-panel: filtered input field, Pi_J truth, prediction, error (seismic,
-  aspect-equal, linear scale). One per val member snapshot.
-field_panel_truth_vs_prediction_symlog_<model>_<k>_t<time>.png
-  Same frames on symlog color scale (linthresh = 99th pct |Pi_J|) — the
-  wake structure is visible against the heavy-tailed amplitude
-  distribution (Sanaa color-scale rule for heavy-tailed fields).
-predicted_sigma_vs_flow_sharpness_deciles_<model>.png
-  Median predicted sigma and median |error| per |grad omega| decile — THE
-  arm-F verification figure. Compare the sigma staircase (flat then jump
-  in decile 10) with the |error| staircase (same shape, 3x bigger jump).
-coverage_by_distance_from_obstacle_<model>.png
-  Empirical 1/2-sigma coverage per SDF band. Shows the overdispersion
-  gradient: honest near the body, inflated in the freestream.
-reliability_per_member_<model>.png
-  Per-member reliability curves — sine is the weakest member on both
-  geometries (fastest modulation), consistent with the cross-eval OOD
-  ordering.
-
-THE NUMBERS
-yamls/jacobian_structural_sigma_final_models_eval/ carries the eval
-summaries, wake-restricted R2 yamls, deep diagnostics summaries, and the
-before/after table (before_after_jacobian_only_vs_structural_sigma_finals
-.yaml). Originals untouched in runs_piff/piff_{fpc,cape}_gjs/{eval,
-diagnostics}/.
+SUBFOLDERS (standing convention from 2026-07-14, Sanaa order — every plot
+lives in a subfolder named after the TEST CATEGORY it shows):
+  uncertainty_and_calibration/  sigma-vs-sharpness, coverage-by-distance,
+                                calibration + reliability (both models)
+  field_panels_cylinder/        truth/prediction/error panels, linear +
+                                symlog (+ relative-error, in progress)
+  field_panels_cape/            same for cape
+  inlet_reynolds_traces/        Re(t) context of the val frames
+Each subfolder carries its own <subfolder_name>.txt explainer.

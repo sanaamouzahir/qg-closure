@@ -1,0 +1,17 @@
+SIGMA / UNCERTAINTY / CALIBRATION TESTS of the two final Jacobian-only +
+structural-sigma models (cylinder = piff_fpc_gjs, cape = piff_cape_gjs).
+
+predicted_sigma_vs_flow_sharpness_deciles_<model>.png
+  THE arm-F verification figure. Median predicted sigma and median |error|
+  per |grad omega| decile. Verdict: sigma rises with sharpness (Spearman
+  0.75 cylinder / 0.84-0.92 cape; was dead-flat before the structural
+  prior) but sits on the softplus(a) floor for deciles 1-9 and
+  under-responds ~3x in the top decile (sigma jump 2.7-4.2x vs error 8.8x).
+coverage_by_distance_from_obstacle_<model>.png
+  Empirical 1/2-sigma coverage per SDF band. Near-body coverage is honest
+  (0.84 at 1sigma), freestream inflated (0.999) -> the remaining
+  overdispersion is the FLOOR, motivating the (a,b) recalibration.
+calibration_reliability_<model>.png
+  Pooled reliability diagram + spread-skill (diagonal = perfect).
+reliability_per_member_<model>.png
+  Per-member reliability; sine is the weakest member on both geometries.

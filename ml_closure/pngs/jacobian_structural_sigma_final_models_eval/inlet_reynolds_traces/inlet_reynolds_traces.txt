@@ -1,0 +1,3 @@
+INLET MODULATION CONTEXT: Re(t) traces of the validation frames per member,
+one per geometry — shows which modulation regimes (const/sine/ramp/ou/tel)
+the val windows sample. Model codenames: piff_fpc_gjs / piff_cape_gjs.

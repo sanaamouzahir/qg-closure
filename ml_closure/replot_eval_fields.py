@@ -2,12 +2,16 @@
 replot_eval_fields.py — P1 of the 2026-07-13 field-plot triage (standalone,
 reusable). The original eval field panels use a LINEAR color scale to the frame
 max of a heavy-tailed field, so the wake reads as "no flow". This regenerates
-them as 5-panel figures with a SYMLOG color norm:
+them as 6-panel figures with a SYMLOG color norm:
 
-    [ omega_bar | truth Pi | predicted Pi | predicted sigma | |error| ]
+    [ omega_bar | truth Pi | predicted Pi | predicted sigma | |error| | rel. error ]
 
 symlog linthresh = 99th percentile of |truth Pi| over the frame's valid pixels;
 one shared norm for truth/prediction/error, sigma on the same linthresh.
+Sixth panel (Sanaa 2026-07-14 order, CONVENTION.md rule 5b): SIGNED RELATIVE
+error (mu - truth) / (|truth| + 0.01*max|truth|) on a LINEAR seismic scale —
+readable against the heavy-tailed Pi amplitude; the floor makes near-zero
+truth pixels safe (never a division blow-up).
 cmap seismic, aspect-preserving, origin/orientation identical to eval_piff.
 Writes field5_*.png NEXT TO the existing field_*.png (never deletes them).
 Frame selection reproduces eval_piff exactly (val frames sorted by Re, 6-point
@@ -116,7 +120,12 @@ def main():
         norm_s = SymLogNorm(linthresh=lt, vmin=-vmax, vmax=vmax, base=10)
         ovmax = float(np.percentile(np.abs(p['omega']), 99.5))
 
-        fig, axs = plt.subplots(1, 5, figsize=(23, 4.2))
+        # rule 5b: signed relative error, near-zero-safe denominator
+        denom = np.abs(p['truth']) + 0.01 * float(absval.max())
+        rel = np.where(m, (np.nan_to_num(p['mu2d']) - p['truth']) / denom, np.nan)
+        rvmax = float(np.clip(np.percentile(np.abs(rel[m]), 99.5), 0.1, 2.0))
+
+        fig, axs = plt.subplots(1, 6, figsize=(27.5, 4.2))
         specs = [
             (p['omega'], 'filtered vorticity omega_bar* (linear)',
              dict(vmin=-ovmax, vmax=ovmax)),
@@ -124,6 +133,8 @@ def main():
             (p['mu2d'], 'predicted Pi* (same symlog)', dict(norm=norm)),
             (p['sigma2d'], 'predicted sigma (symlog)', dict(norm=norm_s)),
             (err, '|error| (same symlog)', dict(norm=norm)),
+            (rel, f'relative error (pred-truth)/(|truth|+1%max), linear ±{rvmax:.2g}',
+             dict(vmin=-rvmax, vmax=rvmax)),
         ]
         for ax, (f2d, ttl, kw) in zip(axs, specs):
             im = ax.imshow(f2d, cmap='seismic', origin='lower',

@@ -42,6 +42,21 @@ csvs_and_npz/    tables and arrays, full descriptive names; every .npz has
 4. Every new .npz gets its sibling .txt at creation time; every new yaml
    copy gets its English header at creation time. Not later.
 5. NEVER edit originals under runs_piff/ to add headers -- header the COPY.
+5a. SUBFOLDERS BY TEST CATEGORY (Sanaa order 2026-07-14, standing): inside
+   every pngs/<diagnostic>/ the plots are split into subfolders named
+   after the CATEGORY of test the plot shows (e.g.
+   uncertainty_and_calibration/, field_panels_cylinder/,
+   field_panels_cape/, inlet_reynolds_traces/), so a sigma plot or a cape
+   field plot is findable without reading filenames. Each subfolder
+   carries its own <subfolder_name>.txt explainer; the top-level
+   <diagnostic>.txt is the index of subfolders + headlines. Reports
+   (recalibration, verdicts, ...) follow the same subfolder convention.
+5b. RELATIVE ERROR IN ERROR PLOTS (Sanaa order 2026-07-14, standing): when
+   a figure shows a prediction error field, plot RELATIVE error —
+   (pred - truth) normalized with a near-zero-safe denominator
+   (|truth| + 0.01 * per-frame max|truth|), seismic, centered — so error
+   is readable against heavy-tailed field amplitudes. Absolute-error
+   panels may accompany, never replace.
 6. LEGACY NOTE (temporary): until tonight's fleet lands, the training jobs
    still write into runs_piff/<codename>/ and the .py files physically
    live in ml_closure/ root (codes/ holds symlinks). After the last job
