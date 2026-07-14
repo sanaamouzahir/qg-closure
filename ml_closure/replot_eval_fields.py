@@ -42,6 +42,7 @@ from matplotlib.colors import SymLogNorm
 
 from dataset_piff import load_conf, build_runs, split_frames
 from model_piff import PiffModel
+from wake_restricted_r2_check import full_frame_slice
 
 HERE = Path(__file__).resolve().parent
 
@@ -170,7 +171,12 @@ def main():
         abserr2d = np.abs(np.nan_to_num(p['mu2d']) - p['truth'])
         err = np.where(m, abserr2d, np.nan)
 
-        absval = np.abs(p['truth'][m])
+        # scale stats from the ring-excluded population (sdf > 1D): the body-
+        # column ringing (~83x background numerical artefact) otherwise sets
+        # vmax; ring pixels saturate instead (Sanaa 2026-07-14 apples-to-apples)
+        ring2d = run.sdf[full_frame_slice(run)] > 1.0 * run.D
+        mr = m & ring2d
+        absval = np.abs(p['truth'][mr if mr.any() else m])
         lt = max(float(np.percentile(absval, 99.0)), 1e-12)
         vmax = max(float(absval.max()), lt * 1.01)
         norm = SymLogNorm(linthresh=lt, vmin=-vmax, vmax=vmax, base=10)

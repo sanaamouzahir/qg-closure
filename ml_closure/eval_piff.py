@@ -33,6 +33,7 @@ import matplotlib.pyplot as plt
 from dataset_piff import load_conf, build_runs, split_frames, _f
 from model_piff import PiffModel
 from train_piff import gaussian_nll, student_t_nll, t_central_halfwidth
+from wake_restricted_r2_check import full_frame_slice
 
 HERE = Path(__file__).resolve().parent
 NOMINAL = {1.0: 0.682689, 2.0: 0.954500, 3.0: 0.997300}
@@ -181,6 +182,16 @@ def main():
         return metrics_block(y[sel], mu[sel], sg[sel],
                              scale=(sc[sel] if student else None), nu=nu)
 
+    # ring-excluded population (Sanaa 2026-07-14): the Pi_J body-column ringing
+    # is a proven numerical artefact (target == split Pi_J to 8e-12) that the
+    # smooth GP cannot fit and the het-noise explains away; report metrics with
+    # the near-body ring excluded ALONGSIDE global -- never instead of it.
+    # Band = the standing wake_restricted convention (sdf > 1D).
+    ring = np.concatenate([
+        (runs[frames[i][0]].sdf[full_frame_slice(runs[frames[i][0]])]
+         > 1.0 * runs[frames[i][0]].D)[p['mask']]
+        for i, p in enumerate(preds)])
+
     # ---- 1. metrics: global + zeta deciles -------------------------------- #
     summary = {'ckpt': str(Path(args.ckpt).resolve()), 'epoch': int(ckpt['epoch']),
                'seed': int(ckpt['seed']),
@@ -188,7 +199,8 @@ def main():
                'student_nu': nu,
                'zeta_ard_lengthscale': model.zeta_ard_lengthscale(),
                'ard_lengthscales': model.ard_lengthscales(),
-               'global': _block(slice(None)), 'zeta_bins': []}
+               'global': _block(slice(None)),
+               'ring_excluded_sdf_gt_1D': _block(ring), 'zeta_bins': []}
     if student:
         # Review Finding 1: verify the t-NLL's noise-only scale omits a
         # negligible GP posterior variance (accept criterion #2 gate). Ratio in
@@ -250,7 +262,13 @@ def main():
         err = np.where(p['mask'], np.abs(p['truth'] - np.nan_to_num(p['mu2d'])), np.nan)
         tr = np.where(p['mask'], p['truth'], np.nan)
         fig, axs = plt.subplots(1, 4, figsize=(18, 4.2))
-        vmax = np.nanmax(np.abs(tr))
+        # color scale from the ring-excluded truth (sdf > 1D): the body-column
+        # ringing is ~83x background and otherwise sets vmax, washing out the
+        # wake the model is actually scored on (ring pixels saturate instead)
+        ring2d = run.sdf[full_frame_slice(run)] > 1.0 * run.D
+        vmax = np.nanmax(np.abs(np.where(ring2d, tr, np.nan)))
+        if not np.isfinite(vmax):
+            vmax = np.nanmax(np.abs(tr))
         for ax, f2d, ttl, vm in zip(
                 axs, [tr, p['mu2d'], p['sigma2d'], err],
                 [f"truth Pi*  t={p['t']:.2f} Re={p['Re']:.0f}", 'predictive mean',
