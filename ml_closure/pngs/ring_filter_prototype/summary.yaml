@@ -1,0 +1,81 @@
+what: 'prototype: filter the ringing column out of the Pi_FF target; whole domain
+  kept (no masking)'
+n_val_frames_per_geometry: 4
+wake_region_def: sdf < 3.0D
+quiescent_band_def: '|y - y_c| > 4.0D from the body centerline (localization/spectra);
+  energy budget quiescent = NOT wake'
+geometries:
+  cylinder:
+    member: FPC-const
+    frames_t:
+    - 100.17
+    - 106.65
+    - 113.4
+    - 119.88
+    band_x_station: 13.057244466482578
+    band_x_offset_from_obstacle_D: 0.3906249999999999
+    band_cols:
+    - 245
+    - 286
+    band_width_px: 42
+    band_width_D: 1.6406249999999991
+    artefact_over_background_amplitude: 236.36959417947492
+    background_colrms: 0.00020554033263770518
+    peak_colrms: 0.04858348501308866
+    artefact_y_lag1_autocorr_in_band: -0.9999662609709353
+    filters:
+      inpaint:
+        frac_global_pi2_removed: 2.70315286383292
+        frac_wake_pi2_removed: 2.715575213261262
+        frac_quiescent_pi2_removed: 0.005779216172686065
+        removed_energy_share_quiescent: 9.800889172433781e-06
+        removed_energy_share_wake: 0.9999901991108275
+      notch:
+        frac_global_pi2_removed: 0.8746326707531038
+        frac_wake_pi2_removed: 0.8786341246023477
+        frac_quiescent_pi2_removed: 0.005761912645643814
+        removed_energy_share_quiescent: 3.020008174161557e-05
+        removed_energy_share_wake: 0.9999697999182585
+      ynotch:
+        frac_global_pi2_removed: 0.05199406907029887
+        frac_wake_pi2_removed: 0.05220696772180795
+        frac_quiescent_pi2_removed: 0.005765518222032348
+        removed_energy_share_quiescent: 0.0005083369592542811
+        removed_energy_share_wake: 0.9994916630407455
+  cape:
+    member: FPCape-const
+    frames_t:
+    - 100.35000000000001
+    - 106.65
+    - 113.4
+    - 119.7
+    band_x_station: 5.64504929941916
+    band_x_offset_from_obstacle_D: 0.6185010536754909
+    band_cols:
+    - 102
+    - 127
+    band_width_px: 26
+    band_width_D: 1.2762720155208536
+    artefact_over_background_amplitude: 45.1864742658338
+    background_colrms: 0.0007537360553467919
+    peak_colrms: 0.034058674868158896
+    artefact_y_lag1_autocorr_in_band: 0.33087170028601903
+    filters:
+      inpaint:
+        frac_global_pi2_removed: 1.9757695607618082
+        frac_wake_pi2_removed: 2.4068168225145348
+        frac_quiescent_pi2_removed: 0.0073496899248503235
+        removed_energy_share_quiescent: 0.000668255915548616
+        removed_energy_share_wake: 0.9993317440844512
+      notch:
+        frac_global_pi2_removed: 0.48116553062361794
+        frac_wake_pi2_removed: 0.5865072393335412
+        frac_quiescent_pi2_removed: 0.00011221918538552977
+        removed_energy_share_quiescent: 4.1896977040222436e-05
+        removed_energy_share_wake: 0.9999581030229596
+      ynotch:
+        frac_global_pi2_removed: 0.02974836086998232
+        frac_wake_pi2_removed: 0.036252672021874606
+        frac_quiescent_pi2_removed: 4.57819336710411e-05
+        removed_energy_share_quiescent: 0.00027646564779891617
+        removed_energy_share_wake: 0.9997235343522012

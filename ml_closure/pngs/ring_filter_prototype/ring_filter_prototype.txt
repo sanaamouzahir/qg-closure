@@ -1,0 +1,42 @@
+ring_filter_prototype -- what these figures show
+
+The Pi_J training target carries a numerical artefact: a narrow
+high-frequency oscillatory COLUMN at the obstacle x-station, ~83x the
+quiescent background, full domain height (isolated by
+diag_truth_ringing_isolation.py). Sanaa's ask: FILTER it out of the target
+instead of masking that strip out of the loss -- keep every pixel.
+
+This prototype localizes the column automatically (per-column RMS of
+high-pass-filtered Pi in the quiescent band |y - y_c| > 4D, vertical distance
+from the body centerline -- NOT sdf, which would keep the wake) and repairs
+the target three ways, everywhere in the domain:
+
+  inpaint -- each y-row's values inside the band are replaced by a cubic
+             fit through 6 flanking columns per side (cosine-blended edges);
+  notch   -- inside the band only, Pi is low-passed along x (Gaussian,
+             sigma = band width), same edge blend;
+  ynotch  -- inside the band only, the y-grid-Nyquist component is removed
+             ([1,2,1]/4 smoother along y). This one was added after
+             MEASURING the artefact: it is a 2*dy CHECKERBOARD in y (lag-1
+             autocorrelation ~ -0.99 between adjacent rows), organized as a
+             ~0.5D-wavelength packet in x spanning the obstacle footprint
+             (~1.3-1.6 D wide, NOT a few-px line). Real Pi is smooth in y at
+             the grid scale, so a y-Nyquist notch separates artefact from
+             physics far better than any x-interpolation can.
+
+Measured consequence (see summary.yaml): the artefact band coincides with the
+body's x-footprint, where the REAL Pi (the near-body cross) is orders of
+magnitude larger than the artefact -- full-height inpaint/x-notch therefore
+destroy real wake signal (removed energy ~ the wake's own energy). The
+ynotch removes the checkerboard everywhere at ~zero collateral. A secondary,
+weaker packet of the same kind sits at the outlet-sponge edge (not treated
+by this prototype; same filter would apply).
+
+Per geometry folder (<member>/README.txt describes each file):
+  fields_t*.png     raw target vs both repairs vs what was removed (symlog)
+  cross_sections.png  x-profiles at 3 y-stations: wake / mid-height / near edge
+  spectrum.png      x-wavenumber spectrum of quiescent rows, before/after
+
+Numbers: summary.yaml here. The judgement call is wake collateral damage:
+frac_wake_pi2_removed (share of REAL wake signal each filter deletes) vs
+removed_energy_share_quiescent (how much of what it removes is pure artefact).
