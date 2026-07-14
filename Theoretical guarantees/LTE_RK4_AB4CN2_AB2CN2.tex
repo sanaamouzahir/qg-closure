@@ -1,0 +1,610 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage[T1]{fontenc}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue!45!black,citecolor=blue!45!black,urlcolor=blue!45!black}
+
+\titleformat{\section}[runin]{\normalfont\bfseries}{\thesection.}{0.5em}{}[.\quad]
+\titleformat{\subsection}[runin]{\normalfont\bfseries}{\thesubsection.}{0.5em}{}[.\quad]
+\titlespacing*{\section}{0pt}{1.4em}{0.4em}
+\titlespacing*{\subsection}{0pt}{1.0em}{0.4em}
+
+\newcommand{\Lop}{\mathcal{L}}
+\newcommand{\Jop}{\mathcal{J}}
+\newcommand{\Ndot}{\dot{N}}
+\newcommand{\Nddot}{\ddot{N}}
+\newcommand{\Ndddot}{\dddot{N}}
+\newcommand{\bO}{\mathcal{O}}
+\newcommand{\zL}{z_L}
+\newcommand{\zN}{z_N}
+
+\title{\bfseries Closed-Form LTE and IMEX Stability of RK4, AB4CN2, AB2CN2}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+% ===================================================================== %
+\section{System and exact solution}
+
+\begin{equation}
+  \dot\omega = \Lop\,\omega + N(\omega), \qquad
+  N(\omega) = -\Jop(\psi,\omega)+F, \quad \psi=\Delta^{-1}\omega,
+  \label{eq:qg}
+\end{equation}
+\begin{equation}
+  \dot\omega = G(\omega), \qquad
+  G(\omega) = \Lop\omega + B(\omega,\omega) + F, \qquad
+  B(\omega,\omega)=-\Jop(\Delta^{-1}\omega,\omega),\quad N=B(\omega,\omega)+F,
+  \label{eq:ode}
+\end{equation}
+with $\Lop=\nu\Delta-\mu-\beta\partial_x\Delta^{-1}$ Fourier-diagonal, $F$ time-independent,
+and $B$ the symmetric bilinear form $B(a,b)=-\tfrac12[\Jop(\Delta^{-1}a,b)+\Jop(\Delta^{-1}b,a)]$,
+so that $B(\omega,\omega)=-\Jop(\Delta^{-1}\omega,\omega)$. Pseudo-spectral spatial discretization
+with $2/3$ dealiasing~\cite{canuto2006,boyd2001,vallis2017}; RK4 / IMEX time stepping as
+in~\cite{hairer1993,butcher2016,ascher1995,burns2020}.
+
+\subsection{Total time derivatives}
+
+\begin{equation}
+  \omega^{(k)} = \Lop^k\omega + \sum_{j=0}^{k-1}\Lop^{k-1-j}N^{(j)},
+  \qquad
+  N^{(m)} = -\sum_{j=0}^{m}\binom{m}{j}\Jop\!\bigl(\psi^{(m-j)},\,\omega^{(j)}\bigr),
+  \quad \psi^{(k)}=\Delta^{-1}\omega^{(k)},
+  \label{eq:wk}
+\end{equation}
+\begin{align}
+  \omega^{(1)} &= \Lop\omega + N, &
+  \omega^{(2)} &= \Lop^2\omega + \Lop N + \Ndot, \notag\\
+  \omega^{(3)} &= \Lop^3\omega + \Lop^2 N + \Lop\Ndot + \Nddot, &
+  \omega^{(4)} &= \Lop^4\omega + \Lop^3 N + \Lop^2\Ndot + \Lop\Nddot + \Ndddot, \notag\\
+  \omega^{(5)} &= \Lop^5\omega + \Lop^4 N + \Lop^3\Ndot + \Lop^2\Nddot + \Lop\Ndddot + N^{(4)}.
+  \label{eq:w5}
+\end{align}
+
+\subsection{Exact (Duhamel) one-step map}
+
+\begin{align}
+  \omega(t_n+h) &= \sum_{k=0}^{5}\frac{h^k}{k!}\,\omega^{(k)} + \bO(h^6) \notag\\
+  &= \omega + h\bigl(\Lop\omega+N\bigr)
+   +\tfrac{h^2}{2}\bigl(\Lop^2\omega+\Lop N+\Ndot\bigr)
+   +\tfrac{h^3}{6}\bigl(\Lop^3\omega+\Lop^2 N+\Lop\Ndot+\Nddot\bigr)\notag\\
+  &\quad+\tfrac{h^4}{24}\bigl(\Lop^4\omega+\Lop^3 N+\Lop^2\Ndot+\Lop\Nddot+\Ndddot\bigr)\notag\\
+  &\quad+\tfrac{h^5}{120}\bigl(\Lop^5\omega+\Lop^4 N+\Lop^3\Ndot+\Lop^2\Nddot+\Lop\Ndddot+N^{(4)}\bigr)
+   +\bO(h^6). \label{eq:exact-expanded}
+\end{align}
+
+% ===================================================================== %
+\section{RK4 LTE}
+
+\subsection{Scheme}
+\begin{equation}
+  k_1=G(\omega^n),\;
+  k_2=G(\omega^n+\tfrac{h}{2}k_1),\;
+  k_3=G(\omega^n+\tfrac{h}{2}k_2),\;
+  k_4=G(\omega^n+h\,k_3),\qquad
+  \omega^{n+1}_{\mathrm{RK4}} = \omega^n + \tfrac{h}{6}(k_1+2k_2+2k_3+k_4).
+  \label{eq:rk4}
+\end{equation}
+
+\subsection{Fr\'echet derivatives of $G$}
+First derivative, from $G(\omega+\epsilon v)-G(\omega)=\epsilon\Lop v+[B(\omega+\epsilon v,\omega+\epsilon v)-B(\omega,\omega)]$
+and bilinearity$+$symmetry of $B$:
+\begin{equation}
+  B(\omega+\epsilon v,\omega+\epsilon v)-B(\omega,\omega)
+   = 2\epsilon\,B(\omega,v)+\epsilon^2 B(v,v),
+  \qquad
+  G'(\omega)v=\lim_{\epsilon\to0}\tfrac{G(\omega+\epsilon v)-G(\omega)}{\epsilon}
+   = \Lop v+2B(\omega,v)\equiv Jv.
+  \label{eq:Gp}
+\end{equation}
+Second derivative (constant; differentiate \eqref{eq:Gp} in $\omega$):
+\begin{equation}
+  G''(\omega)(a,b)=2B(a,b),\qquad G'''(\omega)\equiv0.
+  \label{eq:Gpp}
+\end{equation}
+Hence the Taylor expansion of $G$ terminates exactly ($\tfrac{1}{2!}G''=B$):
+\begin{equation}
+  G(\omega+p)=G(\omega)+G'(\omega)p+\tfrac{1}{2!}G''(\omega)(p,p)
+   = f+Jp+B(p,p),\qquad f\equiv G(\omega),\ J\equiv G'(\omega).
+  \label{eq:Gexact}
+\end{equation}
+
+\subsection{Stage expansion}
+Each stage applies \eqref{eq:Gexact} once (full derivation in Appendix~\ref{app:stages}):
+\begin{align}
+  k_1 &= f, \notag\\
+  k_2 &= f + \tfrac{h}{2}Jf + \tfrac{h^2}{4}B(f,f), \notag\\
+  k_3 &= f + \tfrac{h}{2}Jf + \tfrac{h^2}{4}\bigl[J^2f+B(f,f)\bigr]
+         + \tfrac{h^3}{8}JB(f,f) + \tfrac{h^3}{4}B(f,Jf)
+         + \tfrac{h^4}{8}B(f,B(f,f)) + \tfrac{h^4}{16}B(Jf,Jf), \notag\\
+  k_4 &= f + h\,Jf + h^2\bigl[\tfrac12 J^2f+B(f,f)\bigr]
+         + h^3\bigl[\tfrac14 J^3f+\tfrac14 JB(f,f)+B(f,Jf)\bigr] \notag\\
+      &\quad + h^4\bigl[\tfrac18 J^2B(f,f)+\tfrac14 JB(f,Jf)+\tfrac12 B(f,J^2f)+\tfrac12 B(f,B(f,f))+\tfrac14 B(Jf,Jf)\bigr].
+  \label{eq:k4}
+\end{align}
+
+\subsection{Assembled step}
+$\omega^{n+1}_{\mathrm{RK4}} = \omega^n + \tfrac{h}{6}(k_1+2k_2+2k_3+k_4)$:
+\begin{align}
+  \omega^{n+1}_{\mathrm{RK4}} = \omega^n
+  &+ h\,f
+   + \tfrac{h^2}{2}Jf
+   + \tfrac{h^3}{6}\bigl(J^2f + 2B(f,f)\bigr)
+   + \tfrac{h^4}{24}\bigl(J^3f + 2JB(f,f) + 6B(f,Jf)\bigr)\notag\\
+  &+ \tfrac{h^5}{120}\bigl(0\cdot J^4f + \tfrac{5}{2}J^2B(f,f) + 5JB(f,Jf)
+       + 10B(f,J^2f) + 15B(f,B(f,f)) + \tfrac{15}{2}B(Jf,Jf)\bigr)
+   +\bO(h^6).
+  \label{eq:rk4-expanded}
+\end{align}
+
+\subsection{Orders $h^1$--$h^4$}
+The exact derivatives in the elementary-differential basis (verified by repeated
+differentiation of \eqref{eq:ode}):
+\begin{align}
+  \omega^{(1)}&=f, \quad
+  \omega^{(2)}=Jf, \quad
+  \omega^{(3)}=J^2f+2B(f,f), \notag\\
+  \omega^{(4)}&=J^3f+2JB(f,f)+6B(f,Jf), \label{eq:w-elem}\\
+  \omega^{(5)}&=J^4f+2J^2B(f,f)+6JB(f,Jf)+8B(f,J^2f)+16B(f,B(f,f))+6B(Jf,Jf). \notag
+\end{align}
+Comparing $\tfrac{h^k}{k!}\omega^{(k)}$ with \eqref{eq:rk4-expanded}: $h^1,h^2,h^3$ match
+($\tfrac{1}{6}(J^2f+2B(f,f))$ vs $\tfrac{1}{6}\omega^{(3)}$, etc.), and at $h^4$,
+$\tfrac{1}{24}(J^3f+2JB(f,f)+6B(f,Jf))=\tfrac{1}{24}\omega^{(4)}$. Identical through $h^4$.
+
+\subsection{Order $h^5$ defect}
+$\tau_{\mathrm{RK4}}=\omega(t_n+h)-\omega^{n+1}_{\mathrm{RK4}}$; first nonzero at $h^5$.
+Exact $h^5$ coefficient $\tfrac{1}{120}\omega^{(5)}$ from \eqref{eq:w-elem}, RK4 $h^5$
+coefficient from \eqref{eq:rk4-expanded}; subtract per elementary differential:
+\begin{center}
+\small
+\renewcommand{\arraystretch}{1.35}
+\begin{tabular}{lccc}
+\toprule
+elem.\ differential & exact $\times h^5$ & RK4 $\times h^5$ & $\tau_{\mathrm{RK4}}\times h^5$ \\
+\midrule
+$J^4f$        & $1/120$ & $0$    & $1/120$ \\
+$J^2B(f,f)$   & $1/60$  & $1/48$ & $-1/240$ \\
+$JB(f,Jf)$    & $1/20$  & $1/24$ & $1/120$ \\
+$B(f,J^2f)$   & $1/15$  & $1/12$ & $-1/60$ \\
+$B(f,B(f,f))$ & $2/15$  & $1/8$  & $1/120$ \\
+$B(Jf,Jf)$    & $1/20$  & $1/16$ & $-1/80$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+\begin{equation}
+  \boxed{\;
+  \tau_{\mathrm{RK4}} = h^5\Bigl[
+    \tfrac{1}{120}J^4f
+    - \tfrac{1}{240}J^2B(f,f)
+    + \tfrac{1}{120}JB(f,Jf)
+    - \tfrac{1}{60}B(f,J^2f)
+    + \tfrac{1}{120}B(f,B(f,f))
+    - \tfrac{1}{80}B(Jf,Jf)
+  \Bigr] + \bO(h^6)
+  \;\equiv\; h^5 T_5 + \bO(h^6).}
+  \label{eq:rk4-lte}
+\end{equation}
+$J^4f$ coefficient $=\tfrac{1}{120}\ne0$: RK4 misses the deepest chain (RK4 $h^5$
+coefficient of $J^4f$ is $0$); $\tau_{\mathrm{RK4}}=\bO(h^5)$.
+
+% ===================================================================== %
+\section{AB2CN2 LTE}
+\begin{equation}
+  \omega^{n+1} = r(h)\,\omega^n + s(h)\bigl(\tfrac{3}{2}N^n-\tfrac{1}{2}N^{n-1}\bigr),
+  \qquad
+  r=\frac{1+\tfrac{h}{2}\Lop}{1-\tfrac{h}{2}\Lop},\quad
+  s=\frac{h}{1-\tfrac{h}{2}\Lop}.
+  \label{eq:ab2cn2}
+\end{equation}
+$N^{n-k}=\sum_{m\ge0}\tfrac{(-kh)^m}{m!}N^{(m)}$, so
+$\tfrac{3}{2}N^n-\tfrac12 N^{n-1}=N+\tfrac{h}{2}\Ndot-\tfrac{h^2}{4}\Nddot+\tfrac{h^3}{12}\Ndddot-\tfrac{h^4}{48}N^{(4)}+\bO(h^5)$;
+$r=\sum_{p\ge0}h^p\tfrac{\Lop^p}{2^{p-1}}\!\big|_{p\ge1}\!+1$, $s=h\sum_{p\ge0}(\tfrac{h\Lop}{2})^p$.
+Assembling $r\omega^n+s\cdot[\text{bracket}]$ and subtracting from \eqref{eq:exact-expanded}:
+\begin{equation}
+  \boxed{\;\tau_{\mathrm{AB2}} = \omega(t_n+h)-\omega^{n+1}_{\mathrm{AB2CN2}}
+  = -\tfrac{h^3}{12}R_3^{(2)} - \tfrac{h^4}{24}R_4^{(2)} - \tfrac{h^5}{240}R_5^{(2)} + \bO(h^6),\;}
+  \label{eq:ab2cn2-lte}
+\end{equation}
+\begin{align}
+  R_3^{(2)} &= \Lop^3\omega + \Lop^2 N + \Lop\Ndot - 5\Nddot,\\
+  R_4^{(2)} &= 2\Lop^4\omega + 2\Lop^3 N + 2\Lop^2\Ndot - 4\Lop\Nddot + \Ndddot,\\
+  R_5^{(2)} &= 13\Lop^5\omega + 13\Lop^4 N + 13\Lop^3\Ndot - 17\Lop^2\Nddot + 8\Lop\Ndddot - 7N^{(4)}.
+\end{align}
+$h^0,h^1,h^2$ cancel; second-order.
+
+% ===================================================================== %
+\section{AB4CN2 LTE}
+\begin{equation}
+  \omega^{n+1} = r(h)\,\omega^n
+    + s(h)\,\tfrac{55N^n - 59N^{n-1} + 37N^{n-2} - 9N^{n-3}}{24},
+  \label{eq:ab4cn2}
+\end{equation}
+same $r,s$. The four-level bracket Taylor-expands to
+$N+\tfrac{h}{2}\Ndot+\tfrac{h^2}{6}\Nddot+\tfrac{h^3}{24}\Ndddot-\tfrac{49h^4}{144}N^{(4)}+\bO(h^5)$.
+Assembling and subtracting:
+\begin{equation}
+  \boxed{\;\tau_{\mathrm{AB4}} = \omega(t_n+h)-\omega^{n+1}_{\mathrm{AB4CN2}}
+  = -\tfrac{h^3}{12}R_3^{(4)} - \tfrac{h^4}{24}R_4^{(4)} - \tfrac{h^5}{720}R_5^{(4)} + \bO(h^6),\;}
+  \label{eq:ab4cn2-lte}
+\end{equation}
+\begin{align}
+  R_3^{(4)} &= \Lop^3\omega + \Lop^2 N + \Lop\Ndot,\\
+  R_4^{(4)} &= 2\Lop^4\omega + 2\Lop^3 N + 2\Lop^2\Ndot + \Lop\Nddot,\\
+  R_5^{(4)} &= 39\Lop^5\omega + 39\Lop^4 N + 39\Lop^3\Ndot + 24\Lop^2\Nddot + 9\Lop\Ndddot - 251\,N^{(4)}.
+\end{align}
+$R_3^{(2)}-R_3^{(4)} = -5\Nddot$, $\;R_4^{(2)}-R_4^{(4)} = -5\Lop\Nddot+\Ndddot$, and the $h^5$
+denominators differ ($240$ vs $720$): AB4CN2 $\ne$ AB2CN2; both second-order.
+
+% ===================================================================== %
+\section{IMEX stability: amplification factors}
+
+Linear test equation $\dot\omega=(\lambda_L+\lambda_N)\omega$ on a mode, with $\lambda_L$ the
+$\Lop$-symbol (implicit, CN) and $\lambda_N$ the advection symbol (explicit, AB);
+$\zL=h\lambda_L$, $\zN=h\lambda_N$, $z=\zL+\zN$. One step multiplies the mode by $g$;
+absolute stability $\Leftrightarrow|g|\le1$.
+
+\subsection{RK4}
+Fully explicit on $\lambda=\lambda_L+\lambda_N$:
+\begin{equation}
+  g_{\mathrm{RK4}} = R(z) = 1+z+\tfrac{z^2}{2}+\tfrac{z^3}{6}+\tfrac{z^4}{24},
+  \qquad z=\zL+\zN.
+  \label{eq:g-rk4}
+\end{equation}
+
+\subsection{AB2CN2}
+$r=\dfrac{1+\zL/2}{1-\zL/2}$, $\;\rho=\dfrac{\zN}{1-\zL/2}$; the AB2 back-level makes it
+two-step, $\omega^{n+1}=(r+\tfrac32\rho)\omega^n-\tfrac12\rho\,\omega^{n-1}$:
+\begin{equation}
+  g^2 - \bigl(r+\tfrac{3}{2}\rho\bigr)g + \tfrac{1}{2}\rho = 0,
+  \qquad g_{\mathrm{AB2}} = \max\text{-modulus root}.
+  \label{eq:g-ab2}
+\end{equation}
+
+\subsection{Operator symbols}
+$\Lop^j\omega\to\lambda_L^j$, $N^{(m)}\to\lambda_N(\lambda_L+\lambda_N)^m$; multiplying $R_p$ by $h^p$,
+\begin{equation}
+  h^p\Lop^p\omega\to\zL^p,\qquad
+  h^p\Lop^{p-k}N^{(k-1)}\to \zL^{\,p-k}\zN(\zL+\zN)^{k-1},
+\end{equation}
+so with $R_p=a_{p,0}\Lop^p\omega+\sum_{k=1}^p a_{p,k}\Lop^{p-k}N^{(k-1)}$,
+\begin{equation}
+  P_p(\zL,\zN)=a_{p,0}\zL^{\,p}+\sum_{k=1}^{p}a_{p,k}\,\zL^{\,p-k}\zN(\zL+\zN)^{k-1},
+  \qquad a^{(2)}=
+  \begin{cases} [1,1,1,-5] & p=3\\ [2,2,2,-4,1] & p=4\\ [13,13,13,-17,8,-7] & p=5.\end{cases}
+  \label{eq:Pp}
+\end{equation}
+The AB2CN2 LTE symbol: $\hat\tau_{\mathrm{AB2}}=e^{z}-g_{\mathrm{AB2}}=-\sum_p \tfrac{1}{D_p}P_p$,
+$D_p=\{12,24,240\}$; the RK4 LTE symbol: $\hat\tau_{\mathrm{RK4}}=e^z-R(z)=\tfrac{z^5}{120}+\bO(z^6)$.
+
+% ===================================================================== %
+\section{Closures}
+
+\subsection{Definitions}
+\begin{align}
+  \delta_1 &= \tau_{\mathrm{AB2}} = -\tfrac{h^3}{12}R_3^{(2)}-\tfrac{h^4}{24}R_4^{(2)}-\tfrac{h^5}{240}R_5^{(2)}
+    && \text{(truncation error; target = exact flow)},\\
+  \delta_2 &= \tau_{\mathrm{AB2}}-\tau_{\mathrm{RK4}}
+    = \delta_1 - h^5 T_5
+    && \text{(AB2CN2}\!\to\!\text{RK4 difference; target = RK4)}.
+\end{align}
+Symbols (with $z=\zL+\zN$):
+\begin{equation}
+  \hat\delta_1 = -\sum_p\tfrac{1}{D_p}P_p,\qquad
+  \hat\delta_2 = \hat\delta_1 - \tfrac{z^5}{120}.
+  \label{eq:dhat}
+\end{equation}
+
+\subsection{Stability criteria (exact closures)}
+Closed step $g = g_{\mathrm{AB2}}+\hat\delta$:
+\begin{align}
+  \text{closure }\delta_1:\quad & g = g_{\mathrm{AB2}}+\hat\delta_1 = e^{z}+\bO(z^6),
+    && |g|\le1 \;\Leftrightarrow\; \mathrm{Re}\,z\le0\ (\text{to all orders}),\\
+  \text{closure }\delta_2:\quad & g = g_{\mathrm{AB2}}+\hat\delta_2 = R(z)+\bO(z^6),
+    && |g|\le1 \;\Leftrightarrow\; |R(z)|\le1.
+\end{align}
+On the advection axis $z=iy$:
+\begin{equation}
+  |e^{iy}| = 1\ \ (\text{margin }0),
+  \qquad
+  |R(iy)| = 1-\tfrac{y^6}{120}+\bO(y^8) < 1\ \ (\text{margin }>0).
+  \label{eq:axis-margins}
+\end{equation}
+
+% ===================================================================== %
+% =====================================================================
+%  Section 7  --  Stability of the NN-corrected scheme
+%  Drop-in replacement for 7.2-7.4. Splits cleanly by target (exact vs RK4)
+%  and by closure regime (finite-order analytic vs full empirical).
+%  Requires amsmath, amssymb, and your Proposition/Corollary/Remark envs.
+% =====================================================================
+
+% =====================================================================
+%  Section 7  --  Stability of the NN-corrected scheme
+%  Drop-in replacement for 7.2-7.4. Splits cleanly by target (exact vs RK4)
+%  and by closure regime (finite-order analytic vs full empirical).
+%  Requires amsmath, amssymb, and your Proposition/Corollary/Remark envs.
+% =====================================================================
+
+\section{Stability under closure error}
+
+% ---------------------------------------------------------------------
+\subsection{Notation}
+\label{sec:stab-notation}
+
+\noindent
+\begin{tabular}{@{}ll@{}}
+$z=z_L+z_N$ & per-mode eigenvalue, $z_L=\Delta T(-\nu|k|^2-\mu+i\beta k_x/|k|^2)$, $z_N=i\,\Delta T\,u|k|$\\
+$g(z)$ & amplification factor, $\hat\omega^{n+1}=g\,\hat\omega^{n}$; stable $\iff|g|\le1$\\
+$g_{\star}$ & target amplification: $g_{\star,1}=e^{z}$ (exact), $g_{\star,2}=R(z)$ (RK4)\\
+$R(z)$ & $1+z+\tfrac{z^2}{2}+\tfrac{z^3}{6}+\tfrac{z^4}{24}$\\
+$\hat\epsilon_{\mathrm{an}}$ & \emph{analytic ceiling}: leftover from cropping the closure at order $p$; deterministic, base-dependent\\
+$\hat\epsilon_{\mathrm{NN}}$ & \emph{network error}: corrector fit residual; stochastic\\
+$\epsilon=|\hat\epsilon|$ & modulus bound on the perturbation\\
+$m_i(z)=1-|g_{\star,i}|$ & stability margin of target $i$\\
+$h\equiv\Delta T$, \ $n=T/h$ & step; number of steps to horizon $T$\\
+\end{tabular}
+
+% ---------------------------------------------------------------------
+\subsection{Amplification factors}
+\label{sec:stab-amp}
+
+The empirical correction enters the update additively, so it enters the
+amplification additively:
+\begin{equation}
+  g_{\mathrm{NN},i}(z)=g_{\star,i}(z)+\hat\epsilon_i(z),
+  \qquad
+  \hat\epsilon_i=\hat\epsilon_{\mathrm{an},i}+\hat\epsilon_{\mathrm{NN},i}.
+  \label{eq:gNN}
+\end{equation}
+
+\begin{proposition}[Finite-order closure: the base shows through]
+\label{prop:finite-order}
+The bare base scheme has the exact closed-form symbol $g_{\mathrm{base}}(z)$ with
+truncation series
+\begin{equation}
+  g_{\mathrm{base}}(z)=e^{z}-\sum_{k\ge3}\tau_k^{\mathrm{base}}\,z^{k},
+  \label{eq:gbase}
+\end{equation}
+whose coefficients $\tau_k^{\mathrm{base}}$ are fixed properties of that scheme's
+recurrence $(\tau_k^{\mathrm{AB2}}\neq\tau_k^{\mathrm{AB4}}$, e.g.\ $R_3$ carries
+$-5\ddot N$ for AB2 and $0$ for AB4$)$. Assembling $R_3,\dots,R_p$ adds back
+exactly the first terms of that same series,
+$\hat\delta=\sum_{k=3}^{p}\tau_k^{\mathrm{base}}z^{k}$, so
+\begin{equation}
+  g_{\mathrm{NN},i}
+  =\underbrace{g_{\mathrm{base}}+\hat\delta}_{\text{analytic}}+\hat\epsilon_{\mathrm{NN},i}
+  =g_{\star,i}
+  \;\underbrace{-\,\tau_{p+1}^{\mathrm{base}}\,z^{p+1}+O(z^{p+2})}_{\hat\epsilon_{\mathrm{an},i}}
+  \;+\;\underbrace{\epsilon_{\mathrm{rel}}\,O(h^{3})}_{\hat\epsilon_{\mathrm{NN},i}} .
+  \label{eq:eps-anal}
+\end{equation}
+The cancellation is term-by-term up to $p$ only; the surviving tail
+$\sum_{k>p}\tau_k^{\mathrm{base}}z^{k}$ is the \emph{base scheme's own}, never
+replaced by the target's. Hence, even when matching RK4 $(g_{\star,2}=R(z))$,
+\begin{equation}
+  g_{\mathrm{NN},2}=R(z)-\tau_{p+1}^{\mathrm{base}}z^{p+1}+O(z^{p+2})\neq R(z):
+  \label{eq:not-Rz}
+\end{equation}
+above the assembled order the closure reverts to $g_{\mathrm{base}}$. This
+base-specific leftover is what separates the plotted $g_{\mathrm{NN},2}$ curve
+from the RK4 curve.
+\end{proposition}
+
+\begin{corollary}[Empirical closure, $K\!\to\!\infty$]
+\label{cor:empirical}
+The full-tail empirical $\delta=\Phi_{\mathrm{ref}}-\Phi_{\mathrm{base}}$ is a
+difference of maps, not a truncated series in the base basis: there is no cutoff,
+nothing of the base shows through, and the analytic ceiling vanishes:
+\begin{equation}
+  \hat\epsilon_{\mathrm{an},i}=0,
+  \qquad
+  g_{\mathrm{NN},i}=g_{\star,i}+\hat\epsilon_{\mathrm{NN},i},
+  \qquad
+  \hat\epsilon_{\mathrm{NN},i}=\epsilon_{\mathrm{rel}}\,O(h^{3}).
+  \label{eq:eps-nn}
+\end{equation}
+Here $g_{\mathrm{NN},2}\to R(z)$ up to $\epsilon_{\mathrm{rel}}$ (base-agnostic).
+\end{corollary}
+
+% ---------------------------------------------------------------------
+\subsection{Stability bound}
+\label{sec:stab-bound}
+
+Triangle inequality on \eqref{eq:gNN}:
+\begin{equation}
+  |g_{\mathrm{NN},i}|\le|g_{\star,i}|+\epsilon_i
+  \quad\Longrightarrow\quad
+  |g_{\mathrm{NN},i}|\le1 \ \Longleftarrow\ \epsilon_i\le m_i(z)=1-|g_{\star,i}(z)|.
+  \label{eq:margin}
+\end{equation}
+The condition is sufficient (worst case: $\hat\epsilon_i$ radially outward), and
+tight on the advection axis $z=iy$, where $z_L=0$ and the implicit factor
+$1/(1-z_L/2)=1$.
+
+\paragraph{Target 1 --- match exact $(g_{\star,1}=e^{z})$.}
+\begin{equation}
+  |e^{iy}|\equiv1
+  \quad\Longrightarrow\quad
+  m_1(iy)=0 .
+  \label{eq:m1}
+\end{equation}
+\begin{itemize}\itemsep0pt
+\item Finite order: $\epsilon_1=\big|{-}\tau_{p+1}^{\mathrm{base}}(iy)^{p+1}+\epsilon_{\mathrm{rel}}O(h^3)\big|>0>m_1$.
+\item Empirical: $\epsilon_1=\epsilon_{\mathrm{rel}}\,O(h^3)>0>m_1$.
+\end{itemize}
+No margin: $|g_{\mathrm{NN},1}(iy)|\le1$ \emph{cannot be guaranteed} for any
+nonzero perturbation. Growth/decay is set by the sign of
+$\mathrm{Re}\!\left(\overline{e^{iy}}\,\hat\epsilon_1\right)$ --- fixed by
+$\tau_{p+1}^{\mathrm{base}}$ for the ceiling, unsigned for
+$\hat\epsilon_{\mathrm{NN}}$.
+
+\paragraph{Target 2 --- match RK4 $(g_{\star,2}=R(z))$.}
+On $z=iy$,
+\begin{equation}
+  R(iy)=\Big(1-\tfrac{y^2}{2}+\tfrac{y^4}{24}\Big)+i\Big(y-\tfrac{y^3}{6}\Big),
+  \quad
+  |R(iy)|^2=1-\tfrac{y^6}{72}+O(y^8),
+  \quad
+  |R(iy)|=1-\tfrac{y^6}{144}+O(y^8),
+  \label{eq:Riy}
+\end{equation}
+\begin{equation}
+  \boxed{\,m_2(iy)=\tfrac{y^6}{144}+O(y^8)\, }.
+  \label{eq:m2}
+\end{equation}
+RK4 agrees with $e^z$ through $z^4$; the $z^5/120$ difference is purely
+\emph{imaginary} on this axis (a phase error), so the \emph{modulus} deficit
+first appears at $y^6$. RK4 is faintly dissipative $\Rightarrow$ positive margin.
+\begin{itemize}\itemsep0pt
+\item Finite order: stable $\iff
+      \big|{-}\tau_{p+1}^{\mathrm{base}}(iy)^{p+1}+\epsilon_{\mathrm{rel}}O(h^3)\big|
+      \le \tfrac{y^6}{144}$
+      (the ceiling term is an $h$-independent comparison of $y$-coefficients; base-set).
+\item Empirical: stable $\iff \epsilon_{\mathrm{rel}}\,O(h^3)\le\tfrac{y^6}{144}$
+      (refining $h$ helps; margin fixed).
+\end{itemize}
+
+\begin{remark}
+$m_2>0=m_1$ is the deployment rationale: RK4's dissipation buys a provable
+buffer for both ceiling and network error; the exact flow, being neutral, buys
+none.
+\end{remark}
+
+% ---------------------------------------------------------------------
+\subsection{Accumulated error}
+\label{sec:stab-accum}
+
+Per step the closed scheme misses its target by $\hat\epsilon_i$; over
+$n=T/h$ steps,
+\begin{equation}
+  e(T)=\sum_{j=0}^{n-1} g^{\,n-1-j}\hat\epsilon_i,
+  \qquad
+  \|e(T)\|\le \epsilon_i\sum_{m=0}^{n-1}|g|^{m}
+  =\epsilon_i\cdot
+  \begin{cases}
+    \dfrac{T}{h}, & |g|\le1,\\[1.2ex]
+    \dfrac{|g|^{n}-1}{|g|-1}, & |g|>1.
+  \end{cases}
+  \label{eq:accum}
+\end{equation}
+Adding the target's own truncation $C\,h^{p_\star}T$ ($p_\star=4$ for RK4,
+absent for exact) gives, in the stable case $|g|\le1$:
+
+\paragraph{Match exact.} $p_\star=\infty$ (no target truncation).
+\begin{align}
+  \text{finite order:}\quad
+  &\|e(T)\|\le \tfrac{T}{h}\big(|\hat\epsilon_{\mathrm{an}}|+\epsilon_{\mathrm{rel}}O(h^3)\big)
+   = \underbrace{C_{\mathrm{base}}\,h^{p}\,T}_{\text{base ceiling}}
+   +\underbrace{\epsilon_{\mathrm{rel}}\,O(h^2)\,T}_{\text{network}},\\
+  \text{empirical:}\quad
+  &\|e(T)\|\le \tfrac{T}{h}\,\epsilon_{\mathrm{rel}}O(h^3)
+   = \epsilon_{\mathrm{rel}}\,O(h^2)\,T .
+\end{align}
+
+\paragraph{Match RK4.} $p_\star=4$.
+\begin{align}
+  \text{finite order:}\quad
+  &\|e(T)\|\le C\,h^{4}T+C_{\mathrm{base}}\,h^{p}\,T+\epsilon_{\mathrm{rel}}\,O(h^2)\,T,\\
+  \text{empirical:}\quad
+  &\|e(T)\|\le C\,h^{4}T+\epsilon_{\mathrm{rel}}\,O(h^2)\,T .
+\end{align}
+
+\begin{remark}
+The empirical floor $\epsilon_{\mathrm{rel}}O(h^2)T$ is second order in $h$
+(convergence preserved), linear in $T$, linear in network quality
+$\epsilon_{\mathrm{rel}}$. The finite-order floor is smaller in $h$ but frozen
+(reducible only by adding analytic orders) and base-dependent. Trade:
+small-but-fixed deterministic tail vs.\ larger-but-tunable, base-agnostic
+learned tail.
+\end{remark}
+
+% ===================================================================== %
+\appendix
+\section{Full stage derivations}\label{app:stages}
+Throughout: $f=G(\omega^n)$, $J=G'(\omega^n)=\Lop+2B(\omega^n,\cdot)$, and the exact identity
+\eqref{eq:Gexact}, $G(\omega^n+p)=f+Jp+B(p,p)$, with $B$ bilinear and symmetric. Scalars factor
+out of each slot: $B(\alpha x,\beta y)=\alpha\beta B(x,y)$; cross terms double: $B(x+y,x+y)=B(x,x)+2B(x,y)+B(y,y)$.
+
+\subsection{$k_2=G(\omega^n+\tfrac h2 k_1)$}
+$p=\tfrac h2 k_1=\tfrac h2 f$:
+\begin{equation}
+  k_2 = f + J\!\left(\tfrac h2 f\right) + B\!\left(\tfrac h2 f,\tfrac h2 f\right)
+      = f + \tfrac h2 Jf + \tfrac{h^2}{4}B(f,f).
+\end{equation}
+
+\subsection{$k_3=G(\omega^n+\tfrac h2 k_2)$}
+$p=\tfrac h2 k_2=\tfrac h2 f+\tfrac{h^2}{4}Jf+\tfrac{h^3}{8}B(f,f)$. Linear part:
+\begin{equation}
+  Jp = \tfrac h2 Jf + \tfrac{h^2}{4}J^2f + \tfrac{h^3}{8}JB(f,f).
+\end{equation}
+Quadratic part, expanding $B(p,p)$ by bilinearity and keeping terms through $h^4$:
+\begin{align}
+  B(p,p) &= B\!\left(\tfrac h2 f,\tfrac h2 f\right)
+     + 2B\!\left(\tfrac h2 f,\tfrac{h^2}{4}Jf\right)
+     + 2B\!\left(\tfrac h2 f,\tfrac{h^3}{8}B(f,f)\right)
+     + B\!\left(\tfrac{h^2}{4}Jf,\tfrac{h^2}{4}Jf\right) + \bO(h^5)\notag\\
+   &= \tfrac{h^2}{4}B(f,f) + \tfrac{h^3}{4}B(f,Jf)
+     + \tfrac{h^4}{8}B(f,B(f,f)) + \tfrac{h^4}{16}B(Jf,Jf) + \bO(h^5).
+\end{align}
+Sum $k_3=f+Jp+B(p,p)$:
+\begin{equation}
+  k_3 = f + \tfrac h2 Jf + \tfrac{h^2}{4}\bigl[J^2f+B(f,f)\bigr]
+      + \tfrac{h^3}{8}JB(f,f) + \tfrac{h^3}{4}B(f,Jf)
+      + \tfrac{h^4}{8}B(f,B(f,f)) + \tfrac{h^4}{16}B(Jf,Jf).
+\end{equation}
+
+\subsection{$k_4=G(\omega^n+h\,k_3)$}
+$p=h\,k_3 = h f + \tfrac{h^2}{2}Jf + \tfrac{h^3}{4}\bigl[J^2f+B(f,f)\bigr]
+ + \tfrac{h^4}{8}JB(f,f) + \tfrac{h^4}{4}B(f,Jf) + \bO(h^5)$. Linear part:
+\begin{equation}
+  Jp = h Jf + \tfrac{h^2}{2}J^2f + \tfrac{h^3}{4}\bigl[J^3f+JB(f,f)\bigr]
+     + \tfrac{h^4}{8}J^2B(f,f) + \tfrac{h^4}{4}JB(f,Jf) + \bO(h^5).
+\end{equation}
+Quadratic part. Writing $p=p_1+p_2+p_3+\bO(h^4)$ with
+$p_1=hf,\ p_2=\tfrac{h^2}{2}Jf,\ p_3=\tfrac{h^3}{4}[J^2f+B(f,f)]$, and collecting $B(p,p)$ through $h^4$:
+\begin{align}
+  B(p,p) &= \underbrace{B(p_1,p_1)}_{h^2}
+   + \underbrace{2B(p_1,p_2)}_{h^3}
+   + \underbrace{2B(p_1,p_3)+B(p_2,p_2)}_{h^4} + \bO(h^5)\notag\\
+   &= h^2 B(f,f) + h^3 B(f,Jf)
+   + h^4\!\left[\tfrac12 B\!\bigl(f,J^2f+B(f,f)\bigr) + \tfrac14 B(Jf,Jf)\right] + \bO(h^5)\notag\\
+   &= h^2 B(f,f) + h^3 B(f,Jf)
+   + h^4\!\left[\tfrac12 B(f,J^2f) + \tfrac12 B(f,B(f,f)) + \tfrac14 B(Jf,Jf)\right] + \bO(h^5).
+\end{align}
+Sum $k_4=f+Jp+B(p,p)$, collecting by order:
+\begin{align}
+  k_4 &= f + h\,Jf + h^2\bigl[\tfrac12 J^2f+B(f,f)\bigr]
+       + h^3\bigl[\tfrac14 J^3f+\tfrac14 JB(f,f)+B(f,Jf)\bigr]\notag\\
+      &\quad + h^4\bigl[\tfrac18 J^2B(f,f)+\tfrac14 JB(f,Jf)+\tfrac12 B(f,J^2f)+\tfrac12 B(f,B(f,f))+\tfrac14 B(Jf,Jf)\bigr].
+\end{align}
+$[J^4f]=0$ at $h^4$ (no stage builds the depth-4 chain) $\Rightarrow$ the $J^4f$ coefficient $0$
+in \eqref{eq:rk4-expanded}; $\tfrac h6(k_1+2k_2+2k_3+k_4)$ gives \eqref{eq:rk4-expanded}.
+
+% ===================================================================== %
+\begin{thebibliography}{9}
+\bibitem{hairer1993} E.~Hairer, S.~P.~N{\o}rsett, G.~Wanner,
+  \emph{Solving Ordinary Differential Equations I: Nonstiff Problems}, 2nd ed., Springer, 1993.
+  (Runge--Kutta order conditions, B-series, elementary differentials.)
+\bibitem{butcher2016} J.~C.~Butcher,
+  \emph{Numerical Methods for Ordinary Differential Equations}, 3rd ed., Wiley, 2016.
+\bibitem{ascher1995} U.~M.~Ascher, S.~J.~Ruuth, B.~T.~R.~Wetton,
+  Implicit--explicit methods for time-dependent partial differential equations,
+  \emph{SIAM J.\ Numer.\ Anal.} \textbf{32}(3):797--823, 1995.
+\bibitem{canuto2006} C.~Canuto, M.~Y.~Hussaini, A.~Quarteroni, T.~A.~Zang,
+  \emph{Spectral Methods: Fundamentals in Single Domains}, Springer, 2006.
+\bibitem{boyd2001} J.~P.~Boyd,
+  \emph{Chebyshev and Fourier Spectral Methods}, 2nd ed., Dover, 2001.
+\bibitem{vallis2017} G.~K.~Vallis,
+  \emph{Atmospheric and Oceanic Fluid Dynamics}, 2nd ed., Cambridge University Press, 2017.
+\bibitem{burns2020} K.~J.~Burns, G.~M.~Vasil, J.~S.~Oishi, D.~Lecoanet, B.~P.~Brown,
+  Dedalus: A flexible framework for numerical simulations with spectral methods,
+  \emph{Phys.\ Rev.\ Research} \textbf{2}:023068, 2020.
+\end{thebibliography}
+
+\end{document}
