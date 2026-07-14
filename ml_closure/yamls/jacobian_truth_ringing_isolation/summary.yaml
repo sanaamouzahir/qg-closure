@@ -1,0 +1,10 @@
+member: FPC-const
+frame_t: 119.88
+target_vs_split_rel_diff: 8e-12 (37/37 frames, FPC-const)
+obstacle_x: 12.566370614359172
+obstacle_radius: 0.6135923151542565
+colrms_PiJ_at_obstacle: 0.6639755964279175
+colrms_PiJ_wake_max: 0.2678927481174469
+streak_band_rms_far_from_body: 0.03307373449206352
+wake_band_rms_far_from_body: 0.00040016270941123366
+streak_to_wake_far_ratio: 82.65071868896484

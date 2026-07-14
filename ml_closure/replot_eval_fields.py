@@ -119,6 +119,12 @@ def main():
 
     # same conditioning plumbing as eval_piff (flags travel with the ckpt)
     conf.setdefault('model', {})['use_grad_feature'] = model.use_grad_feature
+    # data variant travels with the ckpt too (mirror eval_piff:157-159): a
+    # jonly ckpt replotted with a full-Pi config would silently show
+    # body-force ringing in the truth panel (latent trap, fixed 2026-07-14)
+    ck_var = ckpt['conf'].get('data', {}).get('variant')
+    if ck_var and not conf['data'].get('variant'):
+        conf['data']['variant'] = ck_var
     ck_tsm = ckpt['conf'].get('zeta', {}).get('tshed_smooth', 2.992)
     conf['zeta']['tshed_smooth'] = ck_tsm
 

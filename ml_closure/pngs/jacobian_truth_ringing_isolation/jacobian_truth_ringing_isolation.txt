@@ -1,0 +1,26 @@
+jacobian_truth_ringing_isolation -- what these figures show
+
+Question (Sanaa 2026-07-14): the gjs finals truth panels show a plus/cross
+"ringing" pattern at the obstacle that the Pi_J panel of
+pi_jacobian_vs_body_split_gaussian did not seem to show. Is the eval truth
+secretly full Pi?
+
+Answer: NO. The eval/training target (DNS_LES_s4_gaussian_jonly.npz pi_ff)
+was diffed frame-by-frame against the Pi_J computed independently by
+diag_pi_jacobian_split.py: identical to 8e-12 relative (float roundoff) on
+all 37 val frames. The truth panel IS Jacobian-only. The pattern is IN Pi_J:
+
+  * the strong cross/plus AT the body in the eval panels is amplified by the
+    symlog scale (linthresh = 99th pct of |Pi*|, which is tiny because Pi_J
+    is wake-concentrated -- the same field at the split figure's scale looks
+    clean);
+  * the faint full-height VERTICAL COLUMN at the obstacle x-station is a
+    real background structure in Pi_J (quantified in the column-RMS panel)
+    -- consistent with Sanaa's suspicion of an inlet/obstacle reflection
+    living in the SIMULATION fields themselves. Because it is in the fields,
+    inputs and targets carry it CONSISTENTLY (the upstream input repair
+    masks it from the model's view upstream only; the strip is excluded
+    from loss/metrics).
+
+Figures: <member>_truth_ringing_isolation_t<t>.png per panel spec in the
+script docstring. Numbers: yamls/jacobian_truth_ringing_isolation/summary.yaml
