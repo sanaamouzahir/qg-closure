@@ -1,0 +1,82 @@
+# Two-parameter post-hoc sigma recalibration of the cylinder jacobian only structural sigma model (run codename piff_fpc_gjs):
+# NLL-optimal (s_a, s_b) scaling the noise floor softplus(a) and gradient term softplus(b)*g^2 separately,
+# fit on the first half of the val window, all numbers below reported on the HELD-OUT second half.
+# KEY FINDING: both scale DOWN (the whole sigma staircase was inflated); the fitted floor lands BELOW
+# the validated arm-F clamp (1.0e-3 std-var), so the clamp now binds in the freestream — the clamp floor
+# plus the Gaussian-vs-heavy-tail mismatch (residual kurtosis ~1e4) bound what recalibration can do.
+s_a: 0.2544080755951197
+s_b: 0.057603699821152286
+softplus_a: 0.003381266724318266
+softplus_b: 0.4153498709201813
+y_sd: 0.6066625118255615
+formula: var'_std = var_gp + clamp(s_a*softplus(a) + s_b*softplus(b)*g^2/g2_scale,
+  1.0e-3, 10.0); sigma_physical = sqrt(var'_std)*y_sd
+fit_window_t:
+- 100.0
+- 110.0
+test_window_t:
+- 110.0
+- 120.0
+fit_half:
+  nll_before: -2.2315400849004594
+  nll_after: -2.7552579129534562
+  cov1_before: 0.9894100672532812
+  cov1_after: 0.9673560868663527
+  cov2_before: 0.997060053921133
+  cov2_after: 0.9892305276568009
+  cov3_before: 0.9988380292122182
+  cov3_after: 0.9948828252303499
+test_half:
+  nll_before: -2.216960193636897
+  nll_after: -2.726748406099828
+  cov1_before: 0.9875407223061654
+  cov1_after: 0.9629364500933251
+  cov2_before: 0.9963999644476047
+  cov2_after: 0.9874632180843185
+  cov3_before: 0.9985137321127011
+  cov3_after: 0.9939588184753948
+test_half_gradient_deciles:
+  grad_feature_hi:
+  - 6.753335384246385e-08
+  - 2.1115089339218686e-07
+  - 4.4992975745117324e-07
+  - 8.52110258620087e-07
+  - 1.5920247733447468e-06
+  - 3.146771177853225e-06
+  - 7.10392851033248e-06
+  - 2.1980811288813147e-05
+  - 0.00034576205944176667
+  - 2071.197998046875
+  sigma_med_before:
+  - 0.03583444676082691
+  - 0.03583472276384527
+  - 0.03583516533615957
+  - 0.03583595661057429
+  - 0.035837606774815456
+  - 0.03584313142506399
+  - 0.03584929231620035
+  - 0.0358689304005861
+  - 0.035971595248785744
+  - 0.09989771665138106
+  sigma_med_after:
+  - 0.020191613168032176
+  - 0.020191613168032176
+  - 0.020191613168032176
+  - 0.020191613168032176
+  - 0.020191613168032176
+  - 0.020200302771338843
+  - 0.020200302771338843
+  - 0.020200302771338843
+  - 0.020200302771338843
+  - 0.02958429816301475
+  abserr_med:
+  - 0.00136385841591391
+  - 0.0013770248773425917
+  - 0.00137957183832782
+  - 0.0013961807235602919
+  - 0.0014256136645371955
+  - 0.0014535173444869542
+  - 0.0014771885052482503
+  - 0.001553218646648702
+  - 0.0017731532095410785
+  - 0.013117439648169693

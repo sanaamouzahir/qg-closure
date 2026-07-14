@@ -10,7 +10,7 @@ lives in a subfolder named after the TEST CATEGORY it shows):
   uncertainty_and_calibration/  sigma-vs-sharpness, coverage-by-distance,
                                 calibration + reliability (both models)
   field_panels_cylinder/        truth/prediction/error panels, linear +
-                                symlog (+ relative-error, in progress)
+                                symlog + 6-panel with relative error
   field_panels_cape/            same for cape
   inlet_reynolds_traces/        Re(t) context of the val frames
 Each subfolder carries its own <subfolder_name>.txt explainer.

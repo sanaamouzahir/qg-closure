@@ -1,0 +1,87 @@
+# conf_lomo_fpc_gjs_sine.yaml — CYLINDER LOMO fold (FPC-sine held out) on the
+# current production recipe (gaussian_jonly + structural sigma + upstream mask +
+# ORDER-3 conditioning = conf_piff_fpc_gjs.yaml verbatim except lomo_holdout).
+# First-ever cylinder LOMO (Sanaa question 2026-07-14: FPC had only the 1-to-4
+# cross-eval, never leave-one-out). COLD folds — warm would leak the holdout.
+# Deltas vs conf_piff.yaml (FPC-const single-member):
+#   data.runs        = all 5 usable FPC members (const, sine, ramp, ou, telS-A —
+#                      tel EXCLUDED: blew up at t=68.6, partial member).
+#   model.use_zeta_dot     = true: zeta_dot = d(zeta)/dt from the table Re,
+#                      boxcar-smoothed over tshed_smooth, ensemble-std
+#                      normalized (recorded zdot_sd buffer); enters FiLM
+#                      (cond_dim 2) AND the kernel as an ARD dim.
+#   model.use_grad_feature = true: local |grad omega_bar|* (crop-computed,
+#                      train-mean normalized, recorded g_scale buffer) as an
+#                      ARD dim — arm F's structural prior moved into the kernel.
+#   zeta.tshed_smooth = 2.992 (T_shed_mid, Sanaa's number).
+#   train: grid-winner lr/wd; 150 epochs — the re-gated T6 acceptance
+#   (R2 >= 0.85 in 100 ep) is read off this run's curve at ep 100, the
+#   remaining 50 ep match the promoted prod_ext150 horizon for a fair
+#   per-member-spread comparison.
+# zeta normalization SHARED with cape (table-Re coordinate) — unchanged.
+# NO LOMO here (in-distribution first; LOMO is the follow-up).
+# REPO RULE: floats in explicit-mantissa form (5.0e-3, never 5e-3).
+
+data:
+  variant: gaussian_jonly    # JACOBIAN-ONLY gaussian targets (Sanaa ruling 2026-07-13 evening: physics quantities only, no body-force commutator)
+  runs:
+    - /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/outputs/SGS_closure_ensemble/FPC-const
+    - /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/outputs/SGS_closure_ensemble/FPC-sine
+    - /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/outputs/SGS_closure_ensemble/FPC-ramp
+    - /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/outputs/SGS_closure_ensemble/FPC-ou
+    - /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/outputs/SGS_closure_ensemble/FPC-telS-A
+  scale: 4
+  crop: 64
+  wake_frac: 0.8            # legacy meaning kept: val uses this directly; train wake share = 0.8*(1-signal_frac)=0.4
+  signal_frac: 0.5           # TRAIN-ONLY: half the crops drawn from the per-frame Pi^2 block distribution
+  signal_block: 8            # sampling tile (coarse-grid px); rest uniform (0.2)
+  wake_x_lo_D: -1.0
+  wake_x_hi_D: 12.0
+  wake_y_half_D: 3.0
+  t_train_lo: 30.0
+  t_train_hi: 100.0
+  t_val_lo: 100.0
+  t_val_hi: 120.0
+  lomo_holdout: FPC-sine
+  sdf_clip_D: 2.0
+  upstream_mask_x_lo_D: -1.5  # mask x < x_c - 1.5D (undersized-sponge reflection; boundary layer kept)
+  sponge_thresh: 1.0e-2
+  crops_per_epoch_train: 4096
+  crops_per_epoch_val: 1024
+  batch_crops: 8
+
+zeta:
+  re0: 3900.0
+  re_scale: 1700.0
+  tshed_smooth: 2.992
+
+model:
+  noise_prior: structural    # arm-F production port (Sanaa 2026-07-13 night): sigma^2(x)=sp(a)+sp(b)*gfeat^2
+  in_channels: 4
+  channels: [32, 32, 16]
+  kernel: 5
+  film: true
+  film_hidden: 16
+  use_zeta_dot: true
+  use_grad_feature: true
+  n_inducing: 512
+  kmeans_pixels: 10000
+  kmeans_iters: 50
+
+train:
+  lr: 1.0e-3                  # grid winner (FPC-const, 2026-07-12)
+  weight_decay: 1.0e-5        # grid winner
+  epochs: 100               # warm retrain
+  t0_restart: 5
+  seed: 0
+  device: cuda
+  outdir: runs_piff
+  num_workers: 0
+  gp_chunk: 65536
+  kurtosis_after_epoch: 1
+  init_noise_frac: 1.0e-1
+
+eval:
+  n_field_snapshots: 6
+  n_zeta_bins: 10
+  sigma_levels: [1.0, 2.0, 3.0]

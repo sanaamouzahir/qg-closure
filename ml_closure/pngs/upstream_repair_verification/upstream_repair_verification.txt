@@ -1,0 +1,10 @@
+upstream_repair_verification — original vs repaired model inputs.
+
+Rows: filtered vorticity omega*, u*, v*. Columns: ORIGINAL (what the
+model used to see: includes the sponge-reflection artifact upstream),
+REPAIRED (upstream replaced by analytic freestream omega*=0, u*=1, v*=0
+via an 8-px blend), DIFFERENCE (original - repaired: should be nonzero
+ONLY left of the dashed line = exactly the artifact we removed).
+Dashed line: x_c - 1.5 D (mask + repair edge); dotted: blend start.
+Inputs: DNS_LES_s4_gaussian_jonly.npz per member. Purpose: confirm the
+repair is clean before back-porting it to all stored runs.

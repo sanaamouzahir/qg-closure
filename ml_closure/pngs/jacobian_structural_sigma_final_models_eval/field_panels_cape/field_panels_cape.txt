@@ -5,5 +5,5 @@ field_panel_truth_vs_prediction_<model>_<k>_t<time>.png : filtered input,
 field_panel_truth_vs_prediction_symlog_...  : same frames, symlog color
   scale (linthresh = 99th pct |Pi_J|) so wake structure shows against the
   heavy-tailed amplitude distribution (Sanaa color-scale rule).
-Relative-error versions (Sanaa 2026-07-14 order) land here as
-field_panel_relative_error_... once the replot job finishes.
+Relative-error versions (Sanaa 2026-07-14 order) are the
+field_panel_truth_prediction_error_and_relative_error_symlog_* figures: 6 panels, the last = signed relative error (pred-truth)/(|truth|+1%max), linear seismic.

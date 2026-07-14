@@ -1,0 +1,28 @@
+TWO-PARAMETER SIGMA RECALIBRATION (Sanaa GO 2026-07-14) of the two final
+structural-sigma models. Fits s_a (noise floor softplus(a)) and s_b
+(gradient term softplus(b)*g^2) separately by NLL on the first half of the
+val window; every number reported on the HELD-OUT second half. Sidecars:
+runs_piff/piff_{fpc,cape}_gjs/recalibration_structural.yaml (consumers
+apply the two scalars at inference; no checkpoint mutation).
+
+VERDICT
+- Cylinder: s_a 0.254, s_b 0.058 -> held-out NLL -2.217 -> -2.727,
+  cov1 0.988 -> 0.963. Cape: s_a 0.153, s_b 0.097 -> NLL -1.727 -> -2.291,
+  cov1 0.994 -> 0.977.
+- BOTH scale DOWN: the whole sigma staircase was inflated; the top gradient
+  decile was the LEAST overdispersed (sigma/|err| ~8.6x there vs ~27x in
+  the quiet deciles), so NLL shrinks the tail less than it wants to shrink
+  the floor.
+- FLOOR NOW CLAMP-BOUND: fitted floors (8.6e-4 / 5.2e-4 std-var) sit BELOW
+  the validated arm-F clamp lo=1.0e-3, so the clamp binds in the
+  freestream. Together with the Gaussian-likelihood-vs-heavy-tails mismatch
+  (residual kurtosis ~1e4-2e4), this bounds coverage improvement: 1-sigma
+  coverage cannot reach 0.68 by rescaling alone. The principled next lever
+  is the raised B-item (Student-t / fully heteroscedastic likelihood).
+
+THE FIGURES
+reliability_before_after_two_parameter_recalibration_<model>.png
+  Held-out reliability curve before vs after; diagonal = perfect.
+sigma_vs_sharpness_deciles_before_after_two_parameter_recalibration_<model>.png
+  The sigma staircase before/after vs the |error| staircase (log y): shows
+  the floor dropping onto the clamp and the tail moving toward the error.
