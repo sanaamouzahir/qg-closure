@@ -929,3 +929,25 @@ Running record. Supervisor updates this at the end of every session. Newest entr
 - Email: reporting/pending_mail/monitor_20260714_studentt_midrun.mail ([QG][MONITOR][sgs]).
 - If REJECT lands: proposed diagnosis = overdispersion in the GP/FiLM variance pathway
   (pv/nv order-1), not the noise tail; write-up with landing email, no action without Sanaa.
+
+## 2026-07-14 ~17:00 — Sanaa rulings: Student-t KILLED; ringing mask question answered (session-1)
+- STUDENT-T KILLED per Sanaa chat order (1833541/42 + monitors 1833600-03 qdel'd ~16:50).
+  Verdict stands as REJECT-by-kill: nu collapsed monotone toward 2 on both geoms, cov68 ~0.92
+  unmoved from Gaussian warm start, pv/nv order-1 voided the raw NLL criterion, fpc mean fit
+  degrading. Sigma issue OPEN — next lever (deliberation, nothing fired): post-hoc recalibration
+  fitted on val NLL — (a,b) of the het-noise head + a GP posterior-variance temperature (pv/nv
+  order-1 says the posterior-variance pathway does half the variance work) — one cheap CPU-fit,
+  no retraining.
+- RINGING/MASK ANSWER (agent-verified, file:line): the 83x Pi_J column at the obstacle x-station
+  is NOT loss-masked. Loss excludes ONLY sponge strips + upstream x < x_c-1.5D (gjs configs) +
+  body interior sdf<0 (dataset_piff.py:192-220); the column's above/below-body extent IS scored.
+  Model still can't fit it: (1) GP/CNN smoothness prior vs ~pixel-wide oscillation; (2) het-noise
+  sigma^2 = a + b*g^2 explains it away (|grad omega| huge there -> big sigma -> tiny NLL gradient);
+  (3) per-datum normalization (few-hundred-pixel column negligible in N). So Sanaa's premise
+  (loss-masked) is false but her conclusion (mask it from truth in comparisons) is still right —
+  the artefact is proven numerical and structurally unfittable-by-design.
+- APPLES-TO-APPLES FIX (deferred, do NOT edit while gc2/rr2 replot chain is queued on these
+  files): report ring-excluded metrics ALONGSIDE global using the existing wake_restricted
+  convention sdf > 1D (wake_restricted_r2_check.py:89,95) at eval_piff.py:172-181 + ring-excluded
+  vmax in truth panels (eval_piff.py:251-253, replot_eval_fields.py:169-175). Never replace the
+  global numbers — add columns.
