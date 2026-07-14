@@ -1,0 +1,97 @@
+jacobian_only_models_garbage_check_eval — are the strong Jacobian-only R2s real physics or another artifact?
+
+WHY THIS DIAGNOSTIC EXISTS (the morning incident, 2026-07-13)
+
+On the morning of 2026-07-13 a "good" global R2 on the full-target
+(Jacobian + body-force/penalty commutator) cylinder model turned out to be
+HOLLOW: the field panels showed the prediction painting wake structure where
+the truth was near zero, and the R2 was carried almost entirely by the
+obstacle-ring band of Pi (the body-force commutator hugging the cylinder) —
+geometry, not physics. That discovery triggered (a) the switch to
+JACOBIAN-ONLY targets (variant gaussian_jonly: Pi_J = filter(J)_fine -
+J(filtered); the body/sponge commutator removed, so the target has NO
+obstacle ring for skill to hide in), and (b) the standing rule that every R2
+must also be reported WAKE-RESTRICTED: only pixels farther than 1*D from the
+body (SDF > 1*D), where a ring cannot contribute.
+
+Tonight's order (Sanaa, 2026-07-13 night): the two in-flight Jacobian-only
+trainings show strong val R2 (cylinder ~0.63-0.69 rising, cape ~0.90).
+PROVE these are not garbage by re-running the SAME eval package + symlog
+field panels that exposed the morning problem, plus the wake-restricted R2.
+
+THE MODELS (frozen mid-training snapshots; trainers untouched)
+
+  cylinder_jacobian_only_in_training_ep131
+    codename piff_fpc_gj, SGE job 1832529 (pJo_fpc), still training at freeze.
+    Frozen ckpt: runs_piff/piff_fpc_gj/last_ep_snapshot_2026-07-13T21.pt
+    (epoch 131 weights). NOTE: runs_piff/piff_fpc_gj/best.pt tracks best val
+    NLL, which was hit at ep16 (R2 0.18, before sigma inflation) — the
+    R2-strong current weights are last.pt, so THAT is what was frozen and
+    evaluated (best.pt also frozen alongside for the record, not evaluated).
+    5 FPC members (const/sine/ramp/ou/telS-A), D = 0.4*pi ~ 1.257.
+
+  cape_jacobian_only_in_training_ep122
+    codename piff_cape_gj, SGE job 1832558 (pJoC_cape), still training at
+    freeze. Frozen ckpt: runs_piff/piff_cape_gj/last_ep_snapshot_2026-07-13T21.pt
+    (epoch 122 weights); same best.pt-vs-last.pt note (best NLL at ep19).
+    5 FPCape members (const/sine/ramp/ou/tel), D = L_cape = 1.0.
+
+Both evaluated on their full validation windows (t in [100,120]; 250 / 220
+full frames), eval jobs 1832707 / 1832708 (piff_eval_job.sh), symlog replots
+1832711 / 1832712 (replot_eval_fields.py), wake-restricted R2 jobs
+1832709 / 1832710 (wake_restricted_r2_check.py, new standalone script).
+Originals live in runs_piff/<codename>/eval_snapshot_20260713/ — these pngs
+are copies (convention rule 6).
+
+WHAT EACH FIGURE SHOWS
+
+  <model>_symlog_field_panel_j_t<t>.png  (j = 0..5, val snapshots spanning
+  the Re range, lowest to highest; same frame selection as eval_piff)
+    Five panels: [filtered vorticity omega_bar* (linear) | truth Pi*
+    (symlog) | predicted Pi* (same symlog) | predicted sigma (symlog) |
+    |error| (same symlog)]. symlog linthresh = 99th percentile of |truth Pi*|
+    over the frame's valid pixels; cmap seismic, aspect-preserving.
+    THE GARBAGE SIGNATURE WOULD BE: predicted wake structure sitting on
+    near-zero truth, error panel showing the whole predicted wake, skill
+    concentrated in a ring hugging the body.
+    WHAT THESE PANELS SHOW INSTEAD: predicted Pi* reproduces the truth's
+    wake structure eddy by eddy (vortex-core positions, the braided
+    near-wake filaments at Re 5600, the cape lee-wake train and detached
+    eddies); the |error| panel is a fainter, attenuated shadow of the same
+    structures (core-amplitude under-prediction), not a misplaced wake.
+    Honest flags: (1) predicted sigma is spatially FLAT and ~3-7x too large
+    (known overdispersion, CP-ML-1 recalibration item — panels 4 saturate);
+    (2) the cylinder model shows a small uniform negative background offset
+    in the freestream (light-blue tint, well below linthresh); (3) residual
+    error remains at the sharpest vortex cores, consistent with R2 0.73 not
+    1.0.
+
+  <model>_calibration_reliability_and_spread_skill.png
+    Reliability diagram (+/-1,2,3 sigma empirical vs nominal coverage,
+    global and per zeta bin) and spread-skill plot. Shows the overdispersion
+    quantitatively (coverage ~0.999 at 1 sigma).
+
+  <model>_reynolds_number_trace_of_eval_snapshots.png
+    Re_inlet(t) per member with the 6 snapshot times marked.
+
+THE NUMBERS
+
+  yamls/jacobian_only_models_garbage_check_eval/summary.yaml — global vs
+  wake-restricted R2 (SDF > 1*D), per member and pooled, plus the eval-
+  package global metrics. The wake-restricted R2 is the one the morning
+  artifact could not fake: it excludes every pixel within 1 diameter of the
+  body.
+
+HEADLINE NUMBERS AND VERDICT (2026-07-13 ~21:00 EDT freeze)
+
+  pooled R2, global valid mask -> wake-restricted (SDF > 1*D):
+    cylinder ep131:  0.729 -> 0.444   (per member 0.29-0.59)
+    cape ep122:      0.906 -> 0.954   (per member 0.92-0.97)
+
+  CAPE: unambiguously real — the R2 goes UP when the near-body band is
+  excluded (that band was its weak spot, not its crutch; FPCape-sine rises
+  0.79 -> 0.92 off-body).
+  CYLINDER: not the morning's artifact (panels show genuine eddy-by-eddy
+  wake tracking; J-only truth has no ring), but the headline R2 IS
+  flattered by the near-body concentration of Pi_J energy: quote 0.44 for
+  far-wake skill, not 0.73. Training was still improving at freeze.

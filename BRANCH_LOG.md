@@ -875,3 +875,20 @@ Running record. Supervisor updates this at the end of every session. Newest entr
 - Headlines: R2 0.8288 (above the 0.813 training-time val), RMSE 86.2, NLL 6.67; sigma 309.5 ~3.6x overdispersed, coverage 0.9992@1sigma (CP-ML-1 flag); zeta bins R2 0.661/0.698 low vs 0.924-0.954 top four, sigma flat per bin; ARD lengthscales zeta 8.37 / zeta_dot 5.92 / grad 11.48 (conditioning alive on cape).
 - Convention tree: pngs/cape_full_target_reference_model_eval/ (calibration+spread-skill, Re-trace, 6 linear field_*, 6 symlog field5_*, .txt explainer) + yamls/cape_full_target_reference_model_eval/cape_full_target_ep65_eval_summary.yaml (annotated). Originals in runs_piff/piff_cape_gauss/eval/ untouched.
 - Email: reporting/pending_mail/landed_20260713_cape_ep65_eval.mail ([QG][LANDED][sgs]).
+
+## 2026-07-13 NIGHT — garbage check on the two in-flight Jacobian-only models (Sanaa order)
+- Question: cylinder R2 ~0.63-0.69 rising / cape ~0.90 — real physics or another hollow-R2 artifact
+  like the morning obstacle-ring incident? Method: freeze current weights (last.pt, NOT best.pt —
+  best.pt tracks val NLL, stuck at ep16/ep19 pre-sigma-inflation), same eval package + symlog
+  5-panel replots + NEW wake-restricted R2 (SDF > 1*D; wake_restricted_r2_check.py, standalone).
+- Jobs (exit 0, GPU chained one-at-a-time next to the 5 running trainers): eval 1832707/1832708,
+  replots 1832711/1832712 (all.q), wake R2 1832709/1832710.
+- VERDICT: CAPE ep122 REAL — pooled R2 0.906 global -> 0.954 wake-restricted (sine 0.79 -> 0.92;
+  near-body band was its weakness, not its crutch); panels near-indistinguishable from truth in the
+  wake. CYLINDER ep131 real-but-flattered — 0.729 -> 0.444 (Pi_J energy concentration hugs the
+  body; 1.7% of pixels carry the difference); panels show genuine eddy-by-eddy tracking, error =
+  attenuated shadow, NO phantom-wake/ring signature. Flags: sigma flat + ~3-7x overdispersed both
+  models (CP-ML-1); small negative freestream offset on cylinder prediction.
+- Artifacts: ml_closure/pngs/ + yamls/jacobian_only_models_garbage_check_eval/;
+  originals in runs_piff/piff_{fpc,cape}_gj/eval_snapshot_20260713/ + frozen ckpts.
+- Email: reporting/pending_mail/landed_20260713_garbage_check.mail ([QG][LANDED][sgs]).

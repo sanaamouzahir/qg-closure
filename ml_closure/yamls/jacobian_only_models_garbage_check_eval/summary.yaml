@@ -1,0 +1,86 @@
+# jacobian_only_models_garbage_check_eval — the numbers behind
+# pngs/jacobian_only_models_garbage_check_eval/ (see that folder's .txt for
+# the full story).
+#
+# QUESTION (Sanaa, 2026-07-13 night): the two in-flight Jacobian-only Pi_FF
+# trainings show strong val R2 (cylinder ~0.63-0.69 rising, cape ~0.90). This
+# morning a "good" R2 turned out to be hollow — skill carried by the
+# obstacle-ring band of the body-force commutator, prediction painting wake
+# where truth was near zero. Are the new numbers real physics?
+#
+# METHOD: froze the CURRENT weights of both running trainers
+# (last.pt -> last_ep_snapshot_2026-07-13T21.pt; NOTE best.pt tracks best val
+# NLL and is stuck at ep16/ep19 from before sigma inflation — the R2-strong
+# weights are last.pt, so that is what was frozen and evaluated). Ran the
+# standard eval package (eval_piff.py, jobs 1832707/1832708), the symlog
+# 5-panel field replots (replot_eval_fields.py, jobs 1832711/1832712), and
+# the NEW standalone wake-restricted R2 check (wake_restricted_r2_check.py,
+# jobs 1832709/1832710): R2 on the full valid mask vs R2 on pixels farther
+# than 1*D from the body (SDF > 1*D), where an obstacle ring cannot
+# contribute. All on the full val windows (t in [100,120]).
+#
+# VERDICT:
+#   CAPE: NOT garbage, unambiguously. Wake-restricted pooled R2 RISES from
+#   0.906 to 0.954 (the near-body band was its weak spot, not its crutch —
+#   sine goes 0.79 -> 0.92 off-body). Panels show the predicted Pi
+#   reproducing the truth's lee-wake train and detached eddies in detail.
+#   CYLINDER: NOT the morning's garbage — panels show genuine eddy-by-eddy
+#   wake tracking and the J-only target has no body-force ring — BUT the
+#   headline R2 IS flattered by the near-body band: pooled 0.729 global
+#   drops to 0.444 wake-restricted (the strongest, best-predicted Pi_J
+#   energy hugs the cylinder; removing the 1.7% of pixels within 1D removes
+#   most of the target variance). Real skill in the far wake, but the number
+#   to quote for wake physics is 0.44 (and it was still rising at freeze).
+#
+# Sources (originals, untouched):
+#   runs_piff/piff_fpc_gj/eval_snapshot_20260713/{summary.yaml,wake_restricted_r2.yaml}
+#   runs_piff/piff_cape_gj/eval_snapshot_20260713/{summary.yaml,wake_restricted_r2.yaml}
+# Model codenames: cylinder = piff_fpc_gj (trainer job 1832529, still running),
+# cape = piff_cape_gj (trainer job 1832558, still running). Both in_training
+# snapshots; finals land with the trainers (~ep150).
+
+cylinder_jacobian_only_in_training_ep131:
+  codename: piff_fpc_gj
+  frozen_ckpt: runs_piff/piff_fpc_gj/last_ep_snapshot_2026-07-13T21.pt
+  epoch: 131
+  members: [FPC-const, FPC-sine, FPC-ramp, FPC-ou, FPC-telS-A]
+  D: 1.256637061435918
+  n_val_frames: 250
+  eval_package_global:            # eval_piff.py on full frames, pooled
+    r2: 0.7293
+    rmse: 0.2794
+    nll: 1.5545
+    mean_sigma: 1.877             # heavily overdispersed (1sigma cov 0.9994)
+    coverage_1sigma: 0.9994
+  ard_lengthscales: {zeta: 17.17, zeta_dot: 14.61, grad: 32.81}
+  r2_global_vs_wake_restricted:   # wake = valid AND SDF > 1.0*D
+    FPC-const:  {global: 0.7762, wake_restricted: 0.2920}
+    FPC-sine:   {global: 0.7350, wake_restricted: 0.5852}
+    FPC-ramp:   {global: 0.6944, wake_restricted: 0.3025}
+    FPC-ou:     {global: 0.7656, wake_restricted: 0.5384}
+    FPC-telS-A: {global: 0.6795, wake_restricted: 0.3718}
+    pooled:     {global: 0.7293, wake_restricted: 0.4440}
+  n_pixels: {global: 59768000, wake_restricted: 58754000}
+
+cape_jacobian_only_in_training_ep122:
+  codename: piff_cape_gj
+  frozen_ckpt: runs_piff/piff_cape_gj/last_ep_snapshot_2026-07-13T21.pt
+  epoch: 122
+  members: [FPCape-const, FPCape-sine, FPCape-ramp, FPCape-ou, FPCape-tel]
+  D: 1.0
+  n_val_frames: 220
+  eval_package_global:
+    r2: 0.9058
+    rmse: 0.2189
+    nll: 1.4983
+    mean_sigma: 1.778             # same flat-sigma overdispersion
+    coverage_1sigma: 0.9991
+  ard_lengthscales: {zeta: 14.87, zeta_dot: 11.45, grad: 19.13}
+  r2_global_vs_wake_restricted:
+    FPCape-const: {global: 0.9636, wake_restricted: 0.9647}
+    FPCape-sine:  {global: 0.7896, wake_restricted: 0.9183}
+    FPCape-ramp:  {global: 0.9632, wake_restricted: 0.9619}
+    FPCape-ou:    {global: 0.9694, wake_restricted: 0.9612}
+    FPCape-tel:   {global: 0.9658, wake_restricted: 0.9653}
+    pooled:       {global: 0.9058, wake_restricted: 0.9538}
+  n_pixels: {global: 40813740, wake_restricted: 39894580}
