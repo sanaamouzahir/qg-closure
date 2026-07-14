@@ -1,0 +1,24 @@
+tag: FPCape-const
+window_t:
+- 30.0
+- 119.99875
+n_scalar_samples: 72000
+U_local_over_U_inlet_mean: 0.3045423283648262
+U_inlet_mean: 2.0
+U_local_mean: 0.6090846567296524
+Cd_mid_mean: 21.55928492887752
+Cd_mid_rms: 1.6533716355051438
+Cd_mid_mean_local_norm: 232.45507094268416
+Cd_inst_mean: 21.55928492887752
+Cd_inst_rms: 1.6533716355051438
+Cd_inst_mean_local_norm: 232.45507094268416
+Cl_mid_mean: 0.1260380387501071
+Cl_mid_rms: 3.5034887663769414
+Cl_inst_mean: 0.1260380387501071
+Cl_inst_rms: 3.5034887663769414
+f_sh_peak_Cl_mid: 0.15258789062513878
+St_inlet_norm: 0.07629394531256939
+St_local_norm: 0.2505200039751884
+reference_context_never_targets:
+  Cd_Re3900: 0.99
+  St_Re3900: 0.21

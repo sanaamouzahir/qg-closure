@@ -1,0 +1,24 @@
+tag: FPC-const
+window_t:
+- 30.0
+- 119.9975
+n_scalar_samples: 36000
+U_local_over_U_inlet_mean: 0.8592818258961745
+U_inlet_mean: 2.0
+U_local_mean: 1.718563651792349
+Cd_mid_mean: 1.6925767305053327
+Cd_mid_rms: 0.3868514373187855
+Cd_mid_mean_local_norm: 2.292329867945718
+Cd_inst_mean: 1.6925767305053327
+Cd_inst_rms: 0.3868514373187855
+Cd_inst_mean_local_norm: 2.292329867945718
+Cl_mid_mean: 0.05212411741310804
+Cl_mid_rms: 1.3793061380712284
+Cl_inst_mean: 0.05212411741310804
+Cl_inst_rms: 1.3793061380712284
+f_sh_peak_Cl_mid: 0.277165828144477
+St_inlet_norm: 0.17414841739099557
+St_local_norm: 0.20266740450302229
+reference_context_never_targets:
+  Cd_Re3900: 0.99
+  St_Re3900: 0.21

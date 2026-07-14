@@ -1,0 +1,33 @@
+WHAT THIS IS (Sanaa question 2026-07-14): were the simulation-time force/
+shedding numbers (Cd, Cl, f/St) off because of the upstream inlet-sponge
+reflection we later masked out of training? Recheck on the two constant
+members using the solver's OWN per-step record of the local velocity at
+the body (U_cyl in scalars.npz) next to the inlet-table value.
+
+VERDICT
+1. St: SANAA WAS RIGHT. Cylinder: recorded St (inlet-normalized) 0.174;
+   renormalized by the velocity the body actually sees (U_cyl/U_inlet =
+   0.859) it becomes 0.203 — within ~3.5% of the 0.21 reference. The
+   shedding physics was right all along; the REFERENCE VELOCITY was
+   contaminated (~14% deficit at the body). Cape: 0.076 -> 0.251 with the
+   tip-local velocity (U_local/U_inlet = 0.30 — mostly geometric blockage
+   of the wall-attached cape, plus the reflection).
+2. Cd: NOT explained by the upstream issue — the local renormalization
+   moves it the WRONG way (cylinder 1.69 -> 2.29 vs reference 0.99,
+   because a slower effective inflow means a LARGER drag coefficient for
+   the measured force). The Cd excess (and Cl_rms 1.38) is the standard
+   2D-simulation artifact at Re ~3900 (2D lacks spanwise vortex
+   stretching; literature 2D values are Cd ~1.5-1.7 vs 3D/experiment
+   0.99) — consistent with the charter's "context, never validation
+   targets" stance.
+3. CAVEAT: U_cyl mixes the sponge reflection with legitimate near-body
+   deceleration (and wall blockage for the cape); it is the honest
+   effective-inflow gauge but not a pure reflection meter. The intended
+   per-frame upstream profile from the stored filtered fields was
+   SKIPPED: ubar/vbar in all three DNS_LES_s4*.npz variants of the const
+   members hold a SINGLE frame (leading axis 1, not 445). If a field-
+   based profile is wanted it must be built from DNS_FR.npz (bigger job,
+   on request).
+
+FILES: forces_and_shedding_local_vs_inlet_norm_{FPC,FPCape}-const.yaml
+(all numbers, window t>=30). No figures (see caveat 3).
