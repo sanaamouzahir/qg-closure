@@ -217,7 +217,16 @@ class RunData:
             bw = 8.0 * self.dx
             self.upstream_blend = np.clip(
                 (xs - (x_edge - bw)) / bw, 0.0, 1.0).astype(np.float64)
-        self.valid = (~strip) & (self.sdf >= 0.0)          # (Ny, Nx) bool
+        # ring exclusion (Sanaa 2026-07-14 GO): the Pi_J column at the obstacle
+        # x-station is a numerical filtering artefact (~83x background, proven
+        # target==split to 8e-12) that the smooth GP cannot fit; with
+        # ring_mask_sdf_D set, the near-body band sdf < ring_mask_sdf_D * D is
+        # excluded from loss+metrics — matching the eval-side
+        # ring_excluded_sdf_gt_1D convention. Default None = interior-only
+        # exclusion (unchanged). Loss-side only — inputs never zeroed (S1.5).
+        ring_lo = dc.get('ring_mask_sdf_D')
+        sdf_lo = _f(ring_lo) * self.D if ring_lo is not None else 0.0
+        self.valid = (~strip) & (self.sdf >= sdf_lo)       # (Ny, Nx) bool
         self.n_valid = int(self.valid.sum())
         if self.n_valid == 0:
             raise ValueError(f"{self.name}: empty valid mask")
