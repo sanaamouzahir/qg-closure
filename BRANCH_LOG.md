@@ -1,7 +1,25 @@
 # BRANCH_LOG — Physics-conditioned spatial stencil  (branch: exp/wiener-conditioning)
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
- 
+
+## 2026-07-14 — session 14 (P1 lambda-sweep verdict + production fire, global supervisor)
+- The overnight P1 lambda ladder (vn-certificate penalty on the rollout fine-tune; 1832694
+  lam01 / 1832697 lam1 / 1832700 lam10, ~4.6 h each, exit 0) landed: ZERO blow-ups and zero
+  val poisoning in all three arms (blown=0/val:0, skip=0 throughout).
+- VERDICT — lambda 0.1 wins: best val 1.3148e-04 vs lam1 1.3177e-04 (tie, +0.2%) vs lam10
+  1.5591e-04 (+19%, HARMFUL). rf_s3 median 0.358 / 0.360 / 0.463. |G_eff| max 0.9997 for
+  lam01 AND lam1 — the 10x stronger penalty bought nothing on the certificate; lam10 pushed
+  |G_eff| max to 2.69 (mean > 1) while degrading accuracy. NO lambda reaches the 0.98
+  certificate bar — all arms pin at 0.9997 (marginal-stability wall). Lesson for the theory:
+  the vn certificate saturates as a TRAINING lever; it can hold the line but not push below.
+- FIRED (Sanaa overnight authorization 07-13 ~21:15, quoted in submit_p1_prod.sh): production
+  widened-pool fine-tune rollout_ft_p1_prod, warm from rollout_ft_p1_lam01/best.pt (ep18),
+  vn-lambda 0.1, 7 roots (kf4, FRC-256, b0, b05, b075, b1, b2), combo+b25 HELD OUT (b25 =
+  supervisor's OOD pick). I18 unit: trainer 1833313 / live 1833314 / finalize 1833315,
+  ~4-6 GPU-h. sge-checker PASS pre-fire. [QG][SUBMIT][WIENER] spooled 10:5x.
+- ON LANDING: per-root val table, rep ladder on unseen ICs of training members, combo/b25
+  OOD probe, consolidated LANDED email.
+
 ## 2026-07-13 — session 13 LANDED (P0 verdict)
 - Ladder landed (1832509/10 exit 0, 47/52 min; actual ~1.7 GPU-h). PRE-REGISTERED BARS:
   B1 FAIL (1e-2 9/10 ON, same as OFF — combo ic527 blowup step 13 identical), B2 FAIL
