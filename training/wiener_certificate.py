@@ -83,11 +83,24 @@ def assemble_geff(model, sig: torch.Tensor, dt: torch.Tensor,
     # ---- stencil symbol ratio rho(k): (base + delta) / exact ------------- #
     theta = (kappa_sh.to(dev).to(torch.float64)
              * dx.to(dev).to(torch.float64).view(-1, 1) / math.sqrt(2.0))  # (B, n_sh)
-    # base taps: SpatialGrad dimensionless x-taps, channel-shared row 0.
+    # base taps: SpatialGrad dimensionless x-taps. The depthwise kernel is
+    # (C, 1, K, K) with the 1-D stencil in the CENTRAL row; summing the rows
+    # of channel 0 gives the kernel's exact ky=0 x-response (== the central
+    # row at physics init, plus any trained off-row mass).
+    # BUG FIX 2026-07-14 (found by the vn-clip audit): the old read
+    # reshape(-1, K)[0] took the TOP row of channel 0 -- ZERO at physics
+    # init -- leaving the certificate nearly blind to the base taps (row-0
+    # read gave |G|~0.999 on contexts whose central-row read is 1.03-1.09;
+    # the P1 FT's vn penalty therefore acted mostly through the cond-head
+    # deltas). 1-D shim taps (dim < 4, e.g. the clip tool's) keep the old
+    # read, which is exact for them.
     # NOT detached (G4 C2): the certificate is differentiable through the
     # base stencils too -- they train in the FT and must feel the penalty.
-    base_x = model.grad.wx.to(dev)
-    base_x = base_x.reshape(-1, base_x.shape[-1])[0]            # (W,)
+    bw = model.grad.wx.to(dev)
+    if bw.dim() == 4:
+        base_x = bw[0, 0].sum(dim=0)                            # (W,)
+    else:
+        base_x = bw.reshape(-1, bw.shape[-1])[0]                # (W,)
     W = base_x.shape[-1]
     j = (torch.arange(W, dtype=torch.float64, device=dev) - W // 2).view(1, 1, -1)
     ph = torch.exp(1j * j * theta.unsqueeze(-1))                # (B, n_sh, W)
