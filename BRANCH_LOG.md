@@ -2,6 +2,29 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-14 — session 14c (Sanaa order: in-distribution NN vs TRUE-closure gap on the SAME rollout grid)
+- Question (Sanaa, verbatim intent): is the accuracy shortfall present IN-distribution, given the
+  known true-closure injection promise? Answer: YES — the gap is in-distribution, not an OOD artifact.
+- Run: 16-step ladder, arms bare + r3anal (FULL analytic R3, exact chain-rule derivs, no NN) on the
+  6 in-distribution pairs of the p1lam01 grid (kf4 532/912/1356, FRC-256 549/933/1357) x 3 dT.
+  Job apost_indist_tc 1833435 (exit 0, 346 s wall ~0.1 GPU-h; sge-checker PASS pre-fire). ALL 18
+  truth refs REUSED from apost_opt2_rep_20260711 (hard-fail guard); NN numbers taken from the
+  existing p1lam01 CSV, NOT rerun. Bare legs bit-identical across the two runs (crosscheck 0.00).
+- THREE-WAY VERDICT (medians over the 6 pairs, all 18 rungs STABLE both arms):
+  5e-3:   NN 3.25x  vs TRUE 59.3x  -> NN delivers ~5.5% of the promise (gap ~21x)
+  1e-2:   NN 8.57x  vs TRUE 29.5x  -> ~29% delivered (gap ~4.1x) — the P1 fine-tune's best dT
+  1.5e-2: NN 4.20x  vs TRUE 89.6x  -> ~4.7% delivered (gap ~17x)
+  True closure STABLE in all 18 (incl. 256_ic1357@1.5e-2 where bare=0.94 and NN sits ABOVE bare at
+  1.75: true gets 1.76e-3 = 531x). kf4@5e-3 true = 71.7/55.5/73.6x, replicating the session-12
+  r3anal 71.4x — consistency check PASS. The two NN sub-parity draws (256_ic1357 0.82x@5e-3,
+  0.53x@1.5e-2) are trivially recovered by the analytic arm — model error, not a hard sample.
+- READ: the P1 rollout FT bought stability + a flat ~3-9x, but the R3 signal it fails to extract is
+  worth 10-45x more per draw at 5e-3. Headroom is largest exactly where the certificate work already
+  stabilized us. This quantifies the conditioning target (low-k Nddot per session 14b spectral).
+- Artifacts: Results/apost_indist_trueclosure_20260714/ (per-case npz + ladder_matrix_summary_ALL.csv
+  + threeway_indist_table.csv); new scripts/sge/apost_indist_trueclosure_job.sh,
+  diagnostics/merge_indist_trueclosure_table.py. [QG][LANDED][WIENER] spooled + relayed.
+
 ## 2026-07-14 — session 14b (Sanaa order: full diagnostics on the SMALL-ENSEMBLE training + held-out 3-dT rollouts)
 - Ckpt under test: rollout_ft_p1_lam01/best.pt (lambda winner; trained kf4+FRC-256 ONLY; combo
   held out). Jobs: a-priori eval_by_root 1833365; ladder apostP1b 1833422 (first attempt 1833364
