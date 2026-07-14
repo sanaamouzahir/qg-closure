@@ -78,8 +78,12 @@ def evaluate(model, ds, device, gp_chunk):
         mask, zeta = b['mask'].to(device), b['zeta'].to(device)
         gpin = model.masked_gp_inputs(x, zeta, mask, **cond_kwargs(model, b, device))
         yt = y[mask]
+        gm = (b['g'].to(device)[mask] if model.noise_prior == 'structural'
+              else None)
         for i0 in range(0, gpin.shape[0], gp_chunk):
-            mu_p, var_p = model.predict_physical(gpin[i0:i0 + gp_chunk])
+            mu_p, var_p = model.predict_physical(
+                gpin[i0:i0 + gp_chunk],
+                g_masked=(gm[i0:i0 + gp_chunk] if gm is not None else None))
             mus.append(mu_p.cpu().numpy())
             vars_.append(var_p.cpu().numpy())
         ys.append(yt.cpu().numpy())
@@ -135,6 +139,10 @@ def main():
     ap.add_argument('--weight-decay', type=float, default=None)
     ap.add_argument('--epochs', type=int, default=None)
     ap.add_argument('--seed', type=int, default=None)
+    ap.add_argument('--init-ckpt', default=None,
+                    help='warm start: load model state (strict=False; the ONLY '
+                         'tolerated missing keys are the structural-noise '
+                         'params/buffer — anything else hard-fails)')
     ap.add_argument('--freeze-film', action='store_true', help='Re-blind ablation (spec S2.1)')
     ap.add_argument('--device', default=None)
     ap.add_argument('--outdir', default=None)
@@ -168,32 +176,63 @@ def main():
         yaml.safe_dump(info, f, sort_keys=False)
 
     model = PiffModel(conf).to(device)
+    if args.init_ckpt:
+        wck = torch.load(args.init_ckpt, map_location='cpu', weights_only=False)
+        missing, unexpected = model.load_state_dict(wck['model'], strict=False)
+        allowed = {'noise_a', 'noise_b', 'g2_scale', 'likelihood.noise_covar.noise'}
+        bad_m = [k for k in missing if k not in allowed]
+        bad_u = [k for k in unexpected
+                 if k not in {'likelihood.noise_covar.raw_noise',
+                              'likelihood.raw_noise',
+                              'likelihood.noise_covar.raw_noise_constraint.lower_bound',
+                              'likelihood.noise_covar.raw_noise_constraint.upper_bound'}]
+        if bad_m or bad_u:
+            raise RuntimeError(f"warm-start mismatch beyond the structural-"
+                               f"noise keys: missing={bad_m} unexpected={bad_u}")
+        print(f"[train] warm start from {args.init_ckpt} (epoch="
+              f"{wck.get('epoch')}); fresh keys: {sorted(missing)}")
     # conditioning normalization MUST precede the inducing k-means (G4 finding
     # 2026-07-13): the centers live in feature space, and the zeta_dot/grad
     # columns are built through the zdot_sd/g_scale buffers — identity buffers
     # at kmeans time would place the centers in raw units on those dims
-    if model.use_zeta_dot or model.use_grad_feature:
-        cstats = conditioning_stats(runs, 'train', conf)
-        cond_const = model.set_conditioning_stats(
-            zdot_sd=cstats.get('zdot_sd'), g_scale=cstats.get('g_scale'))
-        print(f"[train] ORDER-3 conditioning stats: {json.dumps(cstats)}")
-    npix = model.init_inducing_kmeans(train_ds, int(conf['model']['kmeans_pixels']),
-                                      int(conf['model']['kmeans_iters']), seed, device=device)
-    print(f"[train] inducing k-means init on {npix} pixels; M = {int(conf['model']['n_inducing'])}")
+    if args.init_ckpt:
+        # WARM PATH (2026-07-13 night): the trained GP/inducing/standardization
+        # ARE the model — no k-means re-init, no hyper reset, keep the ckpt's
+        # recorded y_mu/y_sd/zdot_sd/g_scale (part of the weight contract; the
+        # upstream mask changes the pool stats, the model must not re-scale).
+        # Only the FRESH structural-noise feature scale is computed here.
+        hyper0 = {'warm_start': str(args.init_ckpt)}
+        if model.noise_prior == 'structural':
+            cstats = conditioning_stats(runs, 'train', conf)
+            hyper0.update(model.set_noise_feature_scale(cstats['g2_scale']))
+            print(f"[train] structural-noise s_feat scale (fresh): "
+                  f"g2_scale={cstats['g2_scale']:.6e}")
+    else:
+        if model.use_zeta_dot or model.use_grad_feature:
+            cstats = conditioning_stats(runs, 'train', conf)
+            cond_const = model.set_conditioning_stats(
+                zdot_sd=cstats.get('zdot_sd'), g_scale=cstats.get('g_scale'))
+            if model.noise_prior == 'structural':
+                cond_const.update(
+                    model.set_noise_feature_scale(cstats['g2_scale']))
+            print(f"[train] ORDER-3 conditioning stats: {json.dumps(cstats)}")
+        npix = model.init_inducing_kmeans(train_ds, int(conf['model']['kmeans_pixels']),
+                                          int(conf['model']['kmeans_iters']), seed, device=device)
+        print(f"[train] inducing k-means init on {npix} pixels; M = {int(conf['model']['n_inducing'])}")
 
-    # 2026-07-12 ruling: exact train-target stats at build -> recorded
-    # invertible y-standardization (buffers, in every ckpt) + data-informed
-    # hyperparameter init in the standardized space (var=1 -> conditioned K_zz;
-    # the raw-space variant NaN'd on the float32 Cholesky, job 1830733)
-    ystats = target_stats(runs, 'train', conf)
-    std_const = model.set_y_standardization(ystats['mean'], ystats['var'])
-    hyper0 = model.init_hyperparams_from_stats(
-        0.0, 1.0, noise_frac=_f(tc['init_noise_frac']))
-    hyper0.update(std_const)
-    hyper0['stats_n_pixels'] = ystats['n']
-    if model.use_zeta_dot or model.use_grad_feature:
-        hyper0.update(cond_const)
-        hyper0['conditioning_stats'] = cstats
+        # 2026-07-12 ruling: exact train-target stats at build -> recorded
+        # invertible y-standardization (buffers, in every ckpt) + data-informed
+        # hyperparameter init in the standardized space (var=1 -> conditioned K_zz;
+        # the raw-space variant NaN'd on the float32 Cholesky, job 1830733)
+        ystats = target_stats(runs, 'train', conf)
+        std_const = model.set_y_standardization(ystats['mean'], ystats['var'])
+        hyper0 = model.init_hyperparams_from_stats(
+            0.0, 1.0, noise_frac=_f(tc['init_noise_frac']))
+        hyper0.update(std_const)
+        hyper0['stats_n_pixels'] = ystats['n']
+        if model.use_zeta_dot or model.use_grad_feature:
+            hyper0.update(cond_const)
+            hyper0['conditioning_stats'] = cstats
     info['init_hyperparams'] = hyper0
     with open(outdir / 'run_info.yaml', 'w') as f:
         yaml.safe_dump(info, f, sort_keys=False)
@@ -201,11 +240,18 @@ def main():
 
     mll = gpytorch.mlls.VariationalELBO(model.likelihood, model.gp, num_data=N)
     gp_named = {id(p) for p in model.gp.parameters()} | {id(p) for p in model.likelihood.parameters()}
-    opt = torch.optim.Adam([
+    groups = [
         {'params': list(model.cnn.parameters()), 'weight_decay': wd},   # CNN only
         {'params': [p for p in model.parameters() if id(p) in gp_named],
          'weight_decay': 0.0},                                          # never GP hypers
-    ], lr=lr)
+    ]
+    if model.noise_prior == 'structural':
+        # a at base lr; b MOBILE at 10x lr (arm-F reviewer fix: b must be able
+        # to move or the verdict is confounded by softplus saturation)
+        groups.append({'params': [model.noise_a], 'weight_decay': 0.0})
+        groups.append({'params': [model.noise_b], 'weight_decay': 0.0,
+                       'lr': 10.0 * lr})
+    opt = torch.optim.Adam(groups, lr=lr)
     sched = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
         opt, T_0=int(tc['t0_restart']))
 
@@ -231,7 +277,11 @@ def main():
             if yt.numel() == 0:
                 continue
             opt.zero_grad(set_to_none=True)
-            loss = -mll(model.gp(gpin), model.standardize_y(yt))  # per-datum (num_data=N), GP space
+            if model.noise_prior == 'structural':
+                loss = -mll(model.gp(gpin), model.standardize_y(yt),
+                            noise=model.het_noise(b['g'].to(device)[mask]))
+            else:
+                loss = -mll(model.gp(gpin), model.standardize_y(yt))  # per-datum (num_data=N), GP space
             loss.backward()
             opt.step()
             elbos.append(-float(loss))
@@ -260,6 +310,10 @@ def main():
             extra_ls += f" zdot_ls {ards['zeta_dot']:.3f}"
         if model.use_grad_feature:
             extra_ls += f" grad_ls {ards['grad']:.3f}"
+        if model.noise_prior == 'structural':
+            import torch.nn.functional as _F
+            extra_ls += (f" a {float(_F.softplus(model.noise_a)):.4f}"
+                         f" b {float(_F.softplus(model.noise_b)):.4f}")
         print(f"[ep {ep:03d}] elbo/datum {hist['train_elbo'][-1]:+.4e}  "
               f"val NLL {vm['nll']:.4e} RMSE {vm['rmse']:.4e} R2 {vm['r2']:.4f} "
               f"sigma {vm['mean_sigma']:.3e}  zeta_ls {zls:.3f}{extra_ls}  "

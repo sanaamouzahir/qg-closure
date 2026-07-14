@@ -196,6 +196,27 @@ class RunData:
         yf = (np.arange(self.Ny) + 0.5) / self.Ny
         strip = (xf[None, :] >= sxf[0]) | (yf[:, None] >= syf[0])
         strip |= self.chi_sponge > _f(dc['sponge_thresh'])
+        # upstream exclusion (Sanaa 2026-07-13 night): the inlet sponge was
+        # undersized, so upstream of the obstacle carries reflection + spurious
+        # v — mask pixels with x < x_c + upstream_mask_x_lo_D * D from loss and
+        # metrics (true Pi ~ 0 there anyway). Default None = no change; the
+        # boundary layer/incident window survive (e.g. -1.5 keeps ~1 D ahead
+        # of the leading edge). Loss-side only — inputs never zeroed (S1.5).
+        up_lo = dc.get('upstream_mask_x_lo_D')
+        self.upstream_blend = None
+        if up_lo is not None:
+            xs = (np.arange(self.Nx) + 0.5) * self.dx
+            x_edge = self.x_c + _f(up_lo) * self.D
+            strip |= (xs[None, :] < x_edge)
+            # INPUT REPAIR (Sanaa 2026-07-13 night follow-up: "does the model
+            # see those inputs with the fake vorticity?"): upstream of the
+            # same line, replace inputs with the KNOWN freestream (omega*=0,
+            # u*=1, v*=0) via an 8-px linear blend — the model's receptive
+            # field then sees clean truth, never the reflection artifact.
+            # w = 1 -> real data, 0 -> analytic freestream; per-COLUMN weights.
+            bw = 8.0 * self.dx
+            self.upstream_blend = np.clip(
+                (xs - (x_edge - bw)) / bw, 0.0, 1.0).astype(np.float64)
         self.valid = (~strip) & (self.sdf >= 0.0)          # (Ny, Nx) bool
         self.n_valid = int(self.valid.sum())
         if self.n_valid == 0:
@@ -241,10 +262,20 @@ class RunData:
             self.omega[frame][sl].astype(np.float64), self.u[frame][sl].astype(np.float64),
             self.v[frame][sl].astype(np.float64), self.pi[frame][sl].astype(np.float64),
             U, self.D)
+        if self.upstream_blend is not None:
+            # blend to analytic freestream upstream (see __init__ note):
+            # omega* -> 0, u* -> 1 (u = U(t)), v* -> 0. Column weights w=1
+            # keep real data; w=0 = pure freestream. sdf channel untouched.
+            w = self.upstream_blend[ix][None, :]           # (1, s) per column
+            om = om * w
+            u = u * w + (1.0 - w)
+            v = v * w
         x = np.stack([om, u, v, self.sdf_star[sl]]).astype(np.float32)
         g = None
         if self.need_grad:
             gs = self.gradmag[frame][sl].astype(np.float64) * (self.D * self.D / _f(U))
+            if self.upstream_blend is not None:
+                gs = gs * self.upstream_blend[ix][None, :]
             g = torch.from_numpy(gs.astype(np.float32))
         return (torch.from_numpy(x),
                 torch.from_numpy(pi.astype(np.float32)),
@@ -322,14 +353,16 @@ def conditioning_stats(runs, split, conf):
     zd = np.array([runs[ri].zeta_dot_snap[fi] for ri, fi in frames], dtype=np.float64)
     out = {'zdot_sd': float(zd.std()), 'zdot_n_frames': int(zd.size)}
     if all(getattr(r, 'need_grad', False) for r in runs):
-        n, s1 = 0, 0.0
+        n, s1, s2 = 0, 0.0, 0.0
         for ri, fi in frames:
             r = runs[ri]
             U = _f(r.U_snap[fi])
             gv = r.gradmag[fi][r.valid].astype(np.float64) * (r.D * r.D / U)
             n += gv.size
             s1 += float(gv.sum())
+            s2 += float((gv * gv).sum())
         out['g_scale'] = s1 / n
+        out['g2_scale'] = s2 / n          # s_feat normalization (structural prior)
         out['g_n_pixels'] = int(n)
     return out
 

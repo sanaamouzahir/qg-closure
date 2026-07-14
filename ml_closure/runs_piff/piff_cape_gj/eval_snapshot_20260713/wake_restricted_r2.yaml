@@ -1,0 +1,56 @@
+ckpt: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/runs_piff/piff_cape_gj/last_ep_snapshot_2026-07-13T21.pt
+epoch: 122
+sdf_mult: 1.0
+D_per_member:
+  FPCape-const: 1.0
+  FPCape-sine: 1.0
+  FPCape-ramp: 1.0
+  FPCape-ou: 1.0
+  FPCape-tel: 1.0
+n_val_frames: 220
+definition: 'global_valid = eval_piff population (valid mask: outside body, outside
+  sponge). wake_restricted = global_valid AND SDF > 1.0*D (obstacle-ring band excluded;
+  the standing rule after the 2026-07-13 morning ring-R2 incident).'
+per_member:
+  FPCape-const:
+    global_valid:
+      r2: 0.9635577216801
+      n_pixels: 8162748
+    wake_restricted:
+      r2: 0.9647033723384029
+      n_pixels: 7978916
+  FPCape-sine:
+    global_valid:
+      r2: 0.789566385607116
+      n_pixels: 8162748
+    wake_restricted:
+      r2: 0.918280006767167
+      n_pixels: 7978916
+  FPCape-ramp:
+    global_valid:
+      r2: 0.9631699060573125
+      n_pixels: 8162748
+    wake_restricted:
+      r2: 0.9619453302644183
+      n_pixels: 7978916
+  FPCape-ou:
+    global_valid:
+      r2: 0.9694356892428547
+      n_pixels: 8162748
+    wake_restricted:
+      r2: 0.961160981779884
+      n_pixels: 7978916
+  FPCape-tel:
+    global_valid:
+      r2: 0.965751745625313
+      n_pixels: 8162748
+    wake_restricted:
+      r2: 0.9653288312117897
+      n_pixels: 7978916
+pooled:
+  global_valid:
+    r2: 0.9057574717760677
+    n_pixels: 40813740
+  wake_restricted:
+    r2: 0.9538455697995896
+    n_pixels: 39894580

@@ -1,0 +1,51 @@
+ckpt: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/runs_piff/piff_fpc_gj/best.pt
+sigma_scale: 0.4159478545188904
+fit_window:
+- 100.0
+- 110.0
+test_window:
+- 110.0
+- 120.0
+criterion: 'NLL-optimal variance scaling: s^2 = mean(z^2) on fit half'
+fit:
+  before:
+    n: 29884000
+    r2: 0.2336496114730835
+    rmse: 0.4424510598182678
+    nll: 0.4300937354564667
+    mean_sigma: 0.5631811022758484
+    coverage:
+      1sigma: 0.9973387096774193
+      2sigma: 0.9984418417882479
+      3sigma: 0.9988683241868559
+  after:
+    n: 29884000
+    r2: 0.2336496114730835
+    rmse: 0.4424510598182678
+    nll: -0.033615779131650925
+    mean_sigma: 0.2342531383037567
+    coverage:
+      1sigma: 0.9932489961183242
+      2sigma: 0.9968604269843394
+      3sigma: 0.997772721188596
+test:
+  before:
+    n: 29884000
+    r2: 0.2099434733390808
+    rmse: 0.5038527846336365
+    nll: 0.4544983208179474
+    mean_sigma: 0.5638045072555542
+    coverage:
+      1sigma: 0.9969783830812475
+      2sigma: 0.9981282291527238
+      3sigma: 0.9985985811805649
+  after:
+    n: 29884000
+    r2: 0.2099434733390808
+    rmse: 0.5038527846336365
+    nll: 0.10373260825872421
+    mean_sigma: 0.23451194167137146
+    coverage:
+      1sigma: 0.9927628162227279
+      2sigma: 0.9964765091687859
+      3sigma: 0.997436454289921

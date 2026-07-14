@@ -145,6 +145,18 @@ class PiffModel(nn.Module):
         #   arm F's structural sigma prior moved INTO the kernel.
         self.use_zeta_dot = bool(mc.get('use_zeta_dot', False))
         self.use_grad_feature = bool(mc.get('use_grad_feature', False))
+        # arm-F structural noise prior, PRODUCTION port (Sanaa 2026-07-13
+        # night): sigma^2(x) = softplus(a) + softplus(b) * s_feat(x), s_feat =
+        # train-mean-normalized g^2 (g = the grad feature; requires
+        # use_grad_feature). Only scalars a, b learn (the C/D/E ladder: any
+        # FREE per-pixel sigma lets the ELBO buy out the signal). Init
+        # softplus(a)=0.1, softplus(b)=0.01, b MOBILE (10x lr in the trainer);
+        # sigma capped to [1e-3, 10] in std space (standardized units).
+        self.noise_prior = str(mc.get('noise_prior', 'none'))
+        if self.noise_prior not in ('none', 'structural'):
+            raise ValueError(f"noise_prior {self.noise_prior!r}")
+        if self.noise_prior == 'structural' and not self.use_grad_feature:
+            raise ValueError("structural noise prior needs use_grad_feature")
         cond_dim = 1 + int(self.use_zeta_dot)
         self.cnn = FiLMCNN(in_channels=int(mc['in_channels']),
                            channels=mc['channels'], kernel=int(mc['kernel']),
@@ -157,7 +169,16 @@ class PiffModel(nn.Module):
         self.gp = PiffSVGP(init_z)
         if gpytorch is None:
             raise ImportError(str(_GPYTORCH_ERR))
-        self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
+        if self.noise_prior == 'structural':
+            import math as _math
+            self.likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
+                noise=torch.full((1,), 0.1), learn_additional_noise=False)
+            self.noise_a = torch.nn.Parameter(
+                torch.tensor(_math.log(_math.expm1(0.1))))   # softplus -> 0.1
+            self.noise_b = torch.nn.Parameter(
+                torch.tensor(_math.log(_math.expm1(0.01))))  # softplus -> 0.01
+        else:
+            self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
         # recorded, invertible y-standardization constants (2026-07-12 ruling
         # fallback): buffers -> saved in every checkpoint state_dict. Defaults
         # (0,1) = identity. The GP is trained on y_t = (y - y_mu)/y_sd;
@@ -172,6 +193,21 @@ class PiffModel(nn.Module):
         # the flag is on, so pre-ORDER-3 ckpts still load strict=True.
         self.register_buffer('zdot_sd', torch.ones(()), persistent=self.use_zeta_dot)
         self.register_buffer('g_scale', torch.ones(()), persistent=self.use_grad_feature)
+        self.register_buffer('g2_scale', torch.ones(()),
+                             persistent=self.noise_prior == 'structural')
+
+    def het_noise(self, g_masked):
+        """Structural per-pixel noise in STANDARDIZED variance units:
+        sigma^2 = softplus(a) + softplus(b) * s_feat, s_feat = g^2/g2_scale
+        (unit train mean); sigma clamped to [1e-3, 10] std space (arm F)."""
+        s_feat = (g_masked ** 2) / self.g2_scale.to(g_masked.dtype)
+        s2 = (torch.nn.functional.softplus(self.noise_a).to(g_masked.dtype)
+              + torch.nn.functional.softplus(self.noise_b).to(g_masked.dtype)
+              * s_feat)
+        # the VALIDATED arm-F band, VARIANCE units [1e-3, 10] (G4 2026-07-13:
+        # my first port squared it to [1e-6,100] — a 3x looser sigma cap that
+        # reopens the buy-out channel under b@10x-lr)
+        return s2.clamp(1.0e-3, 10.0)
 
     def set_conditioning_stats(self, zdot_sd=None, g_scale=None):
         """Recorded normalization constants for the conditioning inputs, from
@@ -193,6 +229,14 @@ class PiffModel(nn.Module):
             out['g_scale'] = g_scale
         return out
 
+    def set_noise_feature_scale(self, g2_scale):
+        """Recorded train-mean of g^2 (s_feat normalization, structural prior)."""
+        g2_scale = float(g2_scale)
+        if not g2_scale > 0.0:
+            raise ValueError(f"bad g2_scale={g2_scale}")
+        self.g2_scale.fill_(g2_scale)
+        return {'g2_scale': g2_scale}
+
     def set_y_standardization(self, y_mean, y_var):
         """Set the recorded standardization constants from exact train-target
         stats. Returns them for the run/checkpoint manifest."""
@@ -206,13 +250,21 @@ class PiffModel(nn.Module):
     def standardize_y(self, y):
         return (y - self.y_mu) / self.y_sd
 
-    def predict_physical(self, gpin):
+    def predict_physical(self, gpin, g_masked=None):
         """Likelihood-included predictive (mean, var) in PHYSICAL target units
-        (standardization inverted exactly). Non-Gaussian likelihoods (e.g.
-        StudentT, arm-C B-item experiment): gpytorch's marginal is Monte-Carlo
-        sampled -> moments carry a leading sample dim; reduce by the law of
-        total variance (E[var] + Var[mean]) so callers always get 1-D."""
-        pred = self.likelihood(self.gp(gpin))
+        (standardization inverted exactly). Structural noise prior: pass the
+        masked grad feature (same pixel order as gpin) so sigma^2(x) enters
+        the predictive. Non-Gaussian likelihoods (e.g. StudentT, arm-C B-item
+        experiment): gpytorch's marginal is Monte-Carlo sampled -> moments
+        carry a leading sample dim; reduce by the law of total variance
+        (E[var] + Var[mean]) so callers always get 1-D."""
+        if self.noise_prior == 'structural':
+            if g_masked is None:
+                raise ValueError("structural noise prior: predict_physical "
+                                 "needs g_masked")
+            pred = self.likelihood(self.gp(gpin), noise=self.het_noise(g_masked))
+        else:
+            pred = self.likelihood(self.gp(gpin))
         mu, var = pred.mean, pred.variance
         if mu.dim() > 1:
             var = var.mean(dim=0) + mu.var(dim=0)
