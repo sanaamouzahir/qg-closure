@@ -2,6 +2,19 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
  
+## 2026-07-13 — session 13 LANDED (P0 verdict)
+- Ladder landed (1832509/10 exit 0, 47/52 min; actual ~1.7 GPU-h). PRE-REGISTERED BARS:
+  B1 FAIL (1e-2 9/10 ON, same as OFF — combo ic527 blowup step 13 identical), B2 FAIL
+  (1.5e-2 stable 6->6, blowup steps unchanged), B3 PASS (5e-3 cost median +1.66%).
+- HEADLINE: 64/128-step horizons at 5e-3 = 0/10 stable BOTH arms; ep33 blows at steps 21-38
+  in all 10 draws (bare fine) — 5e-3 stability only ~2x the fine-tune free-horizon. The 07-11
+  16.6x is horizon-limited. Projection shifts blowup <= +-1 step everywhere.
+- Shell activity FLAT across dT (~93-105/step at 512^2, rm-frac ~1.4-1.7%): radial enstrophy
+  injection is small + dT-independent — NOT the instability carrier; P1 should target the
+  within-shell component. Flag stays ON per standing order (cheap, harmless) pending Sanaa.
+- [QG][LANDED][WIENER] spooled; verdict/tables in Results/apost_dissproj_20260713/; figures in
+  pngs/dissipative_projection_ladder/. 20 extended refs saved to apost_opt2_rep_20260711/.
+
 ## 2026-07-13 — session 13 (P0: dissipative projection, branch supervisor)
 - Sanaa P0 (global plan): --nn-dissipative-proj added to rollout_aposteriori.py — per-shell
   deletion of the enstrophy-injecting radial component of the NN correction (sign mapped to the

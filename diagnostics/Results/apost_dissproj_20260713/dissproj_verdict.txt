@@ -1,0 +1,21 @@
+PRE-REGISTERED BARS (verbatim from the P0 spec): proj-on -> 1e-2 10/10 stable, 1.5e-2 improves, accuracy cost < 5% at 5e-3.
+
+BAR-1  1e-2 proj-on stable: 9/10 (need 10/10)  -> FAIL
+       (context: proj-off stable 9/10)
+BAR-2  1.5e-2 proj-on improves: stable 6->6, blowup later in 0, earlier in 0 of 10 draws -> FAIL
+BAR-3  5e-3 accuracy cost: median +1.66%, max +6.63% over 10 draws (need median < +5%) -> PASS
+
+      dT  proj  stable    med finL2  med imp_x  med shells/step  med rm-frac
+   0.005   off   10/10   2.8833e-05      15.96              nan          nan
+   0.005    on   10/10   3.0490e-05      15.69             97.8    1.650e-02
+    0.01   off    9/10   3.5068e-03       0.50              nan          nan
+    0.01    on    9/10   3.5143e-03       0.50             92.7    1.427e-02
+   0.015   off    6/10   8.6270e-02       0.65              nan          nan
+   0.015    on    6/10   9.0986e-02       0.65             92.1    1.688e-02
+
+HORIZON h= 64 5e-3 proj-off: stable 0/10  med final relL2 nan  med imp_x nan
+HORIZON h= 64 5e-3 proj-on : stable 0/10  med final relL2 nan  med imp_x nan
+HORIZON h=128 5e-3 proj-off: stable 0/10  med final relL2 nan  med imp_x nan
+HORIZON h=128 5e-3 proj-on : stable 0/10  med final relL2 nan  med imp_x nan
+
+OVERALL: BAR(S) FAILED  [B1=False B2=False B3=True]
