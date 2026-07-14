@@ -8,13 +8,9 @@ them as 6-panel figures with a SYMLOG color norm:
 
 symlog linthresh = 99th percentile of |truth Pi| over the frame's valid pixels;
 one shared norm for truth/prediction/error, sigma on the same linthresh.
-Sixth panel (Sanaa 2026-07-14, second revision — CONVENTION.md rule 5b):
-RELATIVE error by her exact rule, pointwise:
-    |truth| >  1e-4                  ->  |pred - truth| / |truth|
-    |truth| <= 1e-4 and |err| < 1e-4 ->  0
-    |truth| <= 1e-4 and |err| >= 1e-4 -> |err| / 1e-4   (threshold-capped
-                                          continuation of the first rule)
-Non-negative field, linear scale, vmax = 99.5th pct.
+Sixth panel (Sanaa FINAL rule, 2026-07-14 afternoon — CONVENTION.md 5b):
+SIGNED relative error (pred - truth) / (|truth| + 0.01*max|truth|), seismic,
+colorbar FIXED to [-1, 1]. (Supersedes the same-day threshold rule.)
 
 --per-member N (Sanaa 2026-07-14): instead of 6 frames pooled across members,
 write N frames PER ensemble member, evenly spread over that member's val
@@ -159,7 +155,6 @@ def main():
         sel = [frames[i] for i in order[np.linspace(0, len(order) - 1, n_show).astype(int)]]
         tags = [None] * len(sel)
 
-    REL_THR = 1.0e-4   # Sanaa 2026-07-14 relative-error threshold
     counts = {}
     for (ri, fi), tag in zip(sel, tags):
         run = runs[ri]
@@ -176,13 +171,10 @@ def main():
         norm_s = SymLogNorm(linthresh=lt, vmin=-vmax, vmax=vmax, base=10)
         ovmax = float(np.percentile(np.abs(p['omega']), 99.5))
 
-        # rule 5b (Sanaa exact rule): |err|/|truth| where |truth|>thr;
-        # 0 where both below thr; |err|/thr where only truth is below thr
-        at = np.abs(p['truth'])
-        rel2d = np.where(at > REL_THR, abserr2d / np.where(at > REL_THR, at, 1.0),
-                         np.where(abserr2d < REL_THR, 0.0, abserr2d / REL_THR))
-        rel = np.where(m, rel2d, np.nan)
-        rvmax = max(float(np.percentile(rel[m], 99.5)), 1e-6)
+        # rule 5b (Sanaa final rule 2026-07-14 afternoon): SIGNED relative
+        # error (pred-truth)/(|truth| + 0.01*max|truth|), colorbar FIXED [-1,1]
+        denom = np.abs(p['truth']) + 0.01 * float(absval.max())
+        rel = np.where(m, (np.nan_to_num(p['mu2d']) - p['truth']) / denom, np.nan)
 
         sig_ttl = ('predicted sigma RECALIBRATED (symlog)' if recal is not None
                    else 'predicted sigma (symlog)')
@@ -194,8 +186,8 @@ def main():
             (p['mu2d'], 'predicted Pi* (same symlog)', dict(norm=norm)),
             (p['sigma2d'], sig_ttl, dict(norm=norm_s)),
             (err, '|error| (same symlog)', dict(norm=norm)),
-            (rel, f'relative error |err|/|truth| (0 where both < {REL_THR:g}), '
-                  f'linear [0, {rvmax:.2g}]', dict(vmin=0.0, vmax=rvmax)),
+            (rel, 'relative error (pred-truth)/(|truth|+1%max), fixed [-1,1]',
+             dict(vmin=-1.0, vmax=1.0)),
         ]
         for ax, (f2d, ttl, kw) in zip(axs, specs):
             im = ax.imshow(f2d, cmap='seismic', origin='lower',
