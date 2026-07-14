@@ -951,3 +951,24 @@ Running record. Supervisor updates this at the end of every session. Newest entr
   convention sdf > 1D (wake_restricted_r2_check.py:89,95) at eval_piff.py:172-181 + ring-excluded
   vmax in truth panels (eval_piff.py:251-253, replot_eval_fields.py:169-175). Never replace the
   global numbers — add columns.
+
+## 2026-07-14 EVENING — Sanaa rulings round 2: ring pivot to FILTER, sigma master plan (session-1)
+- RING CORRECTION: Sanaa does NOT want domain exclusion — wants the artefact FILTERED from the
+  target. Loss-mask reverted (f34c26d), ringmask retrains killed at startup.
+- FILTER PROTOTYPE VERDICT (750bd33, agent-built diag_ring_filter_prototype.py, job 1833789):
+  the artefact is a ~1.6D-wide y-NYQUIST CHECKERBOARD packet over the body x-footprint
+  (adjacent-row corr -0.99997 fpc, 236x background; cape 45x, only partial checkerboard +0.33).
+  Inpaint/x-notch DESTROY the wake (272%/88% of wake Pi^2); the y-Nyquist notch ([1,2,1]/4 in y,
+  in-band only) removes the artefact at 5.2% fpc / 3.6% cape wake collateral. Recommendation:
+  y-notch for FPC members; cape needs y-structure characterization first. Sanaa to rule
+  (her fallback: ring-EXCLUDED convention, eval side already live).
+- 4-PANEL RING CHECK (Sanaa spec, diag_ring_side_by_side.py 2584dc5, job 1833784): with/without/
+  difference/GP-pred, shared ring-excluded scale; pngs/ring_side_by_side/{fpc,cape}/.
+- SIGMA MASTER PLAN (email 18:20): heavy tails are the root cause; 3 stages. STAGE 1 LANDED
+  (sigma_conformal_prototype.py a571d82, jobs 1833786/87, verdict commit 4fa278a): stratified
+  split-conformal on top of the 3-param recal -> held-out coverage within 0.6% of nominal at
+  68/95/99.7 BOTH geoms (fpc .677/.950/.997, cape .679/.958/.997). Deployable q-tables in
+  runs_piff/*/conformal_calibration.yaml. Stage 2 (CRPS head) + stage 3 (retire pv pathway,
+  tau_pv~0) proposed, awaiting Sanaa.
+- 3-param recal fits (af6af0d, jobs 1833741/42): tau_pv -> 0.017/0.009; test NLL -2.744/-2.324.
+- Emails relayed 18:20 + conformal/4-panel + w31 false-alarm triage queued. Full paths rule saved.
