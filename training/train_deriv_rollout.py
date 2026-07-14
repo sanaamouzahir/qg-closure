@@ -124,6 +124,9 @@ import wiener_certificate as wc                             # P1(b) von Neumann 
 from rollout_timed_pareto import (N_spectral, build_L_hat, build_forcing,
                                   psi_from_omega)
 from model_deriv_closure import build_model
+from deriv_dataset import make_deriv_loaders                # a-priori anchor data
+from train_deriv import (relative_l2_perchannel,            # a-priori anchor loss
+                         relative_l2_persample)
 
 DT_TAGS = {1: '5e-3', 2: '1e-2', 3: '1.5e-2'}
 GATE_R2_EXPECT = {1: 0.0575, 2: 0.0586, 3: 0.0646}   # kf4 / cond ep63 (4-arm)
@@ -923,6 +926,26 @@ def main():
                    help='clamp on the per-step log-growth hinge (gradient '
                         'is zero above the cap; pre-blowup sub-cap steps '
                         'carry the signal)')
+    p.add_argument('--anchor-lambda', type=float, default=0.0,
+                   help='accuracy anchor: weight of the a-priori derivative '
+                        'loss (train_deriv objective, floored per-order '
+                        'rel-L2 on the sliced sweeps) added to every '
+                        'optimizer step. 0 = off. This is the multi-'
+                        'objective FT of the 2026-07-14 four-way verdict: '
+                        'keep cond_v2 a-priori accuracy while the rollout '
+                        'terms buy stability.')
+    p.add_argument('--anchor-roots', type=Path, nargs='+', default=None,
+                   help='sweep_dT_* roots for the anchor (default: the '
+                        'roots recorded in --init-ckpt config.json; '
+                        'REQUIRED if that is absent and anchor-lambda>0)')
+    p.add_argument('--anchor-batch', type=int, default=4,
+                   help='anchor batch size (one anchor batch per optimizer '
+                        'step)')
+    p.add_argument('--anchor-rel-floor', type=float, default=0.1,
+                   help='rel_floor of the anchor loss (match the warm-start '
+                        'a-priori run; cond_v2 used 0.1)')
+    p.add_argument('--anchor-val-batches', type=int, default=25,
+                   help='anchor val batches per epoch (0 = full val split)')
     p.add_argument('--val-free-steps', type=int, default=16,
                    help='val probe: truth-free steps rolled from the '
                         'stencil (blow-up fraction + annulus growth)')
@@ -1024,10 +1047,12 @@ def main():
     run_dir = out_root / 'training_runs' / run
     run_dir.mkdir(parents=True, exist_ok=True)
     free_on = bool(args.free_horizon or args.free_steps)
+    objective = ('rollout_relL2+annulus_stab' if free_on else 'rollout_relL2')
+    if args.anchor_lambda > 0.0:
+        objective += f'+{args.anchor_lambda:g}*apriori_anchor'
     (run_dir / 'config.json').write_text(json.dumps(
         vars(args) | {'model': model_name, 'n_snapshots': n_snap,
-                      'objective': ('rollout_relL2+annulus_stab'
-                                    if free_on else 'rollout_relL2'),
+                      'objective': objective,
                       'schedule_M': schedule,
                       'deep_roots': [str(r.root) for r in rcs]},
         indent=2, default=str))
@@ -1045,13 +1070,100 @@ def main():
                    + ',n_blown,n_blown_val,train_stab,n_skip,'
                    + ','.join(f'fb_s{s}' for s in strides) + ','
                    + ','.join(f'ag_s{s}' for s in strides)
-                   + ',elapsed_s\n')
+                   + ',elapsed_s'
+                   # anchor columns APPENDED after elapsed_s (positional
+                   # parsers unaffected, F1 convention); nan when anchor off
+                   + ',anc_train,anc_val,anc_Ndot,anc_Nddot,anc_N3dot'
+                   + ',anc_med_Ndot,anc_med_Nddot,anc_med_N3dot\n')
     print(f"[rollout-train] run={run}  strides={strides}  "
           f"grad_mode={args.grad_mode}  checkpoint_steps={args.checkpoint_steps}  "
           f"free_weight={args.free_weight_map}  "
           f"schedule={schedule[:12]}{'...' if len(schedule) > 12 else ''}")
 
     bare_cache = {}                       # (member, stride, win) -> bare step-1
+
+    # ---- a-priori accuracy anchor (multi-objective FT, four-way verdict) ----
+    anc_tl = anc_vl = None
+    anc_project = {}
+    if args.anchor_lambda > 0.0:
+        anc_roots = args.anchor_roots
+        if anc_roots is None and args.init_ckpt is not None:
+            # default: the warm-start ckpt's own training pool
+            ck_cfg = args.init_ckpt.parent / 'config.json'
+            if ck_cfg.exists():
+                anc_roots = [Path(r) for r in
+                             json.loads(ck_cfg.read_text())['roots']]
+        if not anc_roots:
+            raise SystemExit('--anchor-lambda > 0 needs --anchor-roots (or an '
+                             '--init-ckpt with a config.json listing roots)')
+        anc_roots = [r for r in anc_roots
+                     if (r / 'manifest.json').exists()
+                     and (r / 'packed' / 'inputs.npy').exists()]
+        if not anc_roots:
+            raise SystemExit('[anchor] no valid sweep roots')
+        # isotropy guard (same reason as train_deriv: per-shape dealias mask)
+        for r in anc_roots:
+            m = json.loads((r / 'manifest.json').read_text())
+            if (int(m['Ny']) != int(m['Nx'])
+                    or abs(float(m['Lx']) - float(m['Ly'])) > 1e-9):
+                raise SystemExit(f'[anchor] anisotropic root {r} unsupported')
+        anc_tl, anc_vl, _, anc_train_ds, anc_val_ds, _ = make_deriv_loaders(
+            anc_roots, batch_size=args.anchor_batch, num_workers=0,
+            n_snapshots=n_snap, compute_dtype='float64', seed=0)
+        # per-shape 2/3 dealias projections (mode-index mask, L-independent)
+        from qg.solver.grid.cartesian import CartesianGrid
+        from qg.solver.opt.derivative import Derivative
+        from qg.solver.opt.basis import to_spectral, to_physical
+        rep = {}
+        for sub in (list(anc_train_ds.subsets) + list(anc_val_ds.subsets)):
+            rep.setdefault((int(sub.man['Ny']), int(sub.man['Nx'])), sub.man)
+        for (Ny, Nx), m in rep.items():
+            g = CartesianGrid(Nx=Nx, Ny=Ny, Lx=float(m['Lx']),
+                              Ly=float(m['Ly']), device=device,
+                              precision='float64')
+            keep = (~Derivative(g).alias_mask).to(device)
+
+            def _proj(p, keep=keep):
+                return to_physical(to_spectral(p)
+                                   * keep.to(device=p.device, dtype=p.dtype))
+            anc_project[(Ny, Nx)] = _proj
+        print(f"[anchor] lambda={args.anchor_lambda:g}  roots={len(anc_roots)}"
+              f"  batch={args.anchor_batch}  rel_floor={args.anchor_rel_floor}"
+              f"  shapes={sorted(rep)}  (one anchor batch per optimizer step)")
+
+    def anchor_loss(batch, want_per=False):
+        """floored per-order rel-L2 of the a-priori derivative targets --
+        the EXACT train_deriv objective on one batch. Returns (loss graph
+        tensor, per-sample (B,out_orders) detached array or None).
+        want_per=False on the train path avoids a per-step host sync."""
+        x, y, regime = batch
+        x = x.to(device, non_blocking=True)
+        y = y.to(device, non_blocking=True).to(torch.float64)
+        regime = regime.to(device, non_blocking=True)
+        dT = regime[:, 0].to(x.dtype)
+        dxb = regime[:, 4].to(x.dtype)
+        dyb = regime[:, 5].to(x.dtype)
+        floor = (args.anchor_rel_floor
+                 * regime[:, 6:6 + args.out_orders]
+                 if args.anchor_rel_floor > 0 else None)
+        nd = model(x, dt=dT, dx=dxb, dy=dyb)
+        nd = anc_project[(x.shape[-2], x.shape[-1])](nd)
+        loss = relative_l2_perchannel(nd, y, floor)
+        per = (relative_l2_persample(nd, y, floor).detach().cpu().numpy()
+               if want_per else None)
+        return loss, per
+
+    def anchor_batches():
+        """infinite grid-homogeneous anchor batches (reshuffled per pass)"""
+        pass_i = 0
+        while True:
+            bs = getattr(anc_tl, 'batch_sampler', None)
+            if bs is not None and hasattr(bs, 'set_epoch'):
+                bs.set_epoch(pass_i)
+            yield from anc_tl
+            pass_i += 1
+
+    anc_it = iter(anchor_batches()) if anc_tl is not None else None
 
     def train_epoch(ep, M_epoch, rng):
         model.train(True)
@@ -1075,6 +1187,7 @@ def main():
         # (checkpoint recompute / the cond sigma-hat context would read
         # another member's globals).
         tot_stab, n_skip = 0.0, 0
+        tot_anc, n_anc = 0.0, 0             # a-priori anchor (multi-objective)
         geff_maxes = []                     # P1(b) certificate histogram data
         for c0 in range(0, len(samples), args.batch_size):
             chunk = samples[c0:c0 + args.batch_size]
@@ -1132,6 +1245,14 @@ def main():
                 tot_stab += stv
                 n_ok += 1
             if n_ok:
+                # a-priori anchor: one batch per optimizer step, backwarded
+                # into the SAME step (self-contained forward, no rollout
+                # globals touched -- safe after the chunk's sample loop)
+                if anc_it is not None:
+                    l_anc, _ = anchor_loss(next(anc_it))
+                    if torch.isfinite(l_anc):
+                        (args.anchor_lambda * l_anc).backward()
+                        tot_anc += float(l_anc); n_anc += 1
                 gn = torch.nn.utils.clip_grad_norm_(trainable, args.grad_clip)
                 if torch.isfinite(gn):
                     optim.step()
@@ -1143,7 +1264,7 @@ def main():
                     optim.zero_grad()
         optim.zero_grad()
         return (tot / max(nb, 1), tot_stab / max(nb, 1), n_blown, n_skip,
-                geff_maxes)
+                geff_maxes, tot_anc / max(n_anc, 1) if n_anc else float('nan'))
 
     def val_epoch():
         model.train(False)
@@ -1206,14 +1327,32 @@ def main():
                      if ns else (float('nan'), float('nan')))
         pooled = float(np.mean([v for v in per_stride.values()
                                 if np.isfinite(v)]))
-        return pooled, per_stride, rf, n_blown_val, fb, ag
+        # a-priori anchor val: the number that must NOT regress (cond_v2's
+        # conditioning gain); per-order means + medians (rule 16: medians too)
+        anc_val, anc_per, anc_med = float('nan'), None, None
+        if anc_vl is not None:
+            vals, pers = [], []
+            with torch.no_grad():
+                for i, batch in enumerate(anc_vl):
+                    if args.anchor_val_batches and i >= args.anchor_val_batches:
+                        break
+                    l, per = anchor_loss(batch, want_per=True)
+                    vals.append(float(l)); pers.append(per)
+            if vals:
+                anc_val = float(np.mean(vals))
+                cat = np.concatenate(pers, axis=0)
+                anc_per = cat.mean(axis=0)
+                anc_med = np.median(cat, axis=0)
+        return (pooled, per_stride, rf, n_blown_val, fb, ag,
+                anc_val, anc_per, anc_med)
 
     best = float('inf'); t0 = time.time()
     rng = np.random.default_rng(args.seed)
     for ep in range(args.epochs):
         te0 = time.time()
         M_epoch = schedule[ep]
-        tr, tr_stab, n_blown, n_skip, geff_maxes = train_epoch(ep, M_epoch, rng)
+        (tr, tr_stab, n_blown, n_skip, geff_maxes,
+         tr_anc) = train_epoch(ep, M_epoch, rng)
         if geff_maxes:
             gm = np.asarray(geff_maxes, dtype=np.float64)
             with open(run_dir / 'geff_hist.csv', 'a') as gf:
@@ -1222,16 +1361,23 @@ def main():
             print(f"[ep {ep:03d}] |G_eff| max-per-window: mean {gm.mean():.4f} "
                   f"p95 {np.percentile(gm, 95):.4f} max {gm.max():.4f} "
                   f"(certificate: <= {1.0 - wc.EPS_MARGIN})")
-        va, va_s, rf, n_blown_val, fb, ag = val_epoch()
+        va, va_s, rf, n_blown_val, fb, ag, anc_val, anc_per, anc_med = \
+            val_epoch()
         sched.step()
-        improved = va < best
+        # best-ckpt score = the TRAINING objective's val analogue: rollout val
+        # + lambda * anchor val when the anchor is on (a ckpt that trades all
+        # a-priori accuracy for rollout val must not win)
+        score = (va + args.anchor_lambda * anc_val
+                 if anc_vl is not None and np.isfinite(anc_val) else va)
+        improved = score < best
         payload = {'model': model.state_dict(), 'epoch': ep, 'val': va,
+                   'anchor_val': anc_val, 'score': score,
                    'config': vars(args) | {'model': model_name,
                                            'n_snapshots': n_snap,
                                            'grad_kernel': args.grad_kernel,
                                            'out_orders': args.out_orders}}
         if improved:
-            best = va
+            best = score
             torch.save(payload, run_dir / 'best.pt')
         torch.save(payload, run_dir / 'last.pt')
         with open(log, 'a') as f:
@@ -1243,17 +1389,30 @@ def main():
                     + f',{n_blown},{n_blown_val},{tr_stab:.6e},{n_skip},'
                     + ','.join(f'{fb[s]:.4f}' for s in strides) + ','
                     + ','.join(f'{ag[s]:.6e}' for s in strides)
-                    + f',{time.time() - t0:.1f}\n')
+                    + f',{time.time() - t0:.1f}'
+                    + f',{tr_anc:.6e},{anc_val:.6e},'
+                    + ','.join(f'{v:.6e}' for v in
+                               (anc_per if anc_per is not None
+                                else [float("nan")] * 3)) + ','
+                    + ','.join(f'{v:.6e}' for v in
+                               (anc_med if anc_med is not None
+                                else [float("nan")] * 3)) + '\n')
         if ep % args.print_every == 0 or improved:
             vs = ' '.join(f's{s}={va_s[s]:.3e}' for s in strides)
             rs = ' '.join(f's{s}={rf[s][0]:.4f}/{rf[s][1]:.4f}'
                           for s in strides)
             fs = ' '.join(f's{s}={fb[s]:.2f}/{ag[s]:.2e}' for s in strides)
+            anc_s = ''
+            if anc_vl is not None:
+                am = ('/'.join(f'{v:.3f}' for v in anc_med)
+                      if anc_med is not None else 'nan')
+                anc_s = (f"  anchor(train/val)={tr_anc:.3e}/{anc_val:.3e}"
+                         f" med=[{am}]")
             print(f"  ep {ep:3d} {'*' if improved else ' '} M={M_epoch}  "
                   f"train={tr:.4e}(+stab {tr_stab:.2e})  val={va:.4e}  "
                   f"best={best:.4e}  [{vs}]  rf(mean/med)=[{rs}]  "
                   f"free(blown/grow)=[{fs}]  blown={n_blown}/val:{n_blown_val}"
-                  f"  skip={n_skip}  ({time.time() - te0:.1f}s)")
+                  f"  skip={n_skip}{anc_s}  ({time.time() - te0:.1f}s)")
 
     print(f"\n[rollout-train] done in {(time.time() - t0) / 60:.1f} min, "
           f"best val={best:.4e}  -> {run_dir}")

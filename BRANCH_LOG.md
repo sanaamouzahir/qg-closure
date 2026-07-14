@@ -20,6 +20,19 @@ Running record. Supervisor updates this at the end of every session. Newest entr
 - Email [QG][LANDED][wiener] spooled 14:2x (verify relay). Figure pushed to Sanaa's panel.
 - Two live sessions coordinated via next_steps.md claims: session-1 = Student-t/sgs (launched
   1833541/42), session-2 = this Wiener accuracy lane. Next: implement + smoke the anchored FT.
+- 15:00 ANCHORED FT IMPLEMENTED + FIRED: train_deriv_rollout.py gains --anchor-lambda/-roots/
+  -batch/-rel-floor/-val-batches -- one a-priori derivative-loss batch (exact train_deriv
+  objective, floored rel-L2, cond_v2's 42 filtered sweep roots) backwarded into every optimizer
+  step; anc_* columns appended to log.csv; best.pt = val + lambda*anc_val. Gates: CPU smoke x2
+  (rf_s1 0.0572 vs gate 0.0575), closure-reviewer PASS (2 low fixes applied), sge-checker PASS.
+  Sweep submit_anchor_sweep.sh --go: ancZ lam 0 (1833553/54/55), ancA 3e-2 (1833556/57/58),
+  ancB 3e-1 (1833559/60/61); lam01 recipe, warm cond_v2 ep63, 20 ep, lands overnight. Verdict:
+  anc_med_Nddot holds 0.057-0.075 while fb_s2/s3 -> 0; winner -> 16-step ladder five-way.
+- SANAA (chat ~14:55): even cond_v2 is far below the promise. Budget reply sent: delivered 6x <
+  cond_v2 cap 18x (eps_Nddot .057) < width-15 wall 32x (.031) < time-FD floor 125x (.008) vs
+  economic bar ~9x (dT/3 refinement at the same 3x cost). Anchored FT = mechanism, not the
+  accuracy engine. PROPOSED instrument arms (width-31 + spectral-grad @5e-3, kf4+256) to price
+  the 0.031->0.008 wall = the local-vs-FFT (recursion cell) decision. Awaiting her word.
 
 ## 2026-07-14 — session 14c (Sanaa order: in-distribution NN vs TRUE-closure gap on the SAME rollout grid)
 - Question (Sanaa, verbatim intent): is the accuracy shortfall present IN-distribution, given the
