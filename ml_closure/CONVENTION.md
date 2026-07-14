@@ -51,12 +51,19 @@ csvs_and_npz/    tables and arrays, full descriptive names; every .npz has
    carries its own <subfolder_name>.txt explainer; the top-level
    <diagnostic>.txt is the index of subfolders + headlines. Reports
    (recalibration, verdicts, ...) follow the same subfolder convention.
-5b. RELATIVE ERROR IN ERROR PLOTS (Sanaa order 2026-07-14, standing): when
-   a figure shows a prediction error field, plot RELATIVE error —
-   (pred - truth) normalized with a near-zero-safe denominator
-   (|truth| + 0.01 * per-frame max|truth|), seismic, centered — so error
-   is readable against heavy-tailed field amplitudes. Absolute-error
-   panels may accompany, never replace.
+5b. RELATIVE ERROR IN ERROR PLOTS (Sanaa order 2026-07-14, revised same
+   day to her exact rule): when a figure shows a prediction error field,
+   plot RELATIVE error, pointwise:
+       |truth| >  1e-4                   ->  |pred - truth| / |truth|
+       |truth| <= 1e-4 AND |err| < 1e-4  ->  0
+       |truth| <= 1e-4 AND |err| >= 1e-4 ->  |err| / 1e-4
+   (no additive denominator floor). Non-negative, linear scale.
+   Absolute-error panels may accompany, never replace.
+5c. PER-MEMBER SUBFOLDERS FOR FIELD PANELS (Sanaa order 2026-07-14):
+   field-panel categories additionally split by ensemble member —
+   field_panels_<geometry>/<member>/ — so per-case evals are directly
+   findable. Sigma panels show the RECALIBRATED sigma when a
+   recalibration sidecar exists (title must say so).
 6. LEGACY NOTE (temporary): until tonight's fleet lands, the training jobs
    still write into runs_piff/<codename>/ and the .py files physically
    live in ml_closure/ root (codes/ holds symlinks). After the last job

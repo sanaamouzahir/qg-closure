@@ -8,10 +8,19 @@ them as 6-panel figures with a SYMLOG color norm:
 
 symlog linthresh = 99th percentile of |truth Pi| over the frame's valid pixels;
 one shared norm for truth/prediction/error, sigma on the same linthresh.
-Sixth panel (Sanaa 2026-07-14 order, CONVENTION.md rule 5b): SIGNED RELATIVE
-error (mu - truth) / (|truth| + 0.01*max|truth|) on a LINEAR seismic scale —
-readable against the heavy-tailed Pi amplitude; the floor makes near-zero
-truth pixels safe (never a division blow-up).
+Sixth panel (Sanaa 2026-07-14, second revision — CONVENTION.md rule 5b):
+RELATIVE error by her exact rule, pointwise:
+    |truth| >  1e-4                  ->  |pred - truth| / |truth|
+    |truth| <= 1e-4 and |err| < 1e-4 ->  0
+    |truth| <= 1e-4 and |err| >= 1e-4 -> |err| / 1e-4   (threshold-capped
+                                          continuation of the first rule)
+Non-negative field, linear scale, vmax = 99.5th pct.
+
+--per-member N (Sanaa 2026-07-14): instead of 6 frames pooled across members,
+write N frames PER ensemble member, evenly spread over that member's val
+window, into <outdir>/<member>/. If recalibration_structural.yaml exists next
+to the ckpt, the sigma panel applies the (s_a, s_b) two-parameter
+recalibration (title says so); mean prediction is unchanged by recal.
 cmap seismic, aspect-preserving, origin/orientation identical to eval_piff.
 Writes field5_*.png NEXT TO the existing field_*.png (never deletes them).
 Frame selection reproduces eval_piff exactly (val frames sorted by Re, 6-point
@@ -42,21 +51,36 @@ HERE = Path(__file__).resolve().parent
 
 
 @torch.no_grad()
-def predict_frame_full(model, run, frame, device, gp_chunk):
+def predict_frame_full(model, run, frame, device, gp_chunk, recal=None):
     """Full-frame prediction, returning the omega* channel too (superset of
-    eval_piff.predict_frame — same math, conditioning flags honored)."""
+    eval_piff.predict_frame — same math, conditioning flags honored).
+    recal = {'s_a','s_b'} applies the two-parameter noise recalibration
+    (structural models only): var' = var_gp + clamp(s_a*sp(a) +
+    s_b*sp(b)*g^2/g2_scale, 1e-3, 10), exactly recalibrate_structural_sigma's
+    formula. Mean is untouched."""
     x, y, mask, zeta, zeta_dot, g = run.full_frame(frame)
     gpin = model.masked_gp_inputs(
         x[None].to(device), zeta[None].to(device), mask[None].to(device),
         zeta_dot=(zeta_dot[None].to(device) if model.use_zeta_dot else None),
         g=(g[None].to(device) if model.use_grad_feature else None))
-    gm = (g[None].to(device)[mask[None].to(device)]
-          if getattr(model, 'noise_prior', 'none') == 'structural' else None)
+    structural = getattr(model, 'noise_prior', 'none') == 'structural'
+    gm = (g[None].to(device)[mask[None].to(device)] if structural else None)
+    if recal is not None and not structural:
+        raise SystemExit('--recal requires a structural-noise model')
     mus, vars_ = [], []
     for i0 in range(0, gpin.shape[0], gp_chunk):
-        mu_p, var_p = model.predict_physical(
-            gpin[i0:i0 + gp_chunk],
-            g_masked=(gm[i0:i0 + gp_chunk] if gm is not None else None))
+        if recal is not None:
+            post = model.gp(gpin[i0:i0 + gp_chunk])
+            sfeat = (gm[i0:i0 + gp_chunk] ** 2) / model.g2_scale.to(gm.dtype)
+            spa = torch.nn.functional.softplus(model.noise_a).to(gm.dtype)
+            spb = torch.nn.functional.softplus(model.noise_b).to(gm.dtype)
+            noise = (recal['s_a'] * spa + recal['s_b'] * spb * sfeat).clamp(1.0e-3, 10.0)
+            var_p = (post.variance + noise) * model.y_sd * model.y_sd
+            mu_p = post.mean * model.y_sd + model.y_mu
+        else:
+            mu_p, var_p = model.predict_physical(
+                gpin[i0:i0 + gp_chunk],
+                g_masked=(gm[i0:i0 + gp_chunk] if gm is not None else None))
         mus.append(mu_p.cpu().numpy())
         vars_.append(var_p.cpu().numpy())
     mu, var = np.concatenate(mus), np.concatenate(vars_)
@@ -76,6 +100,13 @@ def main():
     ap.add_argument('--outdir', default=None, help='default: <ckpt dir>/eval')
     ap.add_argument('--device', default=None)
     ap.add_argument('--n-snapshots', type=int, default=None)
+    ap.add_argument('--per-member', type=int, default=None, metavar='N',
+                    help='write N frames PER member into <outdir>/<member>/ '
+                         '(evenly over each member\'s val window) instead of '
+                         'the pooled 6-frame selection')
+    ap.add_argument('--recal', default='auto', choices=['auto', 'on', 'off'],
+                    help='apply recalibration_structural.yaml next to the ckpt '
+                         'to the sigma panel (auto = if the file exists)')
     args = ap.parse_args()
 
     ckpt = torch.load(args.ckpt, map_location='cpu', weights_only=False)
@@ -95,23 +126,48 @@ def main():
     ck_tsm = ckpt['conf'].get('zeta', {}).get('tshed_smooth', 2.992)
     conf['zeta']['tshed_smooth'] = ck_tsm
 
+    # (s_a, s_b) recalibration sidecar (Sanaa GO 2026-07-14)
+    recal = None
+    recal_path = Path(args.ckpt).parent / 'recalibration_structural.yaml'
+    if args.recal == 'on' or (args.recal == 'auto' and recal_path.exists()):
+        import yaml
+        rc = yaml.safe_load(recal_path.read_text())
+        recal = {'s_a': float(rc['s_a']), 's_b': float(rc['s_b'])}
+        print(f"[replot] sigma recalibration ON: s_a={recal['s_a']:.4g} "
+              f"s_b={recal['s_b']:.4g} ({recal_path})")
+
     runs = build_runs(conf)
     frames = split_frames(runs, 'val', conf)
     print(f'[replot] {len(frames)} val frames from {[r.name for r in runs]}')
 
-    # identical selection to eval_piff: sort ALL val frames by Re, 6-pt linspace
-    Re_all = np.array([runs[ri].Re_snap[fi] for ri, fi in frames])
-    order = np.argsort(Re_all)
-    n_show = min(n_show, len(frames))
-    sel = order[np.linspace(0, len(order) - 1, n_show).astype(int)]
+    if args.per_member:
+        # N frames per member, evenly over each member's val window (time order)
+        sel, tags = [], []
+        for ri, run in enumerate(runs):
+            fis = sorted(fi for rj, fi in frames if rj == ri)
+            if not fis:
+                continue
+            n = min(args.per_member, len(fis))
+            for k in np.linspace(0, len(fis) - 1, n).astype(int):
+                sel.append((ri, fis[k]))
+                tags.append(run.name)
+    else:
+        # identical selection to eval_piff: sort ALL val frames by Re, 6-pt linspace
+        Re_all = np.array([runs[ri].Re_snap[fi] for ri, fi in frames])
+        order = np.argsort(Re_all)
+        n_show = min(n_show, len(frames))
+        sel = [frames[i] for i in order[np.linspace(0, len(order) - 1, n_show).astype(int)]]
+        tags = [None] * len(sel)
 
-    for j, idx in enumerate(sel):
-        ri, fi = frames[idx]
+    REL_THR = 1.0e-4   # Sanaa 2026-07-14 relative-error threshold
+    counts = {}
+    for (ri, fi), tag in zip(sel, tags):
         run = runs[ri]
-        p = predict_frame_full(model, run, fi, device, gp_chunk)
+        p = predict_frame_full(model, run, fi, device, gp_chunk, recal=recal)
         m = p['mask']
         tr = np.where(m, p['truth'], np.nan)
-        err = np.where(m, np.abs(p['truth'] - np.nan_to_num(p['mu2d'])), np.nan)
+        abserr2d = np.abs(np.nan_to_num(p['mu2d']) - p['truth'])
+        err = np.where(m, abserr2d, np.nan)
 
         absval = np.abs(p['truth'][m])
         lt = max(float(np.percentile(absval, 99.0)), 1e-12)
@@ -120,21 +176,26 @@ def main():
         norm_s = SymLogNorm(linthresh=lt, vmin=-vmax, vmax=vmax, base=10)
         ovmax = float(np.percentile(np.abs(p['omega']), 99.5))
 
-        # rule 5b: signed relative error, near-zero-safe denominator
-        denom = np.abs(p['truth']) + 0.01 * float(absval.max())
-        rel = np.where(m, (np.nan_to_num(p['mu2d']) - p['truth']) / denom, np.nan)
-        rvmax = float(np.clip(np.percentile(np.abs(rel[m]), 99.5), 0.1, 2.0))
+        # rule 5b (Sanaa exact rule): |err|/|truth| where |truth|>thr;
+        # 0 where both below thr; |err|/thr where only truth is below thr
+        at = np.abs(p['truth'])
+        rel2d = np.where(at > REL_THR, abserr2d / np.where(at > REL_THR, at, 1.0),
+                         np.where(abserr2d < REL_THR, 0.0, abserr2d / REL_THR))
+        rel = np.where(m, rel2d, np.nan)
+        rvmax = max(float(np.percentile(rel[m], 99.5)), 1e-6)
 
+        sig_ttl = ('predicted sigma RECALIBRATED (symlog)' if recal is not None
+                   else 'predicted sigma (symlog)')
         fig, axs = plt.subplots(1, 6, figsize=(27.5, 4.2))
         specs = [
             (p['omega'], 'filtered vorticity omega_bar* (linear)',
              dict(vmin=-ovmax, vmax=ovmax)),
             (tr, f"truth Pi*  t={p['t']:.2f} Re={p['Re']:.0f} (symlog)", dict(norm=norm)),
             (p['mu2d'], 'predicted Pi* (same symlog)', dict(norm=norm)),
-            (p['sigma2d'], 'predicted sigma (symlog)', dict(norm=norm_s)),
+            (p['sigma2d'], sig_ttl, dict(norm=norm_s)),
             (err, '|error| (same symlog)', dict(norm=norm)),
-            (rel, f'relative error (pred-truth)/(|truth|+1%max), linear ±{rvmax:.2g}',
-             dict(vmin=-rvmax, vmax=rvmax)),
+            (rel, f'relative error |err|/|truth| (0 where both < {REL_THR:g}), '
+                  f'linear [0, {rvmax:.2g}]', dict(vmin=0.0, vmax=rvmax)),
         ]
         for ax, (f2d, ttl, kw) in zip(axs, specs):
             im = ax.imshow(f2d, cmap='seismic', origin='lower',
@@ -144,12 +205,19 @@ def main():
         fig.suptitle(f"{run.name}  (symlog linthresh = 99th pct |Pi*| = {lt:.3g})",
                      fontsize=10)
         fig.tight_layout()
-        fp = outdir / f"field5_{j}_t{p['t']:.2f}.png"
+        if tag is not None:
+            fdir = outdir / tag
+            fdir.mkdir(parents=True, exist_ok=True)
+        else:
+            fdir = outdir
+        j = counts.get(tag, 0)
+        counts[tag] = j + 1
+        fp = fdir / f"field6_{j}_t{p['t']:.2f}.png"
         fig.savefig(fp, dpi=130)
         plt.close(fig)
         print(f'[replot] {fp}  (member {run.name}, Re {p["Re"]:.0f})')
 
-    print(f'[replot] done: {n_show} figures in {outdir}')
+    print(f'[replot] done: {len(sel)} figures in {outdir}')
 
 
 if __name__ == '__main__':

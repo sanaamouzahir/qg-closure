@@ -71,6 +71,7 @@ RAMP_LEN = 15.0                     # tau in [0, 15] -> hold at RE_MAX
 TAU_OU = 5.0 * T_SHED_MID           # 14.960
 SIGMA_OU = 0.2 * RE_AMP             # 340
 TAU_DWELL = 4.0 * T_SHED_MID        # 11.968
+CHIRP_F1_FACT = 3.0                 # chirp sweeps f: 1/P_SINE -> 3/P_SINE (OOD case, Sanaa 2026-07-14)
 DEFAULT_SEED = 20260707
 
 # OU micro-grid: finest dt in the whole campaign (Phase C dt study lower end).
@@ -95,6 +96,18 @@ def signal_re(signal, t, n_wait, dt, seed, re_const, switch_smooth_steps=0):
 
     if signal == 'sine':
         re[n_wait:] = RE_MID + RE_AMP * np.sin(2.0 * np.pi * tau / P_SINE)
+    elif signal == 'chirp':
+        # OOD generalization case (Sanaa 2026-07-14): amplitude/band IDENTICAL
+        # to sine (Re_mid +- Re_amp), frequency sweeps linearly from the trained
+        # sine rate f0 = 1/P_SINE to CHIRP_F1_FACT*f0 across the modulation
+        # horizon — out-of-distribution in TIME STRUCTURE only, not in Re range.
+        # Deterministic (seed unused). f(tau) = f0 + (f1-f0)*tau/H;
+        # phase = 2*pi*integral_0^tau f = 2*pi*tau*(f0 + 0.5*(f1-f0)*tau/H).
+        horizon = t[-1] - t[n_wait]
+        f0 = 1.0 / P_SINE
+        f1 = CHIRP_F1_FACT / P_SINE
+        re[n_wait:] = RE_MID + RE_AMP * np.sin(
+            2.0 * np.pi * tau * (f0 + 0.5 * (f1 - f0) * tau / horizon))
     elif signal == 'ramp':
         re[n_wait:] = RE_MID + (RE_MAX - RE_MID) * np.minimum(tau / RAMP_LEN, 1.0)
     elif signal == 'ou':
@@ -186,7 +199,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--signal', required=True,
-                   choices=['const', 'sine', 'ramp', 'ou', 'telegraph'])
+                   choices=['const', 'sine', 'ramp', 'ou', 'telegraph', 'chirp'])
     p.add_argument('--dt', type=float, required=True,
                    help='SOLVER dt of the consuming run (table is index-matched)')
     p.add_argument('--T', type=float, required=True)
@@ -226,6 +239,7 @@ def main():
                 nu=NU, U_per_Re=U_PER_RE, T_shed_mid=T_SHED_MID, P_sine=P_SINE,
                 ramp_len=RAMP_LEN, tau_OU=TAU_OU, sigma_OU=SIGMA_OU,
                 tau_dwell=TAU_DWELL, dt_micro=DT_MICRO,
+                chirp_f1_fact=CHIRP_F1_FACT,
                 switch_smooth_steps=args.switch_smooth_steps, git_sha=git_sha(),
                 convention='U[n] is the inlet at step n (t_n = n*dt); '
                            'OU/telegraph paths are dt-consistent by micro-grid/'
