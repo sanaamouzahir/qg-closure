@@ -1,2 +1,3 @@
 timestamp,event,job_id,host,note
 2026-07-15T18:35:25,start,1835249,ibamd-compute-0-4.local,"probe_reflection_hypothesis.py --ckpt runs_piff/piff_cape_gjs_ylp75/best.pt --config conf_piff_cape_gjs_ylp75.yaml --member FPCape-sine --ratios 0.3,0.5,0.7,0.859,1.0 --device cpu --report-run reflection_probe_cape"
+2026-07-15T18:39:30,fail,1835249,ibamd-compute-0-4.local,probe_reflection_hypothesis.py exited rc=1 -- raw log in <branch>/logs/
