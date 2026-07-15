@@ -204,7 +204,11 @@ def push_reports(repo_dir, run_name, message):
         if c.returncode != 0 and 'nothing to commit' not in (c.stdout + c.stderr):
             print(f"[digest] commit failed: {(c.stdout + c.stderr).strip()[:300]}",
                   flush=True)
-        pl = _run(['git', 'pull', '--rebase', 'origin', branch], repo)
+        # autoStash: a dirty checkout (e.g. the 2026-07-15 stray deletions)
+        # must not starve the digest -- local changes are stashed around the
+        # rebase and restored exactly as found (config supported since git 2.6)
+        pl = _run(['git', '-c', 'rebase.autoStash=true',
+                   'pull', '--rebase', 'origin', branch], repo)
         if pl.returncode != 0:
             _run(['git', 'rebase', '--abort'], repo)
             print(f"[digest] pull --rebase failed (attempt {attempt}): "
