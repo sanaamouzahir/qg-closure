@@ -1,0 +1,1140 @@
+From 9a114126178d74c2443ec08d4d5ae4254dee9b23 Mon Sep 17 00:00:00 2001
+From: Sanaa Mouzahir <sanaamz@mit.edu>
+Date: Tue, 7 Jul 2026 14:34:57 -0400
+Subject: [PATCH 1/2] SGS hooks baseline: post-edit snapshot of the 4 touched
+ files (inlet_table bc + diag.scalar_rate recorder); pre-edit versions in
+ qg-sgs-closure/solver_patches/sgs_hooks_2026-07-07.patch
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01UdLUgMb1ugjXxtjnh8B2vv
+---
+ src/qg/_input/sources/bc.py            | 254 ++++++++++++++++++++++
+ src/qg/_output/scalars.py              | 275 ++++++++++++++++++++++++
+ src/qg/solver/opt/operator/obstacle.py | 189 +++++++++++++++++
+ src/qg/solver/qg.py                    | 372 +++++++++++++++++++++++++++++++++
+ 4 files changed, 1090 insertions(+)
+ create mode 100644 src/qg/_input/sources/bc.py
+ create mode 100644 src/qg/_output/scalars.py
+ create mode 100644 src/qg/solver/opt/operator/obstacle.py
+ create mode 100644 src/qg/solver/qg.py
+
+diff --git a/src/qg/_input/sources/bc.py b/src/qg/_input/sources/bc.py
+new file mode 100644
+index 0000000..5265d00
+--- /dev/null
++++ b/src/qg/_input/sources/bc.py
+@@ -0,0 +1,254 @@
++import torch
++import torch.nn.functional as F
++from qg.solver.opt.basis import to_physical, to_spectral
++
++from functools import lru_cache
++
++class Sponge:
++    @staticmethod
++    def vorticity_sponge(state, derivative, sponge, mask, uh, vh):
++        if sponge <= 0:
++            print("Warning: sponge must be positive for sponge layer to work effectively.")
++            return 0
++        
++        _ramp = mask
++        _eta = sponge * state.dt
++        
++        ### vorticity / open bc
++        outlet_vorticity_sponge = -1 * to_spectral(_ramp * to_physical(state.qh)) / _eta
++        return outlet_vorticity_sponge
++    
++    @staticmethod
++    def diffuse_sponge(state, derivative, sponge, masks, uh, vh):
++        if sponge <= 0:
++            print("Warning: sponge must be positive for sponge layer to work effectively.")
++            return 0
++        
++        _outlet_v1, _outlet_v2, _outlet_v1_ramp = masks
++        _eta = sponge * state.dt
++        
++        ### velocity / closed bc
++        masked_vh_delta = to_spectral(_outlet_v2 * to_physical(state.vh - vh)) 
++        masked_uh_delta = to_spectral(_outlet_v2 * to_physical(state.uh - uh))
++        outlet_velocity_sponge = (derivative.dx * masked_vh_delta - derivative.dy * masked_uh_delta) / _eta
++        
++        ### diffusion
++        outlet_diffusion = 0.1 * derivative.laplacian * to_spectral(_outlet_v1_ramp * to_physical(state.qh))
++            
++        return outlet_diffusion + outlet_velocity_sponge # outlet_vorticity_sponge + 
++    
++
++class Flow:
++    # SGS branch opt-in: per-step inlet velocity from a precomputed table
++    # (qg.bc.inlet_table: path to U_of_t.npz from training/modulation.py).
++    # Absent key => inlet_table is None and const_x_flow is bit-identical to
++    # the original static-scalar behavior. Tables are index-matched to the
++    # solver dt BY DESIGN (no interpolation): U[n] at step n = round(t/dt).
++    _inlet_tables = {}   # path -> (U ndarray float64, table dt)
++
++    @staticmethod
++    def _table_velocity(state, inlet_table):
++        tab = Flow._inlet_tables.get(inlet_table)
++        if tab is None:
++            import numpy as _np
++            _d = _np.load(inlet_table)
++            _U = _np.asarray(_d['U'], dtype=_np.float64)
++            _t = _np.asarray(_d['t'], dtype=_np.float64)
++            tab = (_U, float(_t[1] - _t[0]))
++            Flow._inlet_tables[inlet_table] = tab
++        U, table_dt = tab
++        if abs(table_dt - state.dt) > 1e-12 * max(1.0, abs(state.dt)):
++            raise RuntimeError(
++                f"inlet_table dt={table_dt} != solver dt={state.dt}: regenerate "
++                f"the table at the solver dt (no runtime interpolation by design)")
++        n = int(round(state.t / state.dt))
++        if n >= len(U):
++            raise RuntimeError(f"inlet_table exhausted: step {n} >= table length {len(U)}")
++        return float(U[n])
++
++    @staticmethod
++    def const_x_flow(state, inlet_velocity, inlet_table=None):
++        if inlet_table is not None:
++            inlet_velocity = Flow._table_velocity(state, inlet_table)
++        _rec = getattr(state, '_rec', None)
++        if _rec is not None:
++            _rec.stash_inlet(inlet_velocity)
++
++        @lru_cache(maxsize=1)
++        def base_flow():
++            flow_uh = torch.zeros_like(state.uh)
++            flow_uh[...,0,0] = inlet_velocity
++            flow_vh = flow_uh * 0.0
++            return flow_uh, flow_vh
++
++        flow_uh, flow_vh = base_flow()
++        state.uh[...,0,0] = inlet_velocity
++        state.vh[...,0,0] = 0.0
++
++        return flow_uh, flow_vh
++
++class Region:
++    
++    @staticmethod
++    def vertical_outlet_single_mask(grid, X, Y, _min, _max, x, width):
++        _mask_1 = ((X > x) * (X < x + width) \
++            * (Y >= _min) * (Y <= _max))[None,:,:].to(grid.ftype)
++        
++        _mask_ramp = _mask_1 \
++            * (X - x) / width
++            
++        return _mask_ramp
++
++
++    @staticmethod
++    def vertical_outlet_double_mask(grid, X, Y, _min, _max, x, width):
++        _mask_1 = ((X > x) * (X < x + width) \
++            * (Y >= _min) * (Y <= _max))[None,:,:].to(grid.ftype)
++        _mask_2 = ((X > x + width) * (X < x + 2 * width) \
++            * (Y >= _min) * (Y <= _max))[None,:,:].to(grid.ftype)
++        
++        _mask_ramp = _mask_1 \
++            * (X - x) / width
++            
++        return _mask_1, _mask_2, _mask_ramp
++    
++    @staticmethod
++    def vertical_bidirectional_triple_mask(grid, X, Y, _min, _max, x, width):
++        _mask_1 = ((X > x) * (X < x + width) \
++            * (Y >= _min) * (Y <= _max))[None,:,:].to(grid.ftype)
++        _mask_2 = ((X > x + width) * (X < x + 2 * width) \
++            * (Y >= _min) * (Y <= _max))[None,:,:].to(grid.ftype)
++        _mask_3 = ((X > x + 2 * width) * (X < x + 3 * width) \
++            * (Y >= _min) * (Y <= _max))[None,:,:].to(grid.ftype) 
++        _mask_ramp = _mask_1 * (X - x) / width \
++            + _mask_3 * ((x + 3 * width) - X) / width
++            
++        return _mask_1, _mask_2, _mask_ramp
++    
++    
++    @staticmethod
++    def horizontal_bidirectional_double_mask(grid, X, Y, _min, _max, y, width):
++        _mask_1 = ((Y > y) * (Y < y + width) \
++            * (X >= _min) * (X <= _max))[None,:,:].to(grid.ftype)
++        _mask_2 = ((Y > y + width) * (Y < y + 2 * width) \
++            * (X >= _min) * (X <= _max))[None,:,:].to(grid.ftype)
++        
++        _mask_ramp = \
++            _mask_1  * (Y - y) / width + \
++            _mask_2 * ((y + 2 * width) - Y) / width
++            
++        return _mask_ramp
++    
++    @staticmethod
++    def horizontal_bidirectional_triple_mask(grid, X, Y, _min, _max, y, width):
++        _mask_1 = ((Y > y) * (Y < y + width) \
++            * (X >= _min) * (X <= _max))[None,:,:].to(grid.ftype)
++        _mask_2 = ((Y > y + width) * (Y < y + 2 * width) \
++            * (X >= _min) * (X <= _max))[None,:,:].to(grid.ftype)
++        _mask_3 = ((Y > y + 2 * width) * (Y < y + 3 * width) \
++            * (X >= _min) * (X <= _max))[None,:,:].to(grid.ftype)
++        
++        
++        _mask_ramp = \
++            _mask_1  * (Y - y) / width + \
++            _mask_3 * ((y + 3 * width) - Y) / width
++            
++        return _mask_1 + _mask_3, _mask_2, _mask_ramp
++    
++    @staticmethod
++    @lru_cache(maxsize=1)
++    def outlet_mask_r(grid, _min, _max, width, type='single'): # right outlet mask
++        x = torch.linspace(0, 1, grid.Nx,device=grid.device)
++        y = torch.linspace(0, 1, grid.Ny,device=grid.device)
++        X, Y = x[None,:],y[:,None]
++        
++        match type:
++            case 'single':
++                return Region.vertical_outlet_single_mask(grid, X,  Y, _min, _max, 1 - width, width)
++            case 'double':
++                return Region.vertical_outlet_double_mask(grid, X,  Y, _min, _max, 1 - 2 * width, width)
++    
++    @staticmethod
++    @lru_cache(maxsize=1)
++    def outlet_mask_rtd(grid, _min, _max, width, type='single'):
++        
++        x = torch.linspace(0, 1, grid.Nx,device=grid.device)
++        y = torch.linspace(0, 1, grid.Ny,device=grid.device)
++        X, Y = x[None,:],y[:,None]
++            
++        match type:
++            case 'single':
++                _outlet_ramp = Region.vertical_outlet_single_mask(grid, X,  Y, _min, _max, 1 - width, width)
++                _birect_ramp = Region.horizontal_bidirectional_double_mask(grid, X, Y, _min, _max, 1 - 2 * width, width) # just above lower image boundary
++                return (_outlet_ramp + _birect_ramp).clamp(0.0, 1.0)
++            
++            case 'double': 
++                _outlet_1, _outlet_2, _outlet_ramp = Region.vertical_outlet_double_mask(grid, X,  Y, _min, _max, 1 - 2 * width, width)
++                _bidirect_1, _bidirect_2, _bidirect_ramp = Region.horizontal_bidirectional_triple_mask(grid, X, Y, _min, _max, 1 - 3*width, width) # just above lower image boundary
++                return (_outlet_1 + _bidirect_1, _outlet_2 + _bidirect_2, (_outlet_ramp + _bidirect_ramp).clamp(0.0, 1.0))
++            
++            case 'triple': 
++                _outlet_1, _outlet_2, _outlet_ramp = Region.vertical_bidirectional_triple_mask(grid, X,  Y, _min, _max, 1 - 3 * width, width)
++                _bidirect_1, _bidirect_2, _bidirect_ramp = Region.horizontal_bidirectional_triple_mask(grid, X, Y, _min, _max, 1 - 3*width, width) # just above lower image boundary
++                return (_outlet_1 + _bidirect_1, _outlet_2 + _bidirect_2, (_outlet_ramp + _bidirect_ramp).clamp(0.0, 1.0))
++
++### 
++class BC:
++    @staticmethod
++    def const_outlet_vorticity_r(state, grid, derivative, 
++                        inlet_velocity=1.0, _min=0.0, _max=1.0, sponge=4.0,
++                        width = 0.05,                 
++                        **kwargs):
++        return Sponge.vorticity_sponge(state, derivative, sponge,
++                                    Region.outlet_mask_r(grid, _min, _max, width, type='single'),
++                                    *Flow.const_x_flow(state, inlet_velocity, kwargs.get('inlet_table')))
++        
++
++    @staticmethod
++    def const_outlet_vorticity_rtd(state, grid, derivative, 
++                        inlet_velocity=1.0, _min=0.0, _max=1.0, sponge=4.0,
++                        width = 0.05,                 
++                        **kwargs):
++        return Sponge.vorticity_sponge(state, derivative, sponge,
++                                       Region.outlet_mask_rtd(grid, _min, _max, width, type='single'),
++                                       *Flow.const_x_flow(state, inlet_velocity, kwargs.get('inlet_table')))
++    @staticmethod
++    def const_outlet_diffuse_r(state, grid, derivative, 
++                        inlet_velocity=1.0, _min=0.0, _max=1.0, sponge=4.0,
++                        width = 0.05,                 
++                        **kwargs):
++        return Sponge.diffuse_sponge(state, derivative, sponge,
++                                    Region.outlet_mask_r(grid, _min, _max, width, type='double'),
++                                    *Flow.const_x_flow(state, inlet_velocity, kwargs.get('inlet_table')))
++        
++
++    @staticmethod
++    def const_outlet_diffuse_rtd(state, grid, derivative, 
++                        inlet_velocity=1.0, _min=0.0, _max=1.0, sponge=4.0,
++                        width = 0.05,                 
++                        **kwargs):
++        return Sponge.diffuse_sponge(state, derivative, sponge,
++                                       Region.outlet_mask_rtd(grid, _min, _max, width, type='triple'),
++                                       *Flow.const_x_flow(state, inlet_velocity, kwargs.get('inlet_table')))
++
++    @staticmethod
++    def none(state, grid, derivative,                  
++                        **kwargs):
++        return 0
++
++####################################################################################################
++
++valid_bc = lambda _bc: hasattr(_bc, 'function') and _bc.function in bc_library
++
++bc_library = {
++    'periodic': BC.none,
++    'const-outlet-vorticity-r': BC.const_outlet_vorticity_r,
++    'const-outlet-vorticity-rtd': BC.const_outlet_vorticity_rtd,
++    'const-outlet-diffuse-r': BC.const_outlet_diffuse_r,
++    'const-outlet-diffuse-rtd': BC.const_outlet_diffuse_rtd,
++}
++
++def solve_bc(_bc):
++    if _bc is None or not isinstance(_bc, dict) or 'function' not in _bc or _bc['function'] not in bc_library:
++        return _bc
++    return lambda *args: bc_library[_bc['function']](*args, **_bc)
+\ No newline at end of file
+diff --git a/src/qg/_output/scalars.py b/src/qg/_output/scalars.py
+new file mode 100644
+index 0000000..9c3ef08
+--- /dev/null
++++ b/src/qg/_output/scalars.py
+@@ -0,0 +1,275 @@
++r"""scalars.py -- opt-in per-step scalar recorder (SGS-closure branch, AMENDMENT_01 SC).
++
++Activated ONLY when the run config has a `qg.diag.scalar_rate` key; without it
++`ScalarRecorder.build` returns None and every hook in qg.py / bc.py /
++obstacle.py is a no-op (`if rec is not None` / `getattr(state,'_rec',None)`),
++leaving the solver bit-identical to the unhooked code path (Gate 1 check 1).
++
++Config block (all keys under qg.diag; only scalar_rate is required):
++    diag:
++      scalar_rate: 10          # record every N steps (10 = 2.5e-3 t.u. at dt 2.5e-4)
++      out: /abs/path/scalars.npz   # default: ./scalars.npz in the job cwd
++      length: 1.256637         # normalizing length (default 2*mask.r for circular)
++      u_mid: 2.0               # fixed-U normalization for Cd_mid/Cl_mid
++      flush_every: 2000        # samples per atomic rewrite (kill-safety window)
++      probes: [[x1,y1], ...]   # optional explicit physical probe coords
++                               # (REQUIRED for non-circular masks, e.g. cape)
++
++FORCE DERIVATION (from the discrete update as implemented -- obstacle.py:53-70):
++The solver's explicit vorticity RHS contains the Brinkman patch
++    sponge_h = ( -dx(chi*(v - v_o)) + dy(chi*(u - u_o)) ) / eta,
++    eta = qg.pde.penalty * dt   (the YAML's factor*dt convention).
++This is exactly curl_z of the momentum sink
++    F_fluid = -chi * (u - u_o, v - v_o) / eta        [per unit area, rho = 1],
++since curl_z F = dx F_y - dy F_x reproduces sponge_h term by term. The force ON
++THE OBSTACLE is the reaction, integrated over the domain:
++    Fx = (1/eta) * sum(chi * (u - u_o)) * dx * dy,
++    Fy = (1/eta) * sum(chi * (v - v_o)) * dx * dy,
++with u_o = v_o = 0 for the static masks used on this branch. chi is the
++3x3-Gaussian-SMOOTHED mask exactly as the solver applies it (obstacle.solve_mask),
++and u, v are the SOURCE-TIME physical velocities INCLUDING the mean inlet flow:
++the bc patch is first in the operator patch list, so it has already pinned
++uh[...,0,0] = U_inlet when the penalty evaluates. The recorder therefore stashes
++the penalty's own chi*(u-u_o), chi*(v-v_o) tensors (obstacle.py hook) -- the
++discrete momentum sink actually applied that step -- and reduces them only on
++sampled steps. eta and the resulting PHYSICAL eta value are stored in meta.
++
++SAMPLING CONVENTION: a row is written for every step index n with n % rate == 0:
++fields at t_n = n*dt (source time, mean flow included), forces from the step
++t_n -> t_n + dt, U_inlet = the value the bc actually assigned during that step
++(read back from the state path, not from the table -- Gate 1 check 3 overlays
++this against the prescribed table). E = 0.5*<u^2+v^2> and Z = 0.5*<q^2> are
++DOMAIN MEANS (matching DNS_FR_diagnostics.npz), but E here INCLUDES the
++mean-flow energy: E_deviation = E - 0.5*U_inlet^2. Z is computed from the t_n
++spectral state by Parseval (norm='forward': mean(q^2) = sum w_k |qh_k|^2,
++w = 2 on interior rfft columns). No extra FFTs are performed at any step.
++
++COST (SC.2 of the amendment, reproduced): at scalar_rate=10 and dt=2.5e-4 the
++scalar series has ~830 samples per FASTEST shedding period (T_shed = 2.08 at
++Re 5600) -- sampling-noise-free spectra/instantaneous-frequency estimates; the
++storage is ~48k samples x ~25 scalars x 8 B < 10 MB/run. Field snapshots stay
++at save_rate=1000 (0.25 t.u., 8.3 per fastest period): fine for Pi_FF and
++mean/rms statistics, NOT used for St. Recorder work is reductions-only on every
++rate-th step (no FFTs), so walltime overhead is well under the 2% budget; if
++Gate 1 measures more, rate 20 is proposed before anything changes.
++
++Output scalars.npz keys: t, step (n,), then (n,B) arrays U_inlet, Re_inlet,
++Fx, Fy, Cd_inst, Cl_inst, Cd_mid, Cl_mid, U_cyl, Re_cyl, E, Z,
++probe_u, probe_v (n, B, n_probes), and meta (json string: every definition,
++probe coordinates and indices, eta, conventions). Flushed atomically
++(tmp + os.replace) every flush_every samples -- a killed job loses at most one
++flush interval.
++"""
++from __future__ import annotations
++import json
++import os
++
++import numpy as np
++import torch
++
++
++def _get_diag(raw_param):
++    raw = raw_param.get('qg', raw_param) if isinstance(raw_param, dict) else {}
++    d = raw.get('diag', None)
++    if not d or 'scalar_rate' not in d:
++        return None, raw
++    return d, raw
++
++
++class ScalarRecorder:
++    """Built by QG._run; stashed on the state as `state._rec` so the bc and
++    penalty hooks can hand over per-step quantities without recomputation."""
++
++    @staticmethod
++    def build(raw_param, grid, steps):
++        diag, raw = _get_diag(raw_param)
++        if diag is None:
++            return None
++        return ScalarRecorder(diag, raw, grid, steps)
++
++    def __init__(self, diag, raw, grid, steps):
++        self.rate = int(diag['scalar_rate'])
++        self.out = str(diag.get('out', 'scalars.npz'))
++        self.flush_every = int(diag.get('flush_every', 2000))
++        self.u_mid = float(diag.get('u_mid', 2.0))
++        self.grid = grid
++        self.dxdy = float(grid.dx) * float(grid.dy)
++        self.nu = float(raw['pde']['nu'])
++        self.dt = float(raw['time']['dt'])
++        self.eta = float(raw['pde']['penalty']) * self.dt   # physical eta, as applied
++
++        mask_conf = raw.get('mask', None) or {}
++        self.mask_function = mask_conf.get('function', 'none')
++        if 'length' in diag:
++            self.length = float(diag['length'])
++        elif self.mask_function == 'circular':
++            self.length = 2.0 * float(mask_conf['r'])
++        else:
++            raise ValueError('qg.diag.length is required for non-circular masks')
++
++        # probe bookkeeping is completed lazily on the first sampled step,
++        # when chi is available (stashed by the penalty hook) to locate the
++        # obstacle centroid and mask out solid points.
++        self.explicit_probes = [tuple(map(float, p)) for p in diag.get('probes', [])] or None
++        self._geom_ready = False
++
++        n_rows = (steps - 1) // self.rate + 1
++        self.n_rows = n_rows
++        self.i = 0                     # rows written
++        self._since_flush = 0
++        self._want = False
++        self._stash = {}
++        self._alloc_done = False
++
++        self.meta = dict(
++            scalar_rate=self.rate, dt=self.dt, eta=self.eta,
++            penalty_factor=float(raw['pde']['penalty']), nu=self.nu,
++            length=self.length, u_mid=self.u_mid,
++            mask_function=self.mask_function,
++            force='Fx = sum(chi*u)*dx*dy/eta on the SMOOTHED chi as applied; '
++                  'source-time u,v incl. mean inlet; see module docstring',
++            sampling='row at every step n % rate == 0; fields at t_n, force over '
++                     '[t_n, t_n+dt], U_inlet as assigned by the bc that step',
++            E='0.5*<u^2+v^2> domain mean, INCLUDES mean-flow energy',
++            Z='0.5*<q^2> domain mean via Parseval on qh(t_n)',
++        )
++
++    # ---- hooks (called from qg.py loop / bc.py / obstacle.py) -------------- #
++
++    def begin_step(self, it, state):
++        self._want = (it % self.rate == 0)
++        if self._want:
++            self._stash = {'it': it, 'qh': state.qh}   # t_n spectral vorticity
++
++    def stash_inlet(self, inlet_velocity):
++        if self._want:
++            self._stash['U'] = float(inlet_velocity)
++
++    def stash_penalty(self, u, v, u_chi, v_chi, chi):
++        if self._want:
++            self._stash.update(u=u, v=v, u_chi=u_chi, v_chi=v_chi, chi=chi)
++
++    def after_step(self, it, state):
++        if not self._want:
++            return
++        s, B = self._stash, state.qh.shape[0]
++        if not self._alloc_done:
++            self._alloc(B, s)
++        row = self.i
++
++        self.t_arr[row] = it * self.dt
++        self.step_arr[row] = it
++        U = s.get('U', np.nan)
++        self.d['U_inlet'][row] = U
++        self.d['Re_inlet'][row] = U * self.length / self.nu
++
++        if 'u_chi' in s:
++            fx = (s['u_chi'].sum(dim=(-2, -1)) * (self.dxdy / self.eta)).cpu().numpy()
++            fy = (s['v_chi'].sum(dim=(-2, -1)) * (self.dxdy / self.eta)).cpu().numpy()
++            self.d['Fx'][row], self.d['Fy'][row] = fx, fy
++            qdyn_inst = U * U * self.length          # 0.5*rho*U^2*D, x2 in coeff
++            qdyn_mid = self.u_mid * self.u_mid * self.length
++            self.d['Cd_inst'][row] = 2.0 * fx / qdyn_inst if U else np.nan
++            self.d['Cl_inst'][row] = 2.0 * fy / qdyn_inst if U else np.nan
++            self.d['Cd_mid'][row] = 2.0 * fx / qdyn_mid
++            self.d['Cl_mid'][row] = 2.0 * fy / qdyn_mid
++
++        if 'u' in s:
++            u, v = s['u'], s['v']                     # t_n physical, mean included
++            self.d['E'][row] = (0.5 * (u * u + v * v)).mean(dim=(-2, -1)).cpu().numpy()
++            if not self._geom_ready:
++                self._setup_geometry(s['chi'])
++            iy, ix = self._upwin
++            band_u = u[..., iy[0]:iy[1], ix]
++            if self._upwin_keep is not None:
++                band_u = band_u[..., self._upwin_keep]
++            self.d['U_cyl'][row] = band_u.mean(dim=-1).cpu().numpy()
++            self.d['Re_cyl'][row] = self.d['U_cyl'][row] * self.length / self.nu
++            for k, (py, px) in enumerate(self._probe_idx):
++                self.d['probe_u'][row, :, k] = u[..., py, px].cpu().numpy()
++                self.d['probe_v'][row, :, k] = v[..., py, px].cpu().numpy()
++
++        # Z by Parseval on qh(t_n): mean(q^2) = sum w |qh|^2 (norm='forward')
++        qh = s['qh']
++        w = self._parseval_w
++        self.d['Z'][row] = (0.5 * (w * (qh.real ** 2 + qh.imag ** 2))
++                            .sum(dim=(-2, -1))).cpu().numpy()
++
++        self._stash = {}
++        self.i += 1
++        self._since_flush += 1
++        if self._since_flush >= self.flush_every:
++            self.flush()
++
++    def close(self):
++        self.flush()
++
++    # ---- internals ---------------------------------------------------------- #
++
++    def _alloc(self, B, s):
++        n = self.n_rows
++        self.t_arr = np.full(n, np.nan)
++        self.step_arr = np.zeros(n, dtype=np.int64)
++        names = ['U_inlet', 'Re_inlet', 'Fx', 'Fy', 'Cd_inst', 'Cl_inst',
++                 'Cd_mid', 'Cl_mid', 'U_cyl', 'Re_cyl', 'E', 'Z']
++        self.d = {k: np.full((n, B), np.nan) for k in names}
++        n_probes = len(self.explicit_probes) if self.explicit_probes else 5
++        self.d['probe_u'] = np.full((n, B, n_probes), np.nan)
++        self.d['probe_v'] = np.full((n, B, n_probes), np.nan)
++        Nx, Ny = self.grid.Nx, self.grid.Ny
++        wrow = torch.full((1, 1, Nx // 2 + 1), 2.0, device=s['qh'].device,
++                          dtype=torch.float64)
++        wrow[..., 0] = 1.0
++        if Nx % 2 == 0:
++            wrow[..., -1] = 1.0
++        self._parseval_w = wrow
++        self._alloc_done = True
++
++    def _setup_geometry(self, chi):
++        """Locate the obstacle from the smoothed chi actually applied; place the
++        upstream window (1.5*L ahead, |y-yc|<=L/2, solid points excluded) and the
++        wake probes (xc+{1,2,3}L, yc) and (xc+L, yc+-L/2) -- or explicit ones."""
++        g, L = self.grid, self.length
++        dx, dy = float(g.dx), float(g.dy)
++        c2 = chi[0] if chi.dim() == 3 else chi
++        tot = float(c2.sum())
++        ys = torch.arange(g.Ny, device=c2.device, dtype=torch.float64) * dy
++        xs = torch.arange(g.Nx, device=c2.device, dtype=torch.float64) * dx
++        xc = float((c2.sum(dim=0) * xs).sum() / tot)
++        yc = float((c2.sum(dim=1) * ys).sum() / tot)
++        self.meta['obstacle_centroid_xy'] = [xc, yc]
++
++        ix_up = int(round((xc - 1.5 * L) / dx)) % g.Nx
++        iy_lo = int(round((yc - 0.5 * L) / dy))
++        iy_hi = int(round((yc + 0.5 * L) / dy)) + 1
++        self._upwin = ((iy_lo, iy_hi), ix_up)
++        col_chi = c2[iy_lo:iy_hi, ix_up]
++        keep = (col_chi < 0.5)
++        self._upwin_keep = None if bool(keep.all()) else keep
++        self.meta['upstream_window'] = dict(
++            x=ix_up * dx, y_range=[iy_lo * dy, (iy_hi - 1) * dy],
++            excluded_solid_points=int((~keep).sum()))
++
++        if self.explicit_probes:
++            coords = self.explicit_probes
++        else:
++            coords = [(xc + 1 * L, yc), (xc + 2 * L, yc), (xc + 3 * L, yc),
++                      (xc + 1 * L, yc + 0.5 * L), (xc + 1 * L, yc - 0.5 * L)]
++        self._probe_idx = [(int(round(y / dy)) % self.grid.Ny,
++                            int(round(x / dx)) % self.grid.Nx) for x, y in coords]
++        self.meta['probes_xy_requested'] = [list(p) for p in coords]
++        self.meta['probes_ij_used'] = [list(p) for p in self._probe_idx]
++        self._geom_ready = True
++
++    def flush(self):
++        if not self._alloc_done or self.i == 0:
++            return
++        n = self.i
++        payload = dict(t=self.t_arr[:n], step=self.step_arr[:n],
++                       meta=json.dumps(self.meta))
++        for k, v in self.d.items():
++            payload[k] = v[:n]
++        tmp = self.out + '.tmp'
++        np.savez(tmp, **payload)
++        os.replace(tmp, self.out)
++        self._since_flush = 0
+diff --git a/src/qg/solver/opt/operator/obstacle.py b/src/qg/solver/opt/operator/obstacle.py
+new file mode 100644
+index 0000000..874512d
+--- /dev/null
++++ b/src/qg/solver/opt/operator/obstacle.py
+@@ -0,0 +1,189 @@
++import torch
++import torch.nn.functional as F
++import inspect
++from qg.solver.opt.basis import to_physical, to_spectral
++
++    
++def solve_mask(mask, grid, derivative):
++    signature = inspect.signature(mask)
++    num_params = len(signature.parameters)
++    print(f"Mask function {mask.__name__} has {num_params} parameters.")
++    
++    kernel = 1/16 * torch.tensor([[1, 2, 1], [2, 4, 2], [1, 2, 1]]).to(grid.device)[None,None,...]
++
++    if num_params == 3:
++        def _mask(op, state):
++            basic_mask, mask_vel = mask(state, op.grid, op.derivative)
++            chi = F.conv2d(basic_mask[None,:,:,:], kernel, padding='same')[0] # B y x
++            vel = F.conv2d(mask_vel[None,:,:,:], kernel, padding='same')[0] # B 2 y x
++            return chi, vel
++    else:
++        mask = mask(grid, derivative)
++        chi = F.conv2d(mask[None,:,:,:], kernel, padding='same')[0] # B y x
++        vel = torch.zeros([2,]).to(grid.device)
++        def _mask(op, state):
++            return chi, vel
++        
++    return _mask    
++
++#####
++
++
++def compute_normal_vectors(mask):
++    # Compute gradients using central differences
++    grad_x = torch.gradient(mask, dim=-1) [0]
++    grad_y = torch.gradient(mask, dim=-2) [0]
++    
++    # Compute the magnitude of the gradient
++    grad_magnitude = (grad_x**2 + grad_y**2) ** 0.5
++    
++    # Normalize the gradient to get the unit normal vector
++    normal_x = grad_x / (grad_magnitude)  # Add small epsilon to avoid division by zero
++    normal_y = grad_y / (grad_magnitude)
++    
++    # Set normal vectors to zero inside the solid region (where mask == 1)
++    normal_x[~torch.isfinite(normal_x)] = 0
++    normal_y[~torch.isfinite(normal_y)] = 0
++    
++    return normal_x, normal_y
++
++#####
++    
++    
++def brinkman_no_slip_penalty(op, state, chi, chi_velocity):
++    """
++    Computes the brinkman volume penalization for mask (chi) in spectral space (h).
++    """
++    eta = op.params.penalty * op.dt
++    
++    u = to_physical(state.uh) # convert to physical space
++    v = to_physical(state.vh)
++
++    u_chi = chi * (u - chi_velocity[0]) # products to be damped
++    v_chi = chi * (v - chi_velocity[1])
++
++    # SGS-branch scalar recorder (opt-in; state._rec exists only when
++    # qg.diag.scalar_rate is configured): hand over the exact discrete momentum
++    # sink applied this step. Reductions happen only on sampled steps.
++    _rec = getattr(state, '_rec', None)
++    if _rec is not None:
++        _rec.stash_penalty(u, v, u_chi, v_chi, chi)
++
++    u_chi_h = to_spectral(u_chi)
++    v_chi_h = to_spectral(v_chi)
++
++    sponge = (- op.derivative.dx * v_chi_h + op.derivative.dy * u_chi_h) / eta # - d/dx(chi*v) + d/dy(chi*u)
++
++    return sponge
++
++def brinkman_friction_slip_penalty(op, state, chi, chi_velocity):
++    """
++    Computes the brinkman volume penalization for mask (chi) in spectral space (h).
++    """
++    eta = op.params.penalty * op.dt
++    friction = op.params.friction
++
++    u = to_physical(state.uh) # convert to physical space
++    v = to_physical(state.vh)
++    
++    du = (u - chi_velocity[0])
++    dv = (v - chi_velocity[1])
++    
++    normal_x, normal_y = compute_normal_vectors(chi)
++    ndot = du * normal_x + dv * normal_y
++    dun = ndot * normal_x
++    dvn = ndot * normal_y
++    dut = (du - dun)
++    dvt = (dv - dvn)
++    dutr = dut * (1 - friction)
++    dvtr = dvt * (1 - friction)
++
++    u_chi = chi * (dun + dut * friction) # products to be damped
++    v_chi = chi * (dvn + dvt * friction)
++
++    u_chi_h = to_spectral(u_chi)
++    v_chi_h = to_spectral(v_chi)
++    
++    sponge = (-1 * op.derivative.dx * v_chi_h + op.derivative.dy * u_chi_h) / eta # - d/dx(chi*v) + d/dy(chi*u)
++    
++    
++    # modify flow field inside obstacle
++    
++    # get closest point along normal
++    x = torch.arange(0, chi.shape[-1], device=chi.device)
++    y = torch.arange(0, chi.shape[-2], device=chi.device)
++    xc = (torch.round(normal_x) + x).to(torch.int32)
++    yc = (torch.round(normal_y) + y).to(torch.int32)
++    print(xc.shape)
++    uc = dutr[...,yc,xc]
++    vc = dvtr[...,yc,xc]
++    print(yc.shape)
++    
++    u_corr = u * (1 - chi) + chi * uc
++    v_corr = v * (1 - chi) + chi * vc
++    
++    state.uh = to_spectral(u_corr)
++    state.vh = to_spectral(v_corr)
++    
++    return sponge
++
++# def inlet_outlet(op, state,
++#                     inlet_velocity=1.0, mn=0.4, mx=0.6, eta=2.0,
++#                     inlet_x = 0.12,                 
++#                     **kwargs):
++    
++#     x = torch.linspace(0, 1, op.grid.Nx,device=op.grid.device)
++#     y = torch.linspace(0, 1, op.grid.Ny,device=op.grid.device)
++#     X, Y = x[None,:],y[:,None]
++    
++    
++#     ### regions
++#     total_outlet_width = inlet_x
++#     outlet_width = total_outlet_width / 3
++#     outlet_xw = outlet_width / 2
++#     outlet_xv = outlet_width * 3 / 2
++#     outlet_xu = outlet_width * 5 / 2
++    
++    
++#     _outlet_w = ((torch.abs(X - outlet_xw) < outlet_width) \
++#         * (Y >= mn) * (Y <= mx))[None,:,:].to(op.grid.ftype)
++#     _outlet_v = ((torch.abs(X - outlet_xv) < outlet_width) \
++#         * (Y >= mn) * (Y <= mx))[None,:,:].to(op.grid.ftype)
++#     _outlet_ramp_v = torch.nn.functional.relu((outlet_width - torch.abs(X - outlet_xv))/outlet_width)
++#     _outlet_u = ((torch.abs(X - outlet_xu) < outlet_width) \
++#         * (Y >= mn) * (Y <= mx))[None,:,:].to(op.grid.ftype)
++#     _outlet_ramp_u = torch.nn.functional.relu((outlet_width - torch.abs(X - outlet_xu))/outlet_width)
++
++#     _eta = 2 * eta * state.dt
++    
++    
++            
++#     ### inlet
++#     _inlet = _outlet_u
++#     _inlet_ramp = _outlet_ramp_u
++#     vx = - inlet_velocity    
++    
++#     u = to_physical(state.uh)
++#     u += (vx-u)  * _inlet
++#     state.uh = to_spectral(u)
++#     state.update_qp()
++    
++#     ### vorticity / open bc
++#     outlet_vorticity_sponge = to_spectral(_outlet_w * to_physical(1j * op.derivative.kr * state.vh - 1j * op.derivative.ky * state.uh)) / _eta
++    
++#     ### y-velocity / straighten
++#     sv = to_physical(state.vh)
++#     dv = _outlet_v * _outlet_ramp_v * (sv)
++#     v_chi_h = to_spectral(dv)   
++#     outlet_y_velocity_smooth_sponge = (1j * op.derivative.kr * v_chi_h) / _eta
++
++#     # su = to_physical(state.uh)
++#     # du = _inlet * (su - vx)
++#     # u_chi_h = to_spectral(du)
++#     # outlet_x_velocity_sponge = (- 1j * derivative.ky * u_chi_h) / _eta
++    
++
++#     outlet_sponge = outlet_vorticity_sponge \
++#         + outlet_y_velocity_smooth_sponge \
++#         # + outlet_x_velocity_sponge   
++#     return dealias(outlet_sponge, op.derivative, 1/3)
+\ No newline at end of file
+diff --git a/src/qg/solver/qg.py b/src/qg/solver/qg.py
+new file mode 100644
+index 0000000..d9146aa
+--- /dev/null
++++ b/src/qg/solver/qg.py
+@@ -0,0 +1,372 @@
++import torch
++import torch.nn as nn
++import torch.nn.functional as F
++import numpy as np
++
++from tqdm import tqdm
++from qg.solver.opt.basis import _state, to_spectral, to_physical
++from qg.solver.integrator.imex import CN2, AB2
++
++import qg.config as vc
++
++from qg.solver.grid.cartesian import CartesianGrid
++from qg.solver.opt.derivative import Derivative
++from qg.solver.opt.operator import ImplicitLinearOperator, define_explicit_operator
++
++from qg.solver.opt.operator.jacobian import advection_uv
++
++from qg._output.scalars import ScalarRecorder
++from qg._output.dataset import (
++    extract_obstacle_mask,
++    extract_sponge_mask,
++    build_dataset_npz,
++    write_metadata_yaml,
++)
++
++import os
++import logging
++import jpcm.draw as draw
++
++from omegaconf import DictConfig, OmegaConf
++
++class QG():
++    def __init__(self, param,
++                 grid = CartesianGrid,
++                 derivative = Derivative,
++                 implicit_linear_operator = ImplicitLinearOperator,
++                 explicit_sources = [],
++                 logger = logging.getLogger(__name__)):
++        
++        # Snapshot the raw (pre-validation) config for downstream metadata + mask
++        # extraction.  vc.validate(param).solve() mutates `param` in place,
++        # turning the bc/mask/forcing dicts into callables.  We need the dicts
++        # later to know which `Region.outlet_mask_*` to call for chi_sponge.
++        self.raw_param = OmegaConf.to_container(param, resolve=True) if isinstance(param, (DictConfig,)) else dict(param)
++        
++        param = vc.validate(param).solve()
++        self.param = param
++        self.logger = logger
++        self.logger.addHandler(logging.StreamHandler())
++        
++        self.grid = grid(**param.grid)
++        self.derivative = derivative(self.grid).to(self.grid.device)
++        self.implicit_linear_operator = implicit_linear_operator(self.grid, self.derivative, param.pde)
++        self.operator = define_explicit_operator(param, self.grid, self.derivative, self.logger,
++                                        args=(param.time.dt, self.grid, self.derivative, param.pde),
++                                        sources=explicit_sources) 
++        
++        self.dt = param.time.dt
++        self.logger.info(f"Initialized QG model with {self.grid.Nx}x{self.grid.Ny} grid on {self.grid.device}")
++
++    def step(self, state):
++        # state.dt = self.dt # Not sure if this is necessary, need to think about adaptive time stepping TODO
++
++        # vorticity step
++        explicit_source = AB2(self.operator.source(state)) # source term
++        state.qh = CN2(state.qh, explicit_source, state.dt, self.implicit_linear_operator) # Crank-Nicolson        
++        
++        # potential flow velocity step
++        # state.x_adv, state.y_adv = advection_uv(self.operator, state)
++        
++        # print(torch.max(to_physical(explicit_source)), torch.min(to_physical(explicit_source)))
++        # print(torch.max(to_physical(state.qh)), torch.min(to_physical(state.qh)))
++        
++        # update fields
++        state.update_uv()
++        # state.update_potential_flow() # also potential_flow
++        state.update_t()
++
++    def init(self):  
++        return _state(self.param.ic(self.grid, self.derivative), self.dt, self.derivative) # In spectral space
++          
++    def _run(self, prof=None):
++        save_rate = self.param.time.save_rate
++        steps = int(self.param.time.T / self.dt)  # Number of time steps
++
++        # Optional: skip saves until t >= save_after (in physical time units).
++        # The simulation still runs through the transient; we just don't save it.
++        # Defaults to 0 (save from the start) for backward compatibility.
++        save_after = float(getattr(self.param.time, 'save_after', 0.0) or 0.0)
++        save_after_step = int(save_after / self.dt)
++        # Round up to the next save-rate boundary so the first saved snapshot is
++        # at a clean t = k * save_rate * dt with t >= save_after.
++        if save_after_step > 0:
++            first_save_step = ((save_after_step + save_rate - 1) // save_rate) * save_rate
++        else:
++            first_save_step = save_rate  # the first save in the original loop
++
++        state = self.init()
++
++        # Opt-in per-step scalar recorder (SGS branch): active ONLY when the
++        # config has qg.diag.scalar_rate; otherwise rec is None and the hooks
++        # below (and in bc.py / obstacle.py via state._rec) are no-ops, keeping
++        # this path bit-identical to the unhooked solver.
++        rec = ScalarRecorder.build(self.raw_param, self.grid, int(self.param.time.T / self.dt))
++        if rec is not None:
++            state._rec = rec
++            self.logger.info(f"Scalar recorder ON: every {rec.rate} steps -> {rec.out}")
++
++        B = state.qh.shape[0]
++        # Number of save points = floor((steps - first_save_step) / save_rate) + 1.
++        # Loop iterates it from 0 to steps-2, so the last "step" candidate is
++        # it+1 = steps-1. Saves trigger when (it+1) % save_rate == 0 and
++        # (it+1) >= first_save_step.
++        if first_save_step > steps - 1:
++            T_save = 0
++        else:
++            T_save = (steps - 1 - first_save_step) // save_rate + 1
++        Ny, Nx = self.grid.Ny, self.grid.Nx
++        solution = torch.zeros([B, int(steps/save_rate)+1, 4, Ny, Nx])
++
++        # ----- diagnostics buffers ----------------------------------------- #
++        # Volume / domain integrals saved per snapshot. Negligible storage.
++        # Values are computed cheaply from quantities already in `state.out()`:
++        #   channel 0 = q (vorticity in physical space)
++        #   channel 1 = psi (streamfunction)
++        #   channel 2 = u
++        #   channel 3 = v
++        # times are pre-computed: t_k = (first_save_step + k * save_rate) * dt
++        diag_times = (first_save_step + np.arange(T_save, dtype=np.float64) * save_rate) * self.dt
++        diag_E_total = np.zeros((B, int(steps/save_rate)+1), dtype=np.float32)   # 0.5 * <|u|^2>
++        diag_Z_total = np.zeros((B, int(steps/save_rate)+1), dtype=np.float32)   # 0.5 * <q^2>
++        diag_E_zonal = np.zeros((B, int(steps/save_rate)+1), dtype=np.float32)   # 0.5 * <ubar(y)^2>
++        diag_E_eddy = np.zeros((B, int(steps/save_rate)+1), dtype=np.float32)
++        # 1D isotropic energy spectrum, retained over time. kbins set after first sample.
++        spec_kbins = None       # (n_kbins,)
++
++        # cell area for proper averaging (uniform grid)
++        dxdy = self.grid.dx * self.grid.dy
++        domain_area = self.grid.Lx * self.grid.Ly
++
++        if save_after > 0:
++            self.logger.info(
++                f"save_after={save_after}: first save at step "
++                f"{first_save_step} (t={first_save_step*self.dt:.4g}); "
++                f"saving {T_save} snapshots out of {(steps-1)//save_rate} total candidates."
++            )
++
++        for it in tqdm(range(steps)):
++            if rec is not None:
++                rec.begin_step(it, state)
++            self.step(state)
++            if rec is not None:
++                rec.after_step(it, state)
++
++            if (it+1) % save_rate == 0 and (it+1) >= first_save_step:
++                save_index = (it + 1 - first_save_step) // save_rate
++                snap = state.out()  # (B, 4, Ny, Nx)
++                solution[:, save_index, ...] = snap
++                
++                # ---- diagnostics from this snapshot ----------------------- #
++                with torch.no_grad():
++                    q = snap[:, 0]      # (B, Ny, Nx)
++                    u = snap[:, 2]
++                    v = snap[:, 3]
++                    
++                    # Total energy and enstrophy (domain averages)
++                    energy = 0.5 * (u**2 + v**2)               # per cell
++                    enstrophy = 0.5 * q**2
++                    diag_E_total[:, save_index] = energy.mean(dim=(-1, -2)).cpu().numpy()
++                    diag_Z_total[:, save_index] = enstrophy.mean(dim=(-1, -2)).cpu().numpy()
++                    
++                    # Zonal/eddy split: ubar(y) is the x-average; its energy
++                    # is the zonal-mean kinetic energy per unit area.
++                    u_zonal_mean = u.mean(dim=-1)               # (B, Ny)
++                    e_zonal_per_cell = 0.5 * u_zonal_mean**2    # (B, Ny)
++                    diag_E_zonal[:, save_index] = e_zonal_per_cell.mean(dim=-1).cpu().numpy()
++                    diag_E_eddy[:, save_index] = (
++                        diag_E_total[:, save_index] - diag_E_zonal[:, save_index]
++                    )
++                    
++                    # 1D isotropic energy spectrum, averaged over rings in k-space.
++                    # Compute |u_hat|^2 + |v_hat|^2 from the rfft of u and v.
++                    uh = torch.fft.rfft2(u, norm='ortho')         # (B, Ny, Nx//2+1)
++                    vh = torch.fft.rfft2(v, norm='ortho')
++                    spec_2d = 0.5 * (uh.real**2 +uh.imag**2 +vh.real**2+vh.imag**2)   # (B, Ny, Nx//2+1)
++                    
++                    if spec_kbins is None:
++                        # First call: set up the radial bins.
++                        # Use grid.kx/ky if they exist; else build from FFT layout.
++                        ky = torch.fft.fftfreq(Ny, d=self.grid.dy, device=spec_2d.device) * 2 * np.pi
++                        kx_pos = torch.arange(0, Nx//2+1, device=spec_2d.device) * (2*np.pi/self.grid.Lx)
++                        Kx, Ky = torch.meshgrid(kx_pos, ky, indexing='xy')   # (Ny, Nx//2+1)
++                        K = torch.sqrt(Kx**2 + Ky**2)
++                        # 0..k_max bins of width dk = min spacing
++                        dk = float(2*np.pi / max(self.grid.Lx, self.grid.Ly))
++                        k_max = float(K.max().item())
++                        spec_kbins_t = torch.arange(0.0, k_max + dk, dk, device=spec_2d.device)
++                        n_kbins = spec_kbins_t.shape[0] - 1
++                        spec_kbins = (spec_kbins_t[:-1] + spec_kbins_t[1:]).cpu().numpy() / 2
++                        # Pre-bin K so we don't recompute every step
++                        bin_idx = torch.bucketize(K, spec_kbins_t) - 1
++                        bin_idx = bin_idx.clamp(0, n_kbins - 1)
++                        # Mode-counting weight: rfft layout double-counts kx>0 modes
++                        weight = torch.where(Kx > 0, torch.tensor(2.0, device=K.device),
++                                             torch.tensor(1.0, device=K.device))
++                        # Stash for reuse next iter
++                        self._spec_bin_idx = bin_idx
++                        self._spec_weight = weight
++                        self._spec_n_kbins = n_kbins
++                    
++                    # Bin spec_2d into spec_kbins by summing weighted contributions
++                    weighted = spec_2d * self._spec_weight[None, ...]
++                    flat_b = weighted.reshape(B, -1)
++                    flat_idx = self._spec_bin_idx.reshape(-1)
++                    for b in range(B):
++                        out_b = torch.zeros(self._spec_n_kbins, device=flat_b.device, dtype=flat_b.dtype)
++                        out_b.scatter_add_(0, flat_idx, flat_b[b])
++            
++            if prof is not None:
++                prof.step()  # Step the profiler
++            
++        diagnostics = {
++            'times': diag_times,
++            'E_total': diag_E_total,
++            'Z_total': diag_Z_total,
++            'E_zonal': diag_E_zonal,
++            'E_eddy': diag_E_eddy,
++            'spectrum_k': spec_kbins if spec_kbins is not None
++                          else np.zeros(0, dtype=np.float32),
++        }
++        if rec is not None:
++            rec.close()
++        solution[:, -1, ...] = state.out() # B T C H W
++        return solution, diagnostics
++    
++    def solve(self, save_path, name='DNS', clamp=0.3): # for direct user call
++        if hasattr(self.param, 'profile') and self.param.profile:
++            self.logger.info(f"Profiling enabled.")
++            from torch.profiler import profile, ProfilerActivity, record_function
++            with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],record_shapes=True, with_stack=True) as prof:
++                with record_function("_run"):
++                    solution_torch, diagnostics = self._run(prof)
++            print(prof.key_averages().table(sort_by="self_cuda_time_total", row_limit=-1))
++            prof.export_chrome_trace(os.path.join(save_path, f'{name}_trace.json'))
++            self.logger.info(f"Profile trace saved at {os.path.join(save_path, f'{name}_trace.json')}")
++        else:
++            solution_torch, diagnostics = self._run()
++        solution = solution_torch.cpu().numpy()
++        self.logger.info(f"Simulation complete.")
++            
++        
++        np.save(os.path.join(save_path,f'{name}.npy'), solution)
++        self.logger.info(f"Simulation saved at {save_path}")
++        
++        # ----------------------------------------------------------------- #
++        # FR dataset packed save: omega + static masks + run metadata.      #
++        # Scenario-agnostic: skips masks that are not active in this run.   #
++        # ----------------------------------------------------------------- #
++        # solution[..., 0, :, :] is omega in physical space (channel 0 of state.out)
++        omega_FR = solution[:, :, 0, ...]  # (B, T_save, Ny, Nx)
++        
++        # Extract static masks. Need a state instance for the obstacle wrapper
++        # signature; init() is cheap so we just call it again.
++        with torch.no_grad():
++            dummy_state = self.init()
++        chi_obs = extract_obstacle_mask(self.param, self.grid, self.derivative, dummy_state)
++        chi_sponge = extract_sponge_mask(self.raw_param.get('qg', {}).get('bc', None) or self.raw_param.get('bc', None),
++                                         self.grid)
++
++        T_save = omega_FR.shape[1]
++        dataset = build_dataset_npz(omega_FR, chi_obs, chi_sponge,
++                                    save_index_count=T_save,
++                                    dt=self.param.time.dt,
++                                    save_rate=self.param.time.save_rate)
++        # Override times with the offset-aware values from diagnostics.
++        # build_dataset_npz assumes saves start at t=0; with save_after>0 they
++        # start later. Diagnostics has the correct values for both cases.
++        dataset['times'] = diagnostics['times']
++        np.savez_compressed(os.path.join(save_path, f'{name}_FR.npz'), **dataset)
++        self.logger.info(f"FR dataset saved: {name}_FR.npz "
++                         f"(omega {omega_FR.shape}, "
++                         f"chi_obs={'yes' if chi_obs is not None else 'no'}, "
++                         f"chi_sponge={'yes' if chi_sponge is not None else 'no'})")
++
++        # Metadata sidecar: full raw config so post-processing can rebuild
++        # operators with the exact same parameters.
++        write_metadata_yaml(os.path.join(save_path, f'{name}_FR_params.yaml'),
++                            self.raw_param)
++        self.logger.info(f"FR run params saved at {name}_FR_params.yaml")
++        
++        # ----------------------------------------------------------------- #
++        # Save per-snapshot diagnostics: cheap to compute, expensive to     #
++        # recompute later; useful for ensemble-level GP regime mapping.     #
++        # ----------------------------------------------------------------- #
++        np.savez_compressed(os.path.join(save_path, f'{name}_FR_diagnostics.npz'),
++                            **diagnostics)
++        # Also a human-readable summary (averages over the run, by batch).
++        summary = {
++            'n_snapshots': int(T_save),
++            'time_range': [float(diagnostics['times'][0]), float(diagnostics['times'][-1])],
++            'E_total_mean':       diagnostics['E_total'].mean(axis=1).tolist(),
++            'Z_total_mean':       diagnostics['Z_total'].mean(axis=1).tolist(),
++            'E_zonal_mean':       diagnostics['E_zonal'].mean(axis=1).tolist(),
++            'E_eddy_mean':        diagnostics['E_eddy'].mean(axis=1).tolist(),
++            'zonal_fraction_end': (
++                diagnostics['E_zonal'][:, -1] /
++                np.maximum(diagnostics['E_total'][:, -1], 1e-30)
++            ).tolist(),
++        }
++        with open(os.path.join(save_path, f'{name}_FR_diagnostics_summary.yaml'), 'w') as f:
++            import yaml as _yaml
++            _yaml.safe_dump(summary, f, sort_keys=False)
++        self.logger.info(f"FR diagnostics saved: {name}_FR_diagnostics.npz "
++                         f"(zonal/total at end = "
++                         f"{summary['zonal_fraction_end'][0]:.3f})")
++        # ----------------------------------------------------------------- #
++        
++        # select a couple batches for visualization (permute 0,1 axes)
++        solution_b = np.transpose(solution[0:4,:,:1,...],(1,0,2,3,4))  # T (selected_B) C H W
++        # Flip y so row 0 of the array (physical y=0) renders at the BOTTOM
++        # of the video. jpcm.draw.mp4 / imshow defaults to origin='upper'
++        # which otherwise puts y=0 at the top of the frame.
++        solution_b = solution_b[..., ::-1, :].copy()
++
++        # Video rendering is non-essential — FR data is already saved above.
++        # On CPU-only nodes, einops/triton imports inside jpcm.draw can hang
++        # or fail. Wrap in try/except so the run still succeeds.
++        try:
++            draw.mp4(os.path.join(save_path,f'{name}.mp4'), solution_b,
++                       fps=self.param.fps, triplet=True)
++            draw.mp4(os.path.join(save_path,f'{name}_clamped.mp4'), solution_b,
++                       fps=self.param.fps, triplet=True, clamp=clamp)
++            draw.mp4(os.path.join(save_path,f'{name}_seismic.mp4'), solution_b,
++                       fps=self.param.fps, triplet=True, cmap='seismic', clamp=clamp)
++            self.logger.info(f"Videos saved at {save_path}")
++        except Exception as e:
++            self.logger.warning(f"Video rendering skipped (non-fatal): {type(e).__name__}: {e}")
++
++        # ----------------------------------------------------------------- #
++        # Cleanup: DNS.npy is the redundant 4-channel buffer (q + psi + u + v).
++        # All non-q channels are deterministic functions of q via puv(), so the
++        # information is already preserved in DNS_FR.npz. We delete the .npy
++        # to save ~5x disk per run.
++        # ----------------------------------------------------------------- #
++        
++        
++        # draw.mp4(os.path.join(save_path,'DNS.mp4'), solution_b,
++        #            fps=20, triplet=False, mn = [4,1])
++        # draw.mp4(os.path.join(save_path,'DNS_clamped.mp4'), solution_b,
++        #            fps=20, triplet=False, mn = [4,1], clamp=0.3)
++        # draw.mp4(os.path.join(save_path,'DNS_seismic.mp4'), solution_b,
++        #            fps=20, triplet=False, mn = [4,1], cmap='seismic', clamp=0.3)    
++        
++        # # make streamlines from the vorticity field
++        # draw.streamlines(os.path.join(save_path,f'{name}_streamlines.mp4'), solution_b[:,:,1,...], -solution_b[:,:,2,...], 
++        #                  fps=self.param.fps) # u, -v
++        
++        
++        
++        
++           
++        self.logger.info(f"Videos saved.")
++        
++        return solution_torch
++
++    def nn_step(self, u, dt=None):
++        if dt is None:
++            dt = self.dt
++        qh = to_spectral(u) # assumes B H W, vorticity only
++        state = _state(qh, dt, self.derivative) # In spectral space
++        self.step(state)
++        return state._out()[:,None,None,...]  # B H W
+\ No newline at end of file
+-- 
+2.9.2
+
