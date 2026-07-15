@@ -41,8 +41,17 @@ PUSH_BACKOFF_S = 10
 STATUS_MAX_LINES = 20
 EVENT_COLS = ['timestamp', 'event', 'job_id', 'host', 'note']
 
+# Cluster git quirk (2026-07-15): /usr/bin/git on mseas is 1.8.3.1, which
+# predates linked-worktree support -- it cannot even `rev-parse` inside the
+# qg-sgs-closure / qg-wiener-conditioning worktrees. The worktree-capable
+# 2.9.2 lives at /opt/rocks/bin/git. Prefer it when present; QG_GIT overrides.
+GIT = os.environ.get('QG_GIT') or (
+    '/opt/rocks/bin/git' if os.path.exists('/opt/rocks/bin/git') else 'git')
+
 
 def _run(cmd, cwd, timeout=180):
+    if cmd and cmd[0] == 'git':
+        cmd = [GIT] + list(cmd[1:])
     return subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True,
                           timeout=timeout)
 
