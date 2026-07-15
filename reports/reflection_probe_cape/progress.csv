@@ -5,3 +5,4 @@ timestamp,event,job_id,host,note
 2026-07-15T19:11:06,start,1835281,ibamd-compute-0-4.local,"probe_reflection_hypothesis.py --ckpt runs_piff/piff_cape_gjs_ylp75/best.pt --config conf_piff_cape_gjs_ylp75.yaml --member FPCape-sine --ratios 0.3,0.5,0.7,0.859,1.0 --device cpu --report-run reflection_probe_cape"
 2026-07-15T19:14:00,fail,1835281,ibamd-compute-0-4.local,probe_reflection_hypothesis.py exited rc=1 -- raw log in <branch>/logs/
 2026-07-15T19:48:30,start,1835288,ibamd-compute-0-4.local,"probe_reflection_hypothesis.py --ckpt runs_piff/piff_cape_gjs_ylp75/best.pt --config conf_piff_cape_gjs_ylp75.yaml --member FPCape-sine --ratios 0.3,0.5,0.7,0.859,1.0 --device cpu --report-run reflection_probe_cape"
+2026-07-15T19:52:26,fail,1835288,ibamd-compute-0-4.local,probe_reflection_hypothesis.py exited rc=1 -- raw log in <branch>/logs/
