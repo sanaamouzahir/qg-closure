@@ -2,3 +2,4 @@ timestamp,event,job_id,host,note
 2026-07-15T17:05:30,start,1834941,ibamd-compute-0-4.local,diagnose_error_tails.py --ckpt runs_piff/piff_cape_gjs_ylp75/best.pt --config conf_piff_cape_gjs_ylp75.yaml --split val --device cpu --report-run error_tails_cape
 2026-07-15T17:12:19,done,1834941,ibamd-compute-0-4.local,error-tails diag piff_cape_gjs_ylp75 (5 members)
 2026-07-15T18:13:24,start,1835247,ibamd-compute-0-1.local,diagnose_error_tails.py --ckpt runs_piff/piff_cape_gjs_ylp75/best.pt --config conf_piff_cape_gjs_ylp75.yaml --split val --device cpu --report-run error_tails_cape
+2026-07-15T18:23:46,done,1835247,ibamd-compute-0-1.local,error-tails diag piff_cape_gjs_ylp75 (5 members)
