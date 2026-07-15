@@ -113,3 +113,6 @@ Thumbs.db
 !ml_closure/runs_piff/piff_cape_gjs_ylp75/eval/**/*.png
 !ml_closure/pngs/crps_head/**/*.png
 !ml_closure/pngs/ring_side_by_side/**/*.png
+!ml_closure/pngs/sigma_conformal_prototype/*.png
+!ml_closure/pngs/sigma_recal_3param_fpc_ylp75/*.png
+!ml_closure/pngs/sigma_recal_3param_cape_ylp75/*.png
