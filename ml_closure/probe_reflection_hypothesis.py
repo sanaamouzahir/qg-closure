@@ -93,7 +93,11 @@ def measure_ratio(run, frames, fr_dir, band_D=(-4.0, -1.5)):
     """r(t) = 1 + mean_slab(u_omega)/U_in(t) on the LES frames, from DNS_FR.
     Sign calibrated against the LES ubar single frame."""
     om_mm = np.load(fr_dir / 'DNS_FR_omega.npy', mmap_mode='r')
+    if om_mm.ndim == 4:          # stored with the (1, T, Ny, Nx) batch dim
+        om_mm = om_mm[0]
     fr_t = np.load(fr_dir / 'DNS_FR_times.npy')
+    if fr_t.ndim > 1:
+        fr_t = fr_t.reshape(-1)
     x_lo = run.x_c + band_D[0] * run.D
     x_hi = run.x_c + band_D[1] * run.D
     # LES ubar reference (single stored frame): slab mean / U at that frame
