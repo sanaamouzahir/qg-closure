@@ -2,6 +2,13 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-15 — CHARTER v1.4/v1.5 PROPAGATION (global supervisor Fable, local station)
+- Execution-model section appended to CLAUDE.md: I21c ssh sequence is the ONLY day-mode
+  submission path; I22 path partition; I23 digest logging; I24 reflex ladder; I25 session-open.
+- diagnostics/digest_writer.py added (I23b, stdlib-only). Monitor v3 (reflex ladder) is
+  canonical on main — this branch adopts it on its NEXT submission and confirms in its
+  next digest. Running w31 / FT-arm jobs and their v2 monitors are NOT touched.
+
 ## 2026-07-15 ~10:30 — morning session: w31 TRUE plateau confirmed -> anchored arms FIRED (manual); w31 eval package
 - OVERNIGHT AUTOFIRE POST-MORTEM: mseas cron judged "plateau" at 20:40 (premature — best_val
   still improving), fire returned rc=127 (script not yet present in worktree at that moment),
