@@ -152,6 +152,19 @@ def diagnose_member(model, run, frames, device, args, fig_root, out_root):
     thr10 = 10.0 * rmse
     exceed = ((np.abs(E) > thr10) & M).sum(axis=0).astype(np.float64)
     aeE = np.where(M, np.abs(E), 0.0)
+    # relative-error map (Sanaa 2026-07-15 follow-up): time-mean |e| per pixel
+    # over RMS of the TRUE filtered closure -- error in closure units.
+    cnt2d = M.sum(axis=0).astype(np.float64)
+    mae2d = np.where(cnt2d > 0, aeE.sum(axis=0) / np.maximum(cnt2d, 1), np.nan)
+    rel2d = mae2d / max(rms_t, 1e-30)
+    rel_rmse = rmse / max(rms_t, 1e-30)
+    np.savez_compressed(
+        out_dir / 'fields.npz',
+        mean_abs_error=mae2d.astype(np.float32),
+        relative_error=rel2d.astype(np.float32),
+        exceed_count_gt10x=exceed.astype(np.int32),
+        X=X.astype(np.float32), Y=Y.astype(np.float32),
+        sdf=SDF.astype(np.float32), rms_truth=rms_t, rmse=rmse)
     flat_idx = np.argpartition(aeE.ravel(), -args.top_k)[-args.top_k:]
     order = np.argsort(aeE.ravel()[flat_idx])[::-1]
     flat_idx = flat_idx[order]
@@ -204,6 +217,21 @@ def diagnose_member(model, run, frames, device, args, fig_root, out_root):
     savefig(fig, fig_dir / 'huge_error_exceedance_count_map.png')
 
     fig, ax = plt.subplots(figsize=(8.5, 4.6))
+    finite = np.isfinite(rel2d) & (rel2d > 0)
+    if finite.any():
+        vmin = max(float(np.nanpercentile(rel2d[finite], 1)), 1e-6)
+        vmax = float(np.nanmax(rel2d[finite]))
+        im = ax.imshow(np.where(finite, rel2d, np.nan), origin='lower',
+                       extent=ext, aspect='equal', cmap='seismic',
+                       norm=LogNorm(vmin=vmin, vmax=max(vmax, vmin * 10)),
+                       interpolation='nearest')
+        plt.colorbar(im, ax=ax, shrink=0.85, label='|e| / RMS(truth Pi*)')
+    ax.contour(X, Y, SDF, levels=[0.0], colors='k', linewidths=1.0)
+    ax.set_title(f'{name}: time-mean |error| / RMS(true filtered closure) '
+                 f'(rel-RMSE {rel_rmse:.3f})', fontsize=9)
+    savefig(fig, fig_dir / 'relative_error_map_abs_error_over_rms_truth.png')
+
+    fig, ax = plt.subplots(figsize=(8.5, 4.6))
     sgn = np.array([np.sign(ev['error']) for ev in events])
     mag = np.array([abs(ev['error']) for ev in events])
     ax.scatter([ev['x'] for ev in events], [ev['y'] for ev in events],
@@ -231,7 +259,7 @@ def diagnose_member(model, run, frames, device, args, fig_root, out_root):
     savefig(fig, fig_dir / 'error_magnitude_vs_closure_magnitude.png')
 
     metrics = {'member': name, 'split': args.split, 'n_pixel_samples': int(n),
-               'rmse': rmse, 'rms_truth': rms_t,
+               'rmse': rmse, 'rms_truth': rms_t, 'rel_rmse': rel_rmse,
                'exceedance_counts': counts,
                'activity_split': sets,
                'extreme_events_within_2_of_body': ev_wake,
@@ -304,6 +332,7 @@ def main():
         re_c = met['reynolds']['pearson_Re_rmse']
         rows.append({
             'member': met['member'], 'rmse': round(met['rmse'], 5),
+            'rel_rmse': round(met['rel_rmse'], 3),
             'n_px': met['n_pixel_samples'],
             'n_gt_10x': c10['count'],
             'frac_gt_10x': f"{c10['fraction']:.2e}",
