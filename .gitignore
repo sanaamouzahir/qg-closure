@@ -107,3 +107,9 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# curated review figures unignored for Sanaa local workflow (2026-07-15)
+!ml_closure/runs_piff/piff_fpc_gjs_ylp75/eval/**/*.png
+!ml_closure/runs_piff/piff_cape_gjs_ylp75/eval/**/*.png
+!ml_closure/pngs/crps_head/**/*.png
+!ml_closure/pngs/ring_side_by_side/**/*.png
