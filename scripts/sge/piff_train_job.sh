@@ -3,8 +3,15 @@
 # verbatim to train_piff.py. Submitted 6x by submit_piff_grid.sh
 # (lr x weight-decay grid), one GPU job each: -q ibgpu.q -l gpu=1 ONLY.
 #
+# CHARTER v1.4 retrofit (T4, 2026-07-15): raw logs -> <branch>/logs/ (I23a,
+# never committed); start/done/fail digest events -> reports/<run-name>/
+# (I23b, pushed via diagnostics/digest_writer.py); LIVE+FINALIZE monitors
+# chained per I18a must carry the I24 reflex ladder (monitor v3 on main --
+# supervisor confirms adoption in the next digest). Day-mode submissions via
+# the I21c ssh sequence ONLY.
+#
 # Usage:
-#   qsub -N piff_<tag> -q ibgpu.q -l gpu=1 \
+#   qsub -N piff_<tag> -q ibgpu.q -l gpu=1 -m ea -M $QG_NOTIFY_EMAIL \
 #        -o logs/\$JOB_NAME.\$JOB_ID.log -j y -cwd -V \
 #        piff_train_job.sh --run-name <name> --lr 3.0e-4 --weight-decay 1.0e-4
 
@@ -16,6 +23,17 @@ set -e
 
 QG_ROOT=/gdata/projects/ml_scope/Closure_modeling/QG-closure
 BRANCH="$QG_ROOT/qg-sgs-closure"
+DIGEST="$BRANCH/diagnostics/digest_writer.py"
+# run-name for the digest: value following --run-name in the forwarded args
+RUN_NAME=""
+prev=""
+for a in "$@"; do [[ "$prev" == "--run-name" ]] && RUN_NAME=$a; prev=$a; done
+digest_event() {  # I23b; no-op if digest_writer not yet on this checkout
+    [[ -f "$DIGEST" && -n "$RUN_NAME" ]] && \
+        python "$DIGEST" --repo-dir "$BRANCH" --run-name "$RUN_NAME" \
+            --event "$1" --job-id "${JOB_ID:-}" --note "$2" || true
+}
+trap 'digest_event fail "piff train exited rc=$?"' ERR
 
 source "$QG_ROOT/qg-env-piff/bin/activate"
 export TMPDIR="$QG_ROOT/tmp"
@@ -38,6 +56,8 @@ cd "$BRANCH/ml_closure"
 echo "[piff_train] host $HOSTNAME date $(date -u +%FT%TZ)"
 echo "[piff_train] cmd: python -u train_piff.py $*"
 echo "----------------------------------------------------------------------"
+digest_event start "piff grid point launched: $*"
 python -u train_piff.py "$@"
+digest_event done "piff train complete"
 echo "----------------------------------------------------------------------"
 echo "[piff_train] done at $(date -u +%FT%TZ)"

@@ -2,6 +2,14 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-15 — CHARTER v1.4/v1.5 PROPAGATION + T4 RETROFIT (global supervisor Fable, local station)
+- Execution-model section appended to CLAUDE.md: I21c ssh sequence is the ONLY day-mode
+  submission path; I22 path partition; I23 digest logging; I24 reflex ladder; I25 session-open.
+- T4 retrofit: piff_train_job.sh now emits start/done/fail digest events to
+  reports/<run-name>/ via diagnostics/digest_writer.py (added, stdlib-only) and documents
+  branch-logs/-only raw logs + -m ea -M. Monitor v3 (reflex ladder) is canonical on main —
+  monitor_piff.py adopts the ladder on this branch's NEXT submission; confirm in next digest.
+
 ## 2026-07-13 — DIAGNOSTICS LIBRARY REORGANIZED FOR SANAA (reorg agent Fable; late-afternoon session)
 - Executed Sanaa's reorganization order on ml_closure/: the whole diagnostics output is now
   a plain-English library. START POINT: ml_closure/README_FOR_SANAA.txt.
