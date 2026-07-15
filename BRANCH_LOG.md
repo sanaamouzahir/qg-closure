@@ -2,6 +2,27 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-15 ~10:30 — morning session: w31 TRUE plateau confirmed -> anchored arms FIRED (manual); w31 eval package
+- OVERNIGHT AUTOFIRE POST-MORTEM: mseas cron judged "plateau" at 20:40 (premature — best_val
+  still improving), fire returned rc=127 (script not yet present in worktree at that moment),
+  marker w31_fired set regardless => NO arms fired overnight, cron stood down permanently.
+  The 20:50 "likely already fired" triage email was WRONG (EXISTS guard passed clean this
+  morning). Net favorable: arms now warm from ep32 (val .0605) instead of ep~8 (~.09).
+- TRUE PLATEAU at 10:16: best_val 0.0605 @ ep32, 11 epochs stale (criterion 6), well under
+  cond_v2 gate .0968. FIRED submit_w31_p1.sh --go (dry-run preflight PASS): w31p1a lam 3e-2
+  trainer 1834629 (mon 1834630/31), w31p1b lam 3e-1 trainer 1834632 (mon 1834633/34).
+  ~6-9 GPU-h each. w31 trainer 1833569 left running per Sanaa (FT on top of frozen best).
+- W31 EVAL PACKAGE (Sanaa 10:1x order "best current model + diagnostics"): eval_deriv_by_root
+  job 1834635 on all 41 roots -> training_runs/deriv7_cond_local_w31/eval_by_root_val.csv.
+  VERDICT: w31 ep32 beats cond_v2 in 40/41 (member,dT) cells; Nddot ratio median 0.665
+  (34% cut in the rollout floor); kf4 Nddot .0195/.0195/.0319 across dTs. ONE regression:
+  DEC-loRe @ 5e-3 Nddot 1.48x worse (.118 vs .080) — flagged, physics-sanity pending.
+  Figures + table: diagnostics/Results/w31_eval_20260715/{w31_training_curves.png,
+  w31_vs_condv2_Nddot_by_root.png, w31_vs_condv2_Nddot_table.txt}; scripts
+  diagnostics/plot_w31_curves_20260715.py, plot_w31_vs_condv2_20260715.py (CPU-only rule).
+- Emails: report_20260715_morning_narrative.mail (item-0e full narrative) queued 10:32;
+  diagnostics-locations email follows once the SGS ylp75 eval package lands.
+
 ## 2026-07-14 ~19:30 — session-1: option-6 verdict (negative, informative) + CERTIFICATE BUG FIX
 - vn_clip_taps.py (a4bcd0f, agent-built, jobs 1833782/88/90/91): NO small-symbol offline clip
   exists. lam_sym 1.0: rms symbol change 0.02 but |G| stuck 1.02-1.09; lam_sym 1e-3: |G|<=1
