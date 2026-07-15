@@ -93,8 +93,12 @@ for g in $(cat "$STATE/supported_geoms" 2>/dev/null); do
         [ -f "$QG_DIR/conf/scenario/$scen.yaml" ] || { flag_hold "s1_$g" "scenario conf $scen.yaml missing under $QG_DIR/conf/scenario/"; continue; }
         [ -f "$ML/analyze_sponge_sweep.py" ] || { flag_hold "s1_$g" "analyze_sponge_sweep.py missing in ml_closure"; continue; }
         [ -f "$BRANCH/scripts/sge/phaseB_A_job.sh" ] || { flag_hold "s1_$g" "phaseB_A_job.sh worker missing"; continue; }
-        tbl=$(ls "$ENS/tables/"const*Re5600*.npz "$ENS/tables/"const*.npz 2>/dev/null | head -1)
-        [ -n "$tbl" ] || { flag_hold "s1_$g" "no const inlet table found in $ENS/tables/"; continue; }
+        # shared tables/ dir is MISSING post-yield (2026-07-15 incident) --
+        # use the const member's own manifest table (U(t<30)=2.0 verified;
+        # per-member S2 checks catch any higher-U insufficiency later)
+        cm=$(eval echo \"\$MEMBERS_$g\" | awk '{print $1}')
+        tbl=$ENS/$cm/U_of_t.npz
+        [ -f "$tbl" ] || { flag_hold "s1_$g" "member table $tbl missing"; continue; }
         hold_ids=""
         for p in $PENALTIES; do
             rd="outputs/sponge_sweep/$g/p${p/./p}"
@@ -136,9 +140,12 @@ for g in $(cat "$STATE/supported_geoms" 2>/dev/null); do
                 mv "$md"/DNS_LES_s4*.npz "$arch/" 2>/dev/null
                 cp "$md/DATASET_MANIFEST.md" "$arch/" 2>/dev/null
                 cp "$md/config.yaml" "$arch/" 2>/dev/null
+                cp "$md/U_of_t.npz" "$arch/" 2>/dev/null
             fi
-            tbl=$(grep -oE '/[^" ]*tables/[^" ]*\.npz' "$arch/config.yaml" 2>/dev/null | head -1)
-            [ -n "$tbl" ] && [ -f "$tbl" ] || { flag_hold "s2_$g" "cannot recover inlet table for $m from archived config.yaml"; continue 2; }
+            # member-local manifest table (shared tables/ dir lost post-yield);
+            # the ARCHIVED copy is passed so the rerun can never clobber it
+            tbl=$arch/U_of_t.npz
+            [ -f "$tbl" ] || { flag_hold "s2_$g" "U_of_t.npz missing for $m (member dir and archive)"; continue 2; }
             dtov=$(grep -E '^\s+dt:' "$arch/config.yaml" | head -1 | awk '{print $2}')
             scen_var2="SCEN_$g"
             sid=$(qsub -terse -N "rr_${m:0:9}" -o "$LOGDIR/" -j y -cwd -V \
