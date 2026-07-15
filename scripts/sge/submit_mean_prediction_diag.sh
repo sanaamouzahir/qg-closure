@@ -22,6 +22,10 @@
 #              scripts/sge/submit_mean_prediction_diag.sh"
 set -euo pipefail
 
+# mseas default git (1.8.3.1) cannot parse linked worktrees; the 2.9.2 at
+# /opt/rocks/bin can (2026-07-15 incident). Harmless no-op elsewhere.
+[[ -d /opt/rocks/bin ]] && export PATH=/opt/rocks/bin:$PATH
+
 BRANCH=$(git rev-parse --show-toplevel)
 EMAIL=${QG_NOTIFY_EMAIL:-sanaamz@mit.edu}
 mkdir -p "$BRANCH/logs"

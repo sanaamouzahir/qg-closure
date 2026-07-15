@@ -17,6 +17,10 @@ set -e
 QG_ROOT=/gdata/projects/ml_scope/Closure_modeling/QG-closure
 BRANCH="$QG_ROOT/qg-sgs-closure"
 
+# worktree-capable git first (default 1.8.3.1 cannot parse linked worktrees;
+# the digest push inside tools needs this on compute nodes too)
+[[ -d /opt/rocks/bin ]] && export PATH=/opt/rocks/bin:$PATH
+
 source "$QG_ROOT/qg-env-piff/bin/activate"
 export TMPDIR="$QG_ROOT/tmp"
 export MPLCONFIGDIR="$QG_ROOT/mplcache"
