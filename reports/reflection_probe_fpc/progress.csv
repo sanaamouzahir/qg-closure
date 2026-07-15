@@ -1,3 +1,6 @@
 timestamp,event,job_id,host,note
 2026-07-15T18:35:26,start,1835248,ibamd-compute-0-4.local,"probe_reflection_hypothesis.py --ckpt runs_piff/piff_fpc_gjs_ylp75/best.pt --config conf_piff_fpc_gjs_ylp75.yaml --member FPC-const --ratios 0.7,0.8,0.859,0.9,1.0 --device cpu --report-run reflection_probe_fpc"
 2026-07-15T18:39:31,fail,1835248,ibamd-compute-0-4.local,probe_reflection_hypothesis.py exited rc=1 -- raw log in <branch>/logs/
+2026-07-15T19:09:36,start,1835278,ibamd-compute-0-4.local,"probe_reflection_hypothesis.py --ckpt runs_piff/piff_fpc_gjs_ylp75/best.pt --config conf_piff_fpc_gjs_ylp75.yaml --member FPC-const --ratios 0.7,0.8,0.859,0.9,1.0 --device cpu --report-run reflection_probe_fpc"
+2026-07-15T19:11:06,start,1835280,ibamd-compute-0-4.local,"probe_reflection_hypothesis.py --ckpt runs_piff/piff_fpc_gjs_ylp75/best.pt --config conf_piff_fpc_gjs_ylp75.yaml --member FPC-const --ratios 0.7,0.8,0.859,0.9,1.0 --device cpu --report-run reflection_probe_fpc"
+2026-07-15T19:17:05,fail,1835280,ibamd-compute-0-4.local,probe_reflection_hypothesis.py exited rc=1 -- raw log in <branch>/logs/
