@@ -1,5 +1,0 @@
-config,ms_per_step,x_bare,s_to_horizon
-fine_ref,0.6221,0.938,0.149
-bare,0.6635,1.000,0.008
-r3_analytic,6.0550,9.126,0.073
-closure:deriv7_filtered_lr5e-5(cheap_deriv),6.3519,9.574,0.076

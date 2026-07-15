@@ -1,0 +1,166 @@
+{
+  "config": {
+    "root_dir": "data/ensemble_N5_7lag/FRC-b2/sweep_dT_5em3",
+    "ckpt": "data/ensemble_N5_7lag/training_runs/deriv7_filtered_lr5e-5/best.pt",
+    "ic_index": "0",
+    "restart_ic": "None",
+    "Delta_T": "None",
+    "K": "20",
+    "horizon_turnovers": "10.0",
+    "tau_eddy": "None",
+    "n_steps": "12",
+    "n_checkpoints": "24",
+    "arms": "bare,r3only,closure",
+    "no_truth": "False",
+    "r4": "False",
+    "dealias_nn": "True",
+    "diag": "False",
+    "ckpt2": "None",
+    "freeze_sigma": "False",
+    "log_sigma": "True",
+    "nn_kcut": "None",
+    "nn_gamma": "1.0",
+    "nn_clip": "None",
+    "nn_project_radius": "None",
+    "nn_dissipative_proj": "True",
+    "drop_nddot": "False",
+    "track_lte": "False",
+    "profile_step": "0",
+    "save_refs": "False",
+    "load_refs": "None",
+    "pareto": "False",
+    "pareto_dt_factors": "1,2,4,8,16,40,100",
+    "scalars_every": "1",
+    "blowup_factor": "10.0",
+    "world_mask_radius": "None",
+    "nn_float64": "True",
+    "device": "cuda",
+    "tag": "g3_b2_on",
+    "out_dir": "/gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/diagnostics/Results/apost_dissproj_20260713/gate"
+  },
+  "Delta_T": 0.005,
+  "K": 20,
+  "h_fine": 0.00025,
+  "M": 12,
+  "tau_eddy": 1.089365985606919,
+  "model": "cheap_deriv",
+  "cp_steps": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+  ],
+  "t_truth": 1.1108758449554443,
+  "bare_walltime": 0.026171207427978516,
+  "bare_cfl_max": 0.15172158945204178,
+  "bare_blowup_step": null,
+  "bare_verdict": "STABLE",
+  "r3only_walltime": 0.02632927894592285,
+  "r3only_cfl_max": 0.151721589386006,
+  "r3only_blowup_step": null,
+  "r3only_verdict": "STABLE",
+  "closure_walltime": 0.10324478149414062,
+  "closure_cfl_max": 0.1517216542559027,
+  "closure_blowup_step": null,
+  "closure_verdict": "STABLE",
+  "closure_proj_shells_mean": 100.0,
+  "closure_proj_shells_max": 130,
+  "closure_proj_removed_frac_mean": 0.010052314546854636,
+  "closure_proj_removed_frac_max": 0.026031134775824673,
+  "error_table": [
+    {
+      "t": 0.0,
+      "relL2_bare": 3.2026476036501135e-16,
+      "relL2_r3only": 3.2026476036501135e-16,
+      "relL2_closure": 3.2026476036501135e-16
+    },
+    {
+      "t": 0.005,
+      "relL2_bare": 2.3401144064445342e-09,
+      "relL2_r3only": 2.2687042195948015e-09,
+      "relL2_closure": 5.727588553424353e-08
+    },
+    {
+      "t": 0.01,
+      "relL2_bare": 3.873022719355527e-09,
+      "relL2_r3only": 3.6993192995756623e-09,
+      "relL2_closure": 3.301303132002849e-08
+    },
+    {
+      "t": 0.015,
+      "relL2_bare": 5.520975299292246e-09,
+      "relL2_r3only": 5.246339448902482e-09,
+      "relL2_closure": 8.108743159870265e-08
+    },
+    {
+      "t": 0.02,
+      "relL2_bare": 7.2203980144362875e-09,
+      "relL2_r3only": 6.846995253185463e-09,
+      "relL2_closure": 1.1432589684869835e-07
+    },
+    {
+      "t": 0.025,
+      "relL2_bare": 8.94065259469504e-09,
+      "relL2_r3only": 8.469612513386442e-09,
+      "relL2_closure": 1.867812356971515e-07
+    },
+    {
+      "t": 0.03,
+      "relL2_bare": 1.0670862890783584e-08,
+      "relL2_r3only": 1.0102839690034313e-08,
+      "relL2_closure": 3.939830420370628e-07
+    },
+    {
+      "t": 0.035,
+      "relL2_bare": 1.2406311797269401e-08,
+      "relL2_r3only": 1.1741731160861138e-08,
+      "relL2_closure": 6.925072034362948e-07
+    },
+    {
+      "t": 0.04,
+      "relL2_bare": 1.414460090036464e-08,
+      "relL2_r3only": 1.3383765382871138e-08,
+      "relL2_closure": 1.3786434791404509e-06
+    },
+    {
+      "t": 0.045,
+      "relL2_bare": 1.5884378458547993e-08,
+      "relL2_r3only": 1.5027518518406477e-08,
+      "relL2_closure": 2.7081236809723586e-06
+    },
+    {
+      "t": 0.05,
+      "relL2_bare": 1.7624824632904137e-08,
+      "relL2_r3only": 1.667212568845036e-08,
+      "relL2_closure": 5.38126685521805e-06
+    },
+    {
+      "t": 0.055,
+      "relL2_bare": 1.936541317437409e-08,
+      "relL2_r3only": 1.8317030975266977e-08,
+      "relL2_closure": 1.0856293035113782e-05
+    },
+    {
+      "t": 0.06,
+      "relL2_bare": 2.1105790523239925e-08,
+      "relL2_r3only": 1.996186035829837e-08,
+      "relL2_closure": 2.2072861238850494e-05
+    }
+  ],
+  "final_relL2": {
+    "bare": 2.1105790523239925e-08,
+    "r3only": 1.996186035829837e-08,
+    "closure": 2.2072861238850494e-05
+  },
+  "improvement_x_closure": 0.0009561873422232898,
+  "improvement_x": 0.0009561873422232898
+}

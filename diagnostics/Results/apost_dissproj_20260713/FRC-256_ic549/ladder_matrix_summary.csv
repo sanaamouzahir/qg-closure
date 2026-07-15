@@ -1,0 +1,7 @@
+case,ckpt,variant,Delta_T,blowup_step,verdict,final_relL2_bare,final_relL2_closure,improvement_x,corner_drift_last,low_drift_last,proj_on,proj_shells_mean,proj_removed_frac_mean
+case_opt2_256_ic549_full_0p015,opt2_256_ic549,full,0.015,,STABLE,1.6225e-01,1.9081e-01,0.85,nan,1.0994e+00,False,,
+case_opt2_256_ic549_full_dissproj_0p015,opt2_256_ic549,full_dissproj,0.015,,STABLE,1.6225e-01,1.8157e-01,0.89,nan,1.0010e+00,True,47.0,1.308e-02
+case_opt2_256_ic549_full_0p01,opt2_256_ic549,full,0.01,,STABLE,6.4236e-03,1.8223e-02,0.35,nan,3.8684e-02,False,,
+case_opt2_256_ic549_full_dissproj_0p01,opt2_256_ic549,full_dissproj,0.01,,STABLE,6.4236e-03,1.8541e-02,0.35,nan,4.2800e-02,True,54.0,1.399e-02
+case_opt2_256_ic549_full_0p005,opt2_256_ic549,full,0.005,,STABLE,7.3044e-04,3.3200e-05,22.00,nan,2.0277e-02,False,,
+case_opt2_256_ic549_full_dissproj_0p005,opt2_256_ic549,full_dissproj,0.005,,STABLE,7.3044e-04,3.5403e-05,20.63,nan,2.0221e-02,True,57.4,2.071e-02

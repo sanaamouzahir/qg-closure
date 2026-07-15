@@ -137,7 +137,7 @@ if [ "$DO_CONVERT" -eq 1 ]; then
             -j y
             -cwd
             -V
-            -q "ibfdr.q"
+            -q "all.q"
         )
 
         CONVERT_QSUB_OUT=$(qsub -terse "${CONVERT_QSUB_FLAGS[@]}" \

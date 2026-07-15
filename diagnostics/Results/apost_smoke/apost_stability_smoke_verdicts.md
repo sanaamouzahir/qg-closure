@@ -1,1 +1,0 @@
-[3c verdict] smoke (dT=0.005, model cheap_deriv): bare: STABLE through 0 turnovers (Z_end/Z_0=1.01, CFL_max=0.15); r3only: STABLE through 0 turnovers (Z_end/Z_0=1.01, CFL_max=0.15); closure: STABLE through 0 turnovers (Z_end/Z_0=1.01, CFL_max=0.15).

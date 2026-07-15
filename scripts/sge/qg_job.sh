@@ -6,7 +6,7 @@
 #
 # All <args...> are passed verbatim to run_qg.py. Examples:
 #   qsub -N cape_512 -o /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/cape_512.log -e /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-wiener-conditioning/logs/cape_512.err -j y \
-#        -q ibfdr.q \
+#        -q all.q \
 #        qg_job.sh scenario=flow_past_cape qg.grid.Nx=512 qg.grid.Ny=512 \
 #                  qg.time.T=20 hydra.run.dir=outputs/cape_v3_512_T20
 #

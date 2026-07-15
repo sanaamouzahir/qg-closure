@@ -1,0 +1,7 @@
+case,ckpt,variant,Delta_T,blowup_step,verdict,final_relL2_bare,final_relL2_closure,improvement_x,corner_drift_last,low_drift_last,proj_on,proj_shells_mean,proj_removed_frac_mean
+case_opt2_combo_ic527_full_0p015,opt2_combo_ic527,full,0.015,10,UNSTABLE,,,,3.2918e+00,6.3072e-01,False,,
+case_opt2_combo_ic527_full_dissproj_0p015,opt2_combo_ic527,full_dissproj,0.015,10,UNSTABLE,,,,3.2797e+00,6.4754e-01,True,95.2,1.961e-02
+case_opt2_combo_ic527_full_0p01,opt2_combo_ic527,full,0.01,13,UNSTABLE,7.6240e-02,,,5.3950e+00,3.3712e+00,False,,
+case_opt2_combo_ic527_full_dissproj_0p01,opt2_combo_ic527,full_dissproj,0.01,13,UNSTABLE,7.6240e-02,,,5.3981e+00,3.2674e+00,True,92.8,9.850e-03
+case_opt2_combo_ic527_full_0p005,opt2_combo_ic527,full,0.005,,STABLE,1.5888e-03,1.7226e-03,0.92,4.3149e-02,1.7710e-02,False,,
+case_opt2_combo_ic527_full_dissproj_0p005,opt2_combo_ic527,full_dissproj,0.005,,STABLE,1.5888e-03,1.7339e-03,0.92,4.3082e-02,1.7580e-02,True,102.9,1.099e-02

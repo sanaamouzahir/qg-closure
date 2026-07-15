@@ -1,0 +1,33 @@
+**ALL THREE GATES PASS — BOTH SMOKE ARMS RUNNING (INFORMATIONAL)**
+
+
+**GATE RESULTS (job 1828802)**
+
+    GATE   WHAT IT CHECKS                                        RESULT
+    G-R1   trainer unroll == validated a-posteriori stepper      PASS — max|d omega| = 0.0 EXACTLY (bare AND zero-NN arms)
+    G-R2   M=1 step-1 residual == offline Nddot (your check)     PASS — 0.0575/0.0587 vs expected 0.0575/0.0586 (16 val windows)
+    G-R3   gradient flow (perturbed-init recovery)               PASS — 128x-floor perturbation recovered 18.1x in 50 steps
+
+    1. G-R3 note: the first probe design failed HONESTLY — physics init already sits at the 5e-7 loss floor, so "drop 10x" was unpassable by construction. Redesigned as perturb-then-recover (committed bf4edbf).
+
+    2. G-R1 at exactly 0.0 means the trainer and the validated 4-arm rollout share ONE stepper, bit for bit.
+
+
+**SMOKES RUNNING (I18 three-job units, ~2-4 h GPU each)**
+
+    ARM                                  TRAINER  MONITORS       CONFIG
+    warm start from conditioned ep63     1828852  1828853/54     kf4 + FRC-256 deep dirs, curriculum M 1->2->4, 30 ep, full BPTT, lr 5.0e-5
+    physics init (control)               1828855  1828856/57     same
+
+    1. Success signal: n_blown_val FALLING with epoch at the M=2/M=4 stages (the cond ckpt currently blows at step 7-13 for dT >= 1e-2 in free rollout).
+
+    2. Verdict email when they land (~midnight); 4-arm table rerun with the smoke ckpts after that.
+
+
+**WHERE**
+
+    1. Runs: training_runs/rollout_ft_{cond,phys}/ (log.csv, best.pt, config.json)
+
+    2. Gate log: qg-wiener-conditioning/logs/rollout_gt2.1828802.log
+
+    3. Ledger: qg-wiener-conditioning/DECISIONS.md; living doc diagnostics/RESULTS.md

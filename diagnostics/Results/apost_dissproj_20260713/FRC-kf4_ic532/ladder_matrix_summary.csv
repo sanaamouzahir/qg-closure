@@ -1,0 +1,7 @@
+case,ckpt,variant,Delta_T,blowup_step,verdict,final_relL2_bare,final_relL2_closure,improvement_x,corner_drift_last,low_drift_last,proj_on,proj_shells_mean,proj_removed_frac_mean
+case_opt2_kf4_ic532_full_0p015,opt2_kf4_ic532,full,0.015,,STABLE,9.3986e-03,4.9649e-03,1.89,3.4667e-01,4.5595e-02,False,,
+case_opt2_kf4_ic532_full_dissproj_0p015,opt2_kf4_ic532,full_dissproj,0.015,,STABLE,9.3986e-03,4.7816e-03,1.97,3.4569e-01,4.5227e-02,True,108.1,2.620e-02
+case_opt2_kf4_ic532_full_0p01,opt2_kf4_ic532,full,0.01,,STABLE,2.1994e-03,3.5654e-04,6.17,2.5036e-02,2.9594e-02,False,,
+case_opt2_kf4_ic532_full_dissproj_0p01,opt2_kf4_ic532,full_dissproj,0.01,,STABLE,2.1994e-03,3.5360e-04,6.22,2.4261e-02,2.9594e-02,True,101.9,2.055e-02
+case_opt2_kf4_ic532_full_0p005,opt2_kf4_ic532,full,0.005,,STABLE,2.7099e-04,1.2709e-05,21.32,2.2661e-02,1.4560e-02,False,,
+case_opt2_kf4_ic532_full_dissproj_0p005,opt2_kf4_ic532,full_dissproj,0.005,,STABLE,2.7099e-04,1.2962e-05,20.91,2.2658e-02,1.4569e-02,True,106.6,1.715e-02

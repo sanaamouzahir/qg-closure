@@ -1,0 +1,28 @@
+**ROLLOUT-LOSS TRAINER: BUILT, REVIEWED, COMMITTED; GATES RUNNING (INFORMATIONAL)**
+
+
+**WHAT LANDED (commit f4085e2)**
+
+    1. training/train_deriv_rollout.py (810 lines): unroll-M curriculum ("1:10,2:10,4:10"), --grad-mode {full BPTT, trunc:k}, gradient checkpointing, warm-start, blown-window val accounting (a blown rollout is COUNTED, never averaged in).
+
+    2. THE KEY PROPERTY: the trainer drives the EXACT stepper the validated 4-arm table ran — run_arm() now hands out its one_step closure (2-line surgical refactor, defaults bit-identical). One source of truth for scheme + closure assembly.
+
+    3. Fresh-context reviews: closure-reviewer NO blockers (5 minor findings fixed); sge-checker PASS; monitor unit (I18) restored to the worktree.
+
+
+**GATES RUNNING NOW (job 1828786, ~15 min)**
+
+    1. G-R1: zero-NN unrolled == bare AND r3only arms, bit-exact.
+
+    2. G-R2: M=1 from cond ep63 on kf4 must reproduce 0.0575 / 0.0586 / 0.0646 (yesterday's offline-consistency match, now an automated gate).
+
+    3. G-R3: 2-window overfit, loss must drop >10x.
+
+
+**ON GATES PASS (tonight, autonomous per your green light)**
+
+    1. TWO smokes as I18 three-job units: rollout_ft_cond (warm start cond ep63) + rollout_ft_phys (physics init), kf4 + FRC-256 deep dirs, curriculum 1->4, 30 epochs, ~2-4 h GPU each.
+
+    2. Success signal to watch: n_blown_val FALLING with epoch at dT >= 1e-2 (cond ep63 currently blows at step 7-13 there).
+
+    3. Smoke verdict email when they land; full 4-arm table rerun after.

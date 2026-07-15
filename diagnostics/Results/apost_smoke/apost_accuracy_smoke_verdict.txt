@@ -1,1 +1,0 @@
-[3a verdict] smoke: final rel-L2 closure=2.177e-05, bare=3.136e-08, r3only=2.609e-08; closure improves over bare by 0.0x at t=0.06

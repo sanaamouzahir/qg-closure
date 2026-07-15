@@ -98,3 +98,35 @@ If categorization is unclear: use `FLAG`, line 1 `categorization uncertain`.
 - **Log wiring:** every SGE .sh writes `#$ -o/-e` to this branch's `logs/` as
   `$JOB_NAME.$JOB_ID.log|.err` (qg-free-time-fd pattern). sge-checker audits this.
 - **Ledgers:** BRANCH_LOG.md + diagnostics/RESULTS_*.md committed AND pushed same-day.
+
+## Addendum 2026-07-08 (Sanaa, [QG][GLOBAL]) — control reframe + eval protocol
+- The smoke ckpt (deriv7_filtered_lr5e-5) is the CONTROL: rel_Nddot(t=0)=0.172 on kf4@1.5e-2
+  == the 0.19 pooled plateau; the gap to kf4's own raw floor (0.031) is the (ii) compromise
+  made visible. NO anomaly. The remediation ladder characterizes the control (paper "before"
+  leg) — it is NOT a fix we depend on.
+- **cond_local eval protocol (mandatory order):** run the t=0 LTE row FIRST (regression
+  detector) on kf4@1.5e-2 / IC 837, BEFORE any horizon rollout. Acceptance:
+  rel_Nddot(t=0) ∈ 0.023–0.05. A reading ~0.17 ⇒ training regression (wrong pool /
+  conditioning inert) ⇒ FLAG immediately, no rollout conclusions. Then the full horizon with
+  the same ladder flags available from the start (per-tier error ~4× smaller ⇒ weaker
+  feedback; a different rung may suffice).
+- Job naming: trainer/monitor names MUST differ within the first 10 chars (qstat truncation
+  made deriv7_cond_local + 2 monitors all read 'deriv7_con' — the "duplicate jobs" scare).
+  Convention: <short>_train / <short>_mon. One instance per job, ever.
+- deriv7_hygiene ablation (17 control roots minus Re25k@1.5e-2, unconditioned, floor 0.1):
+  isolates hygiene-vs-conditioning for the paper's ablation table. Predicted ~0.05 pooled.
+
+## CHARTER v1.2 (2026-07-08, Sanaa — appended; she pushes the canonical charter)
+- **I16 ANOMALY PLAYBOOK.** On any surprising result: (1) bug hunt FIRST — prefer the decisive
+  discriminating check (ablation arm, logged diagnostic: r3anal / lte_*.csv / sigma_hat_*.csv
+  exist for this) over rerunning. (2) No bug ⇒ propose-and-execute a remediation ladder,
+  easiest→hardest, ONE variable per rung, A/B against saved refs, stop at first success.
+  (3) Never end an email at "it failed": every anomaly email carries the ladder and the first
+  rung's result. Steps (1)–(2) are GREEN/YELLOW per existing tiers — act, don't ask.
+  Driver support: `--nn-kcut` (R1 spectral cap), `--nn-gamma` (R2 under-relaxation),
+  `--nn-clip` (R3 pointwise clip); R4 (training-side rollout-aware/noise-injected fine-tune)
+  is report-only → deriv7_cond_local follow-up spec.
+- **I17 ONE-DOCUMENT RULE.** One living document per workstream (one driver per evaluation
+  family, one derivation doc per theory thread, one charter). New content extends the existing
+  doc; a NEW file requires a reason in DECISIONS.md. Superseded docs are merged-and-deleted.
+  Reports: one email = one self-contained story (6.1 header, finding, ladder, NEXT).

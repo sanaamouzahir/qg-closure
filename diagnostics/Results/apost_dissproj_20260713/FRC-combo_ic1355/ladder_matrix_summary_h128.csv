@@ -1,0 +1,3 @@
+case,ckpt,variant,Delta_T,blowup_step,verdict,final_relL2_bare,final_relL2_closure,improvement_x,corner_drift_last,low_drift_last,proj_on,proj_shells_mean,proj_removed_frac_mean
+case_opt2_combo_ic1355_h128_full_0p005,opt2_combo_ic1355_h128,full,0.005,36,UNSTABLE,3.7138e-03,,,3.9025e-01,8.0498e-02,False,,
+case_opt2_combo_ic1355_h128_full_dissproj_0p005,opt2_combo_ic1355_h128,full_dissproj,0.005,37,UNSTABLE,3.7138e-03,,,1.8651e-01,5.6673e-02,True,108.1,4.927e-02

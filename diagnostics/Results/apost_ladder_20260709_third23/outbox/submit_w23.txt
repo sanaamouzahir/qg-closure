@@ -1,0 +1,13 @@
+**PARAMETERS OF THE RUN**
+
+    1.  Job 1828403 "apw23spec" (ibgpu.q, queued behind the two SGS runs; expected <30 min once running). Log: qg-wiener-conditioning/logs/apw23spec.1828403.log. Commit ee09459.
+
+    2.  PART 1 (spectral diagnostics): per-|k|-shell rel error eps(k) of predicted [Ndot, Nddot, N3dot] on VAL samples, 512^2 members FRC-{b1,b2,kf4,combo} x 3 dT + Re25k x {5e-3,1e-2} (Re25k@1.5e-2 excluded per I6), 6 samples/root, MEDIAN aggregation, predictions end-projected with the solver mask (= training convention). THREE ckpts: cond ep63 (frozen), STANDING UNCOND CONTROL = deriv7_filtered_floor0.1 (the brief's 0.186-Nddot baseline), plus deriv7_filtered_lr5e-5 (the ckpt in all rollout ladders, for continuity).
+
+    3.  PART 3 (the 2/3 world): new --world-mask-radius: radial |k| <= (2/3)min(kmax) = mode 170.67 replaces the solver's sqrt2 mask for the ENTIRE harness -- RK4 truth REGENERATED under the 2/3 mask (NEW ref files apost_refs_w23_*, originals untouched), IC stack projected onto the same ball. Arms per dT: bare + ANALYTIC r3anal + NN closure x {UNCOND lr5e-5, COND ep63 frozen}, full variant, all 3 dT (1.5e-2 K=1500 / 1e-2 K=1000 / 5e-3 K=500, h_fine=1e-5), kf4 IC 837, M=16. drop-Nddot omitted (optional per mandate). CAVEAT stated up front: ckpts were TRAINED on sqrt2-mask data -> train/eval mask mismatch.
+
+    4.  First Part-1 data point from the CPU gate (kf4@1.5e-2, 1 sample, Nddot bands low/mid/annulus): cond 0.175/0.048/0.055, control 0.571/0.103/0.119 -- rel error is LARGEST at LOW k, annulus modest. Full profile + interpretation in the LANDED email.
+
+**NEXT**
+
+    1.  LANDED email follows with: Part-1 profile tables + knee + annulus-weighting proposal (NO training launched), Part-2 dealias-count audit with file:line + the fold math writeup, Part-3 2/3-world table vs today's sqrt2-world results. [no action needed]

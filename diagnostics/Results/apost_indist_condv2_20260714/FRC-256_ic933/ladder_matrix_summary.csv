@@ -1,0 +1,4 @@
+case,ckpt,variant,Delta_T,blowup_step,verdict,final_relL2_bare,final_relL2_closure,improvement_x,corner_drift_last,low_drift_last,proj_on,proj_shells_mean,proj_removed_frac_mean
+case_condv2_256_ic933_full_0p015,condv2_256_ic933,full,0.015,7,UNSTABLE,4.7460e-02,,,nan,1.3844e+00,False,,
+case_condv2_256_ic933_full_0p01,condv2_256_ic933,full,0.01,13,UNSTABLE,5.0482e-03,,,nan,2.0953e+00,False,,
+case_condv2_256_ic933_full_0p005,condv2_256_ic933,full,0.005,,STABLE,5.7671e-04,4.3411e-05,13.29,nan,1.7801e-02,False,,

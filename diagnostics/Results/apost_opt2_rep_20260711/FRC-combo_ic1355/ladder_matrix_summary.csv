@@ -1,0 +1,4 @@
+case,ckpt,variant,Delta_T,blowup_step,verdict,final_relL2_bare,final_relL2_closure,improvement_x,corner_drift_last,low_drift_last
+case_opt2_combo_ic1355_full_0p015,opt2_combo_ic1355,full,0.015,,STABLE,9.9893e-02,6.5810e-02,1.52,2.9391e+00,6.8638e-02
+case_opt2_combo_ic1355_full_0p01,opt2_combo_ic1355,full,0.01,,STABLE,4.7886e-03,1.3821e-03,3.46,4.3182e-02,3.2144e-02
+case_opt2_combo_ic1355_full_0p005,opt2_combo_ic1355,full,0.005,,STABLE,5.3719e-04,4.8365e-05,11.11,2.4902e-02,1.5351e-02

@@ -1,0 +1,4 @@
+case,ckpt,variant,Delta_T,blowup_step,verdict,final_relL2_bare,final_relL2_closure,improvement_x,corner_drift_last,low_drift_last
+case_opt2_kf4_ic912_full_0p015,opt2_kf4_ic912,full,0.015,16,UNSTABLE,7.2072e-02,,,2.1399e+00,8.2568e+00
+case_opt2_kf4_ic912_full_0p01,opt2_kf4_ic912,full,0.01,,STABLE,2.7377e-03,6.3891e-02,0.04,4.0237e+00,3.8180e-01
+case_opt2_kf4_ic912_full_0p005,opt2_kf4_ic912,full,0.005,,STABLE,3.1217e-04,2.0426e-05,15.28,2.6890e-02,1.5370e-02

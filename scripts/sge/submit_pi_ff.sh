@@ -62,7 +62,7 @@ if [ "$USE_GPU" -eq 1 ]; then
     QSUB_FLAGS+=(-q ibgpu.q)
     QSUB_FLAGS+=(-l "gpu=1")
 else
-    QSUB_FLAGS+=(-q "ibfdr.q")
+    QSUB_FLAGS+=(-q "all.q")
 fi
 
 echo "Submitting job '$JOBNAME'"

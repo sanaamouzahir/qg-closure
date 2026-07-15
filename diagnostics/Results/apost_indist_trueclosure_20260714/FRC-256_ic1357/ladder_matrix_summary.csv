@@ -1,0 +1,4 @@
+case,ckpt,variant,Delta_T,blowup_step,verdict,final_relL2_bare,final_relL2_closure,improvement_x,corner_drift_last,low_drift_last,proj_on,proj_shells_mean,proj_removed_frac_mean
+case_trueclos_256_ic1357_full_0p015,trueclos_256_ic1357,full,0.015,,STABLE,9.3602e-01,1.7636e-03,,nan,5.4881e-02,False,,
+case_trueclos_256_ic1357_full_0p01,trueclos_256_ic1357,full,0.01,,STABLE,7.6677e-03,2.8442e-04,,nan,4.3642e-02,False,,
+case_trueclos_256_ic1357_full_0p005,trueclos_256_ic1357,full,0.005,,STABLE,7.8822e-04,1.5571e-05,,nan,2.5387e-02,False,,

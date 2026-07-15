@@ -1,0 +1,4 @@
+case,ckpt,variant,Delta_T,blowup_step,verdict,final_relL2_bare,final_relL2_closure,improvement_x,corner_drift_last,low_drift_last,proj_on,proj_shells_mean,proj_removed_frac_mean
+case_condv2_kf4_ic532_full_0p015,condv2_kf4_ic532,full,0.015,8,UNSTABLE,9.3986e-03,,,4.1695e+00,3.0101e+00,False,,
+case_condv2_kf4_ic532_full_0p01,condv2_kf4_ic532,full,0.01,14,UNSTABLE,2.1994e-03,,,6.1480e+00,4.3267e-02,False,,
+case_condv2_kf4_ic532_full_0p005,condv2_kf4_ic532,full,0.005,,STABLE,2.7099e-04,2.3722e-03,0.11,5.8739e-01,1.4102e-02,False,,

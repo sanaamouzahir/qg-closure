@@ -69,8 +69,9 @@ if [ "$USE_GPU" -eq 1 ]; then
     QSUB_FLAGS+=(-q ibgpu.q)
     QSUB_FLAGS+=(-l "gpu=1")
 else
-    # CPU job (hard rule: the amd queue and per-job vmem requests are forbidden).
-    QSUB_FLAGS+=(-q "ibfdr.q")
+    # CPU job (hard rule: the amd queue and per-job vmem requests are forbidden;
+    # all.q = the cluster's CPU queue, same convention as the monitor sidecars).
+    QSUB_FLAGS+=(-q "all.q")
 fi
 
 echo "Submitting job '$JOBNAME'"

@@ -1,0 +1,71 @@
+**PARAMETERS OF THE RUN**
+
+    1.  Job 1828403 apw23spec (ibgpu.q, done 2026-07-09 ~17:0x EDT). Commits ee09459 (code) + 5fa9dbe (ledgers), pushed.
+
+    2.  PART 1: eps(k) per-shell rel error of predicted [Ndot,Nddot,N3dot], VAL samples (6/root, median), 512^2 FRC-{b1,b2,kf4,combo} x 3 dT + Re25k x {5e-3,1e-2}; predictions end-projected with the solver mask (= training loss convention). Ckpts: cond = cond_local_v2 FROZEN ep63; control = deriv7_filtered_floor0.1 (THE STANDING UNCOND REFERENCE per the brief, Nddot 0.186); rollout_unc = deriv7_filtered_lr5e-5 ep8 (the ckpt in all rollout ladders).
+
+    3.  PART 3: 2/3-WORLD rollout -- radial |k| <= (2/3)min(kmax) = mode 170.67 replaces the solver's sqrt2 mask for the WHOLE harness (RK4 truth REGENERATED under the 2/3 mask, new refs apost_refs_w23_*, originals untouched; IC row 837 projected). kf4, M=16, K=1500/1000/500 (h_fine 1e-5), gamma=1. Arms: bare + ANALYTIC (r3anal) + NN x {uncond lr5e-5, cond ep63}. CAVEAT (up front): both ckpts were TRAINED on sqrt2-mask data -> train/eval mask mismatch.
+
+**PART 1 -- SPECTRAL ERROR PROFILES (Nddot pooled medians, bands low k<60 | mid 60-170 | annulus 171-241)**
+
+    ckpt          low      mid      annulus    knee(2x-min)   eps(30)  eps(240)
+    cond ep63     0.108    0.056    0.094      k=209          0.18     0.16
+    control       0.290    0.095    0.129      k=232          0.45     0.21
+    rollout_unc   0.188    0.151    0.161      k=235          0.35     0.27
+
+    1.  THE PROFILE IS U-SHAPED, NOT A HIGH-K CLIFF. Rel error is LARGEST at LOW k, minimum at k~100-200, modest rise to the mask edge. The annulus is only x1.4-1.7 worse than mid A-PRIORI -- the rollout catastrophe is FEEDBACK amplification of a modest error, not a mis-predicted tail. (Consistent with the analytic arms being stable.)
+
+    2.  CONDITIONING BENT THE PROFILE MOSTLY AT LOW K: low 0.290 -> 0.108 (2.7x), mid 1.7x, annulus only 1.4x. Exceptions: b1/b2 @ 1.5e-2, where cond ep63 is WORSE than control in the annulus (0.31/0.52 vs 0.12/0.41) -- the near-wall large-dt rows.
+
+    3.  rollout_unc (ep8) is uniformly the WEAKEST -- today's sqrt2-world UNCOND rollout rows understate what the control ckpt would do.
+
+    4.  ANNULUS-WEIGHTING PROPOSAL (design only, NOTHING launched): per-shell floored rel loss with w(kappa) = 1 + lambda for kappa in [171,241], lambda ~= 3 (raises the annulus loss share from ~x1.4 to parity with low+mid at init) -- but PAIRED with rollout-aware noise injection (I16-R4): the profile shows low-k is the worst band a-priori, so static weighting alone attacks the wrong ordering; the annulus problem is feedback-borne.
+
+**PART 2 -- HOW MANY TIMES DO WE DEALIAS (file:line), AND THE FOLD MATH**
+
+    1.  SOLVER (generates all training data): jacobian patch computes u*q, v*q UNMASKED (qg/solver/opt/operator/jacobian.py:12-18); ONE dealias on the SUM of RHS patches (operator/__init__.py:48). => ONCE per RHS evaluation.
+
+    2.  HARNESS + TARGETS: per-PRODUCT masking, 2 per Jacobian: rollout_timed_pareto.py:121-122 (AB2CN2 N eval, 2/step) and :82 (J_phys inside RK4 truth, 8/fine-step); rollout_perfect_closure.py:86,113-114 + analytic_n_derivs_hat:171-199 (order k = k+1 Jacobians, each masked); slice_deriv_from_deep.py:45-47 + compute_derivatives:66-81 and build_training_data_mmap.py:102-103 (targets: 2+4+6+8 = 20 masked products per [N..N3dot] anchor); rollout_aposteriori.py: f_anal, f_NN, e_r4 masked once each at assembly.
+
+    3.  CORRECTION TO YOUR PICTURE (second half): products ARE masked after each product -- but the INTERMEDIATES (omega-dot, psi-dot, ...) are NOT re-masked before the next product, and need not be: omega^(k) = L omega^(k-1) + N^(k-1) and psi^(k) = inv_lap omega^(k) are DIAGONAL (band-preserving) images of already-masked quantities, so they never exceed the ball. Also: per-product masking == post-sum masking EXACTLY (the mask commutes with ik and distributes over sums) -- so the solver's once-per-RHS and the builder's per-product conventions are the same operator.
+
+    4.  MODEL CHAIN: ZERO dealias inside (cheap_deriv has no FFTs; cond_local's 2 rFFTs are the sigma-hat context only). ONE end-projection: train_deriv.py:229-232 (loss) / rollout f_NN. Structure TimeFD -> grads -> 16 Jacobian products (the SINGLE quadratic level) -> linear mix, so end-projection == 16 per-product projections EXACTLY. Locked-fact justification CONFIRMED -- with the addendum that this equivalence is about mask PLACEMENT and holds at any radius; alias-FREEDOM additionally requires 2/3-band inputs.
+
+    5.  THE FOLD MATH (N=512, kmax=256): sqrt2 convention retains R = 0.943 kmax (mode 241.4). Products reach 2R = 1.886 kmax; grid folds land at >= 2kmax - 2R = 0.114 kmax (mode 29.3) -- INSIDE the retained ball, numerically indistinguishable from resolved content, IRREMOVABLE by any post-hoc mask, per-product or end. With strict 2/3 (R = 0.667 kmax) folds land at >= (2/3)kmax = the cut -- removed EXACTLY (the classical 2/3 rule). So in the sqrt2 world, alias pollution enters EVERY Jacobian product of solver/truth/analytic chains in 29.3 <= |k| <= 241.4, COMPOUNDING with derivative order (order k consumes order k-1's polluted output); the NN's 16 products fold the same way -- and so do its TARGETS (same field pairings), making the pollution largely a deterministic, learnable component a-priori; at rollout the NN's folds act on self-generated history. Truth and arms share the polluted dynamics, so sqrt2-world scoring is self-consistent: the sqrt2 mask defines a (slightly alias-polluted) dynamical system, not a scoring error.
+
+**PART 3 -- THE 2/3 WORLD (head-on answer)**
+
+    arm       dT       blowup   final relL2 (bare)      impr     low-k drift
+    analytic  1.5e-2   none     2.710e-4 (6.400e-3)     23.6x    0.036
+    analytic  1e-2     none     8.050e-5 (1.310e-3)     16.3x    0.025
+    analytic  5e-3     none     1.673e-5 (1.587e-4)     9.5x     0.013
+    uncond    1.5e-2   s12      --                      --       4.50
+    uncond    1e-2     none     4.042e-1 (collapse)     0.00x    2.81
+    uncond    5e-3     s14      --                      --       23.3
+    cond      1.5e-2   s6       --                      --       2.52
+    cond      1e-2     s7       --                      --       0.30
+    cond      5e-3     s6       --                      --       0.015
+
+    (corner-band sigma drift is meaningless here -- shells >170.7 are empty by construction; low-k (k<60) drift is the health metric. sqrt2-world comparators: analytic 132.6x/35.1x/71.4x; uncond blowup s12 / 0.16x / 0.06x; cond s7 / s13 / 0.72x.)
+
+    1.  ANSWER: **NO.** In the alias-clean world the ML closure does NOT approach the analytic closure -- it gets strictly WORSE than in the sqrt2 world (uncond now blows even at 5e-3; cond blows at all three dT). The analytic closure is stable and strong in BOTH worlds. Note bare itself improves ~6x in the clean world (annulus content was a large share of bare's error vs its own truth).
+
+    2.  LOW-K CLEANLINESS: under the analytic closure the 2/3 world keeps low-k clean (1.3-3.6% drift over 16 steps). The NN corrupts low-k through its error FEEDBACK, not through aliasing. A-priori (Part 1), low-k is every model's WORST relative band in both worlds -- model error, not alias pollution.
+
+    3.  INTERPRETATION UNDER THE CAVEAT: the train/eval mask mismatch dominates -- the sqrt2-trained stencils absorb that world's band + fold structure (the Wiener mechanism), and break on 2/3-band inputs. Two consequences: (a) aliasing per se is exonerated as the NN's core problem (removing it entirely HURTS the NN); (b) since the answer is NO, your conditional next task (FFT-free per-product dealiasing design note) is NOT triggered. The clean discriminating test needs a MASK-MATCHED model: retrain/fine-tune on 2/3-world data -- or the rollout-aware fine-tune in the sqrt2 world. Both are training-side; awaiting your pick.
+
+**FILES**
+
+    1.  Part 1: diagnostics/Results/spectral_error_profile_20260709/spectral_error_profile.npz (profiles + band tables, one file).
+
+    2.  Part 3: diagnostics/Results/apost_ladder_20260709_third23/ -- 9 case npz + ladder_matrix_summary.csv + 3 new refs npz (sqrt2 originals untouched).
+
+    3.  Writeups committed: diagnostics/RESULTS_2026-07-09_apost_matrix.md Parts 3-4 (this email's content, git-visible); commits ee09459 + 5fa9dbe on exp/wiener-conditioning.
+
+**NEXT**
+
+    1.  Pick the discriminating training-side test: (a) fine-tune cond_local on 2/3-world-sliced targets (mask-matched; needs a small re-slice) vs (b) rollout-aware/noise-injected fine-tune in the sqrt2 world per I16-R4 + the lambda~3 annulus weighting. My recommendation: (b) first -- it attacks the demonstrated feedback mechanism without touching the data convention. [RECOMMENDED]
+
+    2.  Re-run the sqrt2-world UNCOND rollout rows with the CONTROL ckpt (floor0.1) -- Part 1 shows ep8/lr5e-5 flattered nothing; 10 min GPU, refs cached.
+
+    3.  cond_local_v2 is killed at ep78 (plateaued, your order) -- if conditioning proceeds, the Wiener doc formalization gates the next model per the brief.

@@ -1,0 +1,4 @@
+case,ckpt,variant,Delta_T,blowup_step,verdict,final_relL2_bare,final_relL2_closure,improvement_x,corner_drift_last,low_drift_last
+case_opt2_256_ic1357_full_0p015,opt2_256_ic1357,full,0.015,15,UNSTABLE,9.3602e-01,,,nan,4.6980e+00
+case_opt2_256_ic1357_full_0p01,opt2_256_ic1357,full,0.01,,STABLE,7.6677e-03,7.7383e-02,0.10,nan,5.3330e-01
+case_opt2_256_ic1357_full_0p005,opt2_256_ic1357,full,0.005,,STABLE,7.8822e-04,6.0424e-05,13.04,nan,2.5515e-02

@@ -1,0 +1,37 @@
+**ROLLOUT-LOSS BUILD STARTED — SPEC LOCKED (INFORMATIONAL, NO ACTION NEEDED)**
+
+
+**WHAT IS BEING BUILT TONIGHT (your full green light, recorded 702311a)**
+
+    1. training/train_deriv_rollout.py — ONE trainer, flags: --unroll-M (curriculum 1->8), --grad-mode {full BPTT w/ checkpointing, truncated:k}, --init-ckpt warm start, --model auto, f64, grad-clip.
+
+    2. Truth = the deep 28-mark builds already on disk (marks every 5e-3 -> max horizon 21 / 7 / 3 coarse steps at dT 5e-3 / 1e-2 / 1.5e-2). NO new data generation.
+
+    3. Stepper REUSED from the a-posteriori driver (same closure coefficient dT^3, same end-projection mask, same sigma-hat context) — the trainer and the 4-arm table share one solver path by construction.
+
+
+**THE THREE GATES BEFORE ANY TRAINING STEP (consistency checks built in, per your rule)**
+
+    1. G-R1: zero-NN unrolled solver == bare AB2CN2 bit-exactly.
+
+    2. G-R2: M=1 warm-started from cond ep63 must reproduce today's offline-consistency numbers (0.0575 / 0.0586 / 0.0646) side-by-side in the log.
+
+    3. G-R3: tiny-batch overfit (gradient-flow sanity, loss must drop >10x).
+
+
+**SEQUENCE + EMAILS YOU WILL GET**
+
+    1. Build done -> G4 code review -> commit -> [email: gates submitted].
+
+    2. Gates PASS -> smoke submitted (kf4 + FRC-256, curriculum 1->4, TWO arms: warm-start-from-cond vs physics-init, ~2-4 h GPU) -> [email: smoke submitted, cost first].
+
+    3. Smoke lands -> [email: smoke verdict + the 4-arm table rerun with the new model].
+
+    4. Morning: your DAILY REPORT (everything tonight: wave-2 landings, convergence tier, this build, cape assessment).
+
+
+**ALSO RUNNING RIGHT NOW**
+
+    1. SGS wave 2 (4 modulated runs) lands ~21:30 EDT; convergence tier drains overnight (4096^2 rung ~11 h).
+
+    2. Cape-transfer change assessment (your ask) — in the morning report.

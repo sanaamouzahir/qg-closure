@@ -127,7 +127,7 @@ else
         -j y
         -cwd
         -V
-        -q "ibfdr.q"
+        -q "all.q"
     )
 
     qsub "${QSUB_FLAGS[@]}" "$JOB_SCRIPT" "${PYTHON_ARGS[@]}"
