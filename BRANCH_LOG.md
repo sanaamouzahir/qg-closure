@@ -972,3 +972,16 @@ Running record. Supervisor updates this at the end of every session. Newest entr
   tau_pv~0) proposed, awaiting Sanaa.
 - 3-param recal fits (af6af0d, jobs 1833741/42): tau_pv -> 0.017/0.009; test NLL -2.744/-2.324.
 - Emails relayed 18:20 + conformal/4-panel + w31 false-alarm triage queued. Full paths rule saved.
+
+## 2026-07-14 NIGHT — laptop-independence + ylp75 retrains FIRED (session-1 signing off)
+- SUBMIT-HOST TRAP caught live: mseas is the ONLY SGE submit host; the SGE-job chain watchers
+  failed on compute nodes ("denied: not a submit host") and a false AUTO-FIRED mail was deleted
+  before the relay tick. REPLACED by reporting/autofire_check.sh on the mseas crontab (10-min,
+  flock, markers): fires w31 anchored arms at plateau + would fire ylp75 retrains (already done).
+- ylp75 payloads BUILT+VERIFIED all 10 runs (1833865: row-corr -0.999 -> ~0.1, wake collateral
+  0.04-0.08%, non-pi keys byte-identical, out-of-band bitwise identical). RETRAINS FIRED:
+  pYlp_fpc 1833875 / pYlpcape 1833878 + monitors, warm from gjs finals, variant
+  gaussian_jonly_ylp75, 100 ep. CRPS heads landed (1833861/62; landing mails auto-queued).
+- Morning report: reporting/narrative_for_next_report.md (incl. the Wiener training appendix
+  Sanaa requested) is consumed by daily_report.sh section 0 at 08:00.
+- From 07-15: Sanaa works on her LOCAL machine, cluster via ssh (memory saved).
