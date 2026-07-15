@@ -1,2 +1,3 @@
 timestamp,event,job_id,host,note
 2026-07-15T16:16:19,start,1834881,ibfdr-compute-0-2.local,diagnose_mean_prediction.py --ckpt runs_piff/piff_fpc_gjs_ylp75/best.pt --config conf_piff_fpc_gjs_ylp75.yaml --split val --device cpu --report-run mean_prediction_diag_fpc
+2026-07-15T16:27:05,done,1834881,ibfdr-compute-0-2.local,mean-prediction diag piff_fpc_gjs_ylp75 (5 members)
