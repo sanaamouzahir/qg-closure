@@ -445,3 +445,249 @@ action on a trigger that was mechanical (no judgment used), the weekly
 digest must propose promoting that action into an X-rung. The set of
 things that wait for Sanaa shrinks; the set of things that fire in seconds
 grows.
+# CHARTER AMENDMENT v1.4 (append to OPERATING_CHARTER.md)
+
+Scope note: this amendment changes WHERE agents run and HOW reactivity is
+achieved. It changes NOTHING about the branch/agent structure, decision
+tiers, gates, templates, invariants I1-I20, or the email protocol. Fable
+remains the global supervisor; branch supervisors remain per-worktree;
+authorship rules (I10) are unchanged.
+
+---
+
+## 3. INVARIANTS -- additions
+
+I21 EXECUTION MODEL: LOCAL AGENTS, SSH SUBMISSION.
+    (a) All agents run on Sanaa's local station. All reading, authoring,
+        thinking, review, ledgers, docs, and reports happen locally and
+        are pushed to origin.
+    (b) No persistent agent process on the cluster. The front end is a
+        single shared login node; other users' interactive work has
+        priority. Violating this is a RED-tier incident.
+    (c) Cluster interaction is NON-INTERACTIVE ssh only, one bounded
+        command per call, from the local agent:
+            ssh mseas "<cd> && git pull --rebase && qsub ..."
+            ssh mseas "qstat -u sanaamz"
+            ssh mseas "tail -n 40 <log>" | "grep -n <pattern> <log>"
+            scp mseas:<artifact> ./tmp/
+        The canonical submission sequence is: PULL -> qsub(job) ->
+        qsub(monitor, -hold_jid) -> report job ids. Nothing else.
+    (d) Interactive cluster sessions (qlogin) are ephemeral and
+        task-scoped: GPU queue only (I1), used for a named diagnostic,
+        closed on completion. Never a home for an agent session.
+    (e) A cluster job's own runtime products (logs, per-epoch digests,
+        result artifacts) are produced ON the cluster by the job itself
+        -- that is not an agent on the cluster and is permitted.
+
+I22 PATH PARTITION (makes two-host git safe).
+    (a) LOCAL writes: everything EXCEPT reports/ and logs/.
+    (b) CLUSTER writes: ONLY reports/ and logs/. Job scripts and monitors
+        commit with explicit paths (git add reports/<run>/ logs/<job>),
+        NEVER `git add -A`, NEVER a code/doc/ledger path.
+    (c) Disjoint paths => merges cannot conflict. Every cluster push is
+        `git pull --rebase origin <branch> && git push` in a retry loop
+        (3 attempts, 10 s backoff) to survive concurrent monitors.
+    (d) A cluster commit touching anything outside (b) is a protocol
+        violation: Fable reverts it and reports in the digest.
+
+I23 LOGGING GRANULARITY: DIGEST-PUSH, RAW-ON-DEMAND.
+    (a) RAW logs (SGE .o/.e, full solver stdout) stay ON the cluster in
+        the branch's logs/. They are never committed, never pulled whole,
+        never pasted into an agent context.
+    (b) Every monitored job writes a DIGEST to reports/<run-name>/:
+        - progress.csv : one row per eval epoch -- epoch, train, val,
+          per-order val (Ndot/Nddot/N3dot or the run's equivalent), lr,
+          best-so-far, seconds, verdict
+        - status.md    : <= 20 lines -- 6.1 parameter header, job id,
+          node, current verdict, last 3 rows of progress.csv, NEXT
+        - on completion: summary.md with the final table.
+        The digest is committed and pushed (I22b) at every eval epoch.
+    (c) Fable reads DIGESTS by pulling the repo -- default and cheap
+        (~KB). It fetches RAW slices over ssh ONLY when a digest verdict
+        or Sanaa's question requires it, and ONLY bounded
+        (tail -n <= 100, or grep). Unbounded remote reads are a
+        protocol violation (context bloat is the failure mode).
+    (d) Artifacts (.npz/.png) stay on the cluster; scp only the specific
+        file needed, into ./tmp/ (git-ignored).
+
+I24 REACTIVITY: REFLEX vs JUDGMENT.
+    Cluster-side monitors act WITHOUT an agent. The decision tree's
+    deterministic branches are CODE (reflexes) and fire in seconds; only
+    ambiguity waits for a local agent session. Reflexes are pre-approved
+    by this charter and require no per-case approval.
+
+    REFLEX LADDER (monitor_training.py, cluster-resident, chained per
+    I18a):
+      X1 STOP-ON-EXPLODE: NaN/inf loss, or val > 10x its best, or CFL/
+         enstrophy blowup where applicable -> qdel the job IMMEDIATELY,
+         write status.md verdict=EXPLODE, email [QG][MONITOR][branch].
+      X2 STOP-ON-INVERSION: I18c ORDER-INVERSION persisting 3 consecutive
+         evals after epoch 2 -> qdel, verdict=ORDER-INVERSION, email.
+      X3 STOP-ON-STALL: 60 epochs with no best AND lr > 0.2 x lr_init ->
+         qdel, verdict=STALL, email.
+      X4 AUTO-DIAGNOSE (fires on ANY of X1-X3): immediately qsub the
+         standing diagnostic bundle on the last saved checkpoint
+         (per-member per-order MEDIAN vs MEAN, worst-sample ||target||,
+         zero-init reference where defined); push its output to
+         reports/<run-name>/diag_<trigger>/ ; email the table when done.
+         Evidence must be READY, not requested, when Sanaa next looks.
+      X5 AUTO-RESUBMIT -- WHITELIST ONLY: node failure, scheduler
+         preemption, transient CUDA/driver error. Resubmit the IDENTICAL
+         script ONCE, email old+new job ids. NEVER resubmit on a
+         scientific failure (X1-X3): those need a code change, code
+         changes are authored locally, so they wait for a session --
+         by design, not by limitation.
+      X6 HEARTBEAT: if a job is running and no digest row has been
+         written in 3x the median epoch time, email verdict=SILENT.
+    Anything not X1-X6 waits for the next local session. The monitor
+    never edits code, never changes configs, never picks a fix.
+
+I25 SESSION-OPEN PROTOCOL (how judgment catches up).
+    Every local agent session begins with, in order:
+      1. git pull
+      2. read reports/*/status.md for all runs marked active
+      3. ssh mseas "qstat -u sanaamz"
+      4. reconcile: any verdict != OK, or any job in the digest that
+         qstat says is gone -> that is the session's first agenda item,
+         before anything Sanaa asks for.
+    Sanaa's replies to [MONITOR]/[SUBMIT][log] emails while away are
+    ORDERS QUEUED for the next session (amends I12: replies are orders,
+    but execution is session-bound, not instant).
+
+
+## 6. EMAIL PROTOCOL -- v2.2 additions
+
+6.4 Emails now originate from TWO sources; both keep the 6.1 header and
+    the NEXT block:
+    - CLUSTER (monitors, job scripts): [QG][MONITOR][branch] and
+      [QG][SUBMIT][log]. Reflex verdicts and their auto-diagnoses. These
+      arrive at any hour; they report what the reflex ALREADY did.
+    - LOCAL (agents): everything else. These report judgment.
+    A MONITOR email must state which reflex fired, what it did (qdel'd /
+    resubmitted / diagnosed), and what is WAITING for a session.
+
+## 4. APPROVED TEMPLATES -- addition
+
+T1-T4 submissions are made via the I21c ssh sequence. The template's
+job script must, per I18a/I23b/I22b: chain the monitor, write raw logs to
+the branch logs/, write+push the digest to reports/<run-name>/, and
+carry the reflex ladder (I24) in the chained monitor.
+
+## 7. THE RATCHET -- addition
+
+The reflex ladder is ratchet-eligible: every time a local session takes an
+action on a trigger that was mechanical (no judgment used), the weekly
+digest must propose promoting that action into an X-rung. The set of
+things that wait for Sanaa shrinks; the set of things that fire in seconds
+grows.
+# CHARTER AMENDMENT v1.5 (append to OPERATING_CHARTER.md)
+
+Supersedes I21(a)(b) of v1.4. Everything else in v1.4 (I22 path partition,
+I23 digest logging, I24 reflex ladder, I25 session-open protocol) stands
+unchanged and applies in BOTH modes.
+
+Rationale: the constraint is not "agents must be local". The constraint is
+"the shared front end must stay quiet while other people are working on
+it". Outside those hours the cluster is the better host -- agents sit next
+to the data, the logs, and the scheduler.
+
+---
+
+## 3. INVARIANTS -- replacing I21(a)(b), adding I26-I27
+
+I21 EXECUTION MODEL -- TWO MODES.
+    (a) DAY MODE (default; see I26 for hours): ALL agents run on Sanaa's
+        local station. No agent process on the cluster, at any nice level.
+        Cluster interaction is non-interactive ssh only, per I21(c):
+            ssh mseas "<cd> && git pull --rebase && qsub ..."
+            ssh mseas "qstat -u sanaamz"
+            ssh mseas "tail -n 40 <log>"   |   scp mseas:<artifact> ./tmp/
+        Canonical submission: PULL -> qsub(job) -> qsub(monitor,
+        -hold_jid) -> report job ids.
+    (b) NIGHT MODE: agents MAY run cluster-resident (front end), subject
+        to I26 (hours + load veto + session cap + niceness). All other
+        rules are identical in both modes -- same tiers, gates,
+        templates, authorship, emails.
+    (c),(d),(e) unchanged from v1.4.
+
+I26 MODE RULES.
+    (a) HOURS (America/New_York). NIGHT = 21:00-07:00 on weekdays, and
+        all day Saturday/Sunday. DAY = everything else. Sanaa may declare
+        either mode manually at any time; a manual declaration overrides
+        the clock until revoked.
+    (b) LOAD VETO (overrides the clock, always): before launching ANY
+        cluster-resident session, check
+            ssh mseas "uptime; who | wc -l"
+        If 1-min load average > 2.0 OR interactive users > 4, DAY MODE
+        applies regardless of hour. Re-check before each new session, not
+        once per night.
+    (c) SESSION CAP in NIGHT MODE: at most 3 concurrent agent processes
+        on the front end (e.g. Fable + 2 branch supervisors). The 70%-CPU
+        incident of 2026-07-13 was a fleet, not a session. Fable owns the
+        count and refuses the 4th.
+    (d) NICENESS is mandatory in NIGHT MODE, no exceptions:
+            nice -n 19 ionice -c3 claude --model <model>
+        ionice matters as much as nice: agent file-watching churn on
+        /gdata contends with the metadata traffic of RUNNING GPU JOBS,
+        not just with other humans.
+    (e) tmux is mandatory for cluster-resident sessions (survives Sanaa's
+        disconnects; keeps the session count visible and named).
+    (f) Compute nodes have NO outbound network (verified 2026-07-13:
+        api.anthropic.com unreachable from ibfdr-compute-0-2). Agents
+        therefore cannot run there. If an outbound HTTPS proxy is ever
+        provisioned for compute nodes, that becomes the preferred agent
+        host in BOTH modes and this invariant is revisited.
+
+I27 HANDOFF RITUAL (the two-host discipline).
+    Exactly ONE host is the writer at any time. Alternating writers are
+    safe; simultaneous writers are not.
+    (a) CURFEW: a cluster-resident session starts no new task after
+        06:30 and MUST exit by 07:00 (or immediately upon a load veto).
+        "Exit" means: finish or abandon the current step, push, log,
+        terminate the process -- not detach and leave running.
+    (b) YIELD (cluster -> local, every morning): before exiting, the
+        cluster session MUST
+            1. commit and push ALL work (code, ledgers, docs -- in NIGHT
+               MODE the cluster agent is the writer, so I22's write
+               partition applies to JOB-generated digests only, not to
+               the agent's own commits);
+            2. write the night's entries into BRANCH_LOG.md and
+               DECISIONS.md and push them;
+            3. leave NOTHING uncommitted. If a push cannot complete
+               (conflict, network), it FLAGs by email with the exact
+               state and does not exit silently.
+    (c) TAKE (local, on the next session): I25 applies -- pull first,
+        read reports/*/status.md, ssh qstat, reconcile -- and
+        additionally: read the night's BRANCH_LOG/DECISIONS entries
+        before acting. Never assume the local clone is current.
+    (d) EVENING HANDOFF (local -> cluster): the local session pushes
+        everything before a night session may launch. Fable verifies
+        `git status` clean + local HEAD == origin HEAD on both sides
+        before starting NIGHT MODE work.
+    (e) An uncommitted working tree on either host at handoff time is a
+        protocol violation and the first agenda item of the next session.
+
+## 1. DECISION RIGHTS -- night-mode note
+
+NIGHT MODE does not widen the tiers. RED stays RED at 3am. What NIGHT
+MODE changes is only latency: judgment that would have waited for Sanaa's
+next local session (I24: "scientific failures wait") can be exercised by
+a cluster-resident agent under its EXISTING authority -- I14 qdel+fix+
+resubmit, YELLOW template submissions, GREEN diagnostics -- with the
+[QG][ACTED] email arriving overnight for post-hoc ratification (24h rule,
+counted from Sanaa's morning).
+
+## 6. EMAIL PROTOCOL -- addition
+
+6.5 A night session's first email of the night states the mode and the
+    veto check result:
+        MODE: NIGHT (load 0.20, users 2, 21:14 EST) | cap 1/3 sessions
+    Its last email before curfew is a [QG][DIGEST][branch] handoff:
+    what ran, what landed, what is pushed, what waits for the morning.
+
+## 7. THE RATCHET -- addition
+
+If a DAY-MODE ssh workflow repeatedly proves too slow for a recurring
+task (many round-trips for one decision), that is a ratchet item: propose
+either a batched ssh helper script (one call, many reads) or moving that
+task class to NIGHT MODE. Do not silently violate DAY MODE to go faster.
