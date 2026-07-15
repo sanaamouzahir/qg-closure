@@ -72,9 +72,12 @@ def savefig(fig, path):
 
 # ---------------------------------------------------------------- test A
 
-def u_slab_from_omega(om, Lx, Ly, x_lo, x_hi, sign):
+def u_slab_from_omega(om, Lx, Ly, x_lo, x_hi, sign, y_c, half_w):
     """Slab-mean streamwise velocity induced by the vorticity field:
-    psi_hat = sign * omega_hat / |k|^2 (k=0 -> 0), u = d psi / d y."""
+    psi_hat = sign * omega_hat / |k|^2 (k=0 -> 0), u = d psi / d y.
+    The y-band MUST be restricted (|y - y_c| <= half_w): the full-column mean
+    of d psi/d y is identically zero by periodicity (2026-07-15 degenerate-
+    ratio bug), so an all-y average measures nothing."""
     ny, nx = om.shape
     oh = np.fft.rfft2(om)
     ky = 2 * np.pi * np.fft.fftfreq(ny, d=Ly / ny)
@@ -84,9 +87,11 @@ def u_slab_from_omega(om, Lx, Ly, x_lo, x_hi, sign):
     psi_h = sign * oh / k2
     psi_h[0, 0] = 0.0
     u = np.fft.irfft2(1j * ky[:, None] * psi_h, s=om.shape)
-    dxg = Lx / nx
+    dxg, dyg = Lx / nx, Ly / ny
     i_lo, i_hi = int(x_lo / dxg), int(x_hi / dxg)
-    return float(u[:, i_lo:i_hi].mean())
+    j_lo = max(0, int((y_c - half_w) / dyg))
+    j_hi = min(ny, int((y_c + half_w) / dyg))
+    return float(u[j_lo:j_hi, i_lo:i_hi].mean())
 
 
 def measure_ratio(run, frames, fr_dir, band_D=(-4.0, -1.5)):
@@ -108,12 +113,13 @@ def measure_ratio(run, frames, fr_dir, band_D=(-4.0, -1.5)):
     les_deficit = u_les if abs(u_les) < 2.0 else None
 
     # calibrate the inversion sign on the first requested frame
+    hw = 1.5 * run.D
     j0 = int(np.argmin(np.abs(fr_t - run.times[frames[0]])))
     cal = {}
     for sign in (+1.0, -1.0):
         du = u_slab_from_omega(np.asarray(om_mm[j0], dtype=np.float64),
-                               run.Lx, run.Ly, x_lo, x_hi, sign)
-        cal[sign] = 1.0 + du / run.U_snap[frames[0]]
+                               run.Lx, run.Ly, x_lo, x_hi, sign, run.y_c, hw)
+        cal[float(sign)] = float(1.0 + du / run.U_snap[frames[0]])
     # pick the sign giving a DEFICIT consistent with the LES measurement
     # (study: U_local/U_in < 1); record both.
     sign = min(cal, key=lambda s: abs(cal[s] - (1.0 + (les_deficit or 0.0) - 1.0))
@@ -125,11 +131,13 @@ def measure_ratio(run, frames, fr_dir, band_D=(-4.0, -1.5)):
     for fi in frames:
         j = int(np.argmin(np.abs(fr_t - run.times[fi])))
         du = u_slab_from_omega(np.asarray(om_mm[j], dtype=np.float64),
-                               run.Lx, run.Ly, x_lo, x_hi, sign)
-        ratios[fi] = 1.0 + du / run.U_snap[fi]
-    return ratios, {'sign': sign, 'both_signs_frame0': cal,
-                    'les_ubar_slab_over_U': les_deficit,
-                    'band_x_D': list(band_D)}
+                               run.Lx, run.Ly, x_lo, x_hi, sign, run.y_c, hw)
+        ratios[fi] = float(1.0 + du / run.U_snap[fi])
+    return ratios, {'sign': float(sign), 'both_signs_frame0': cal,
+                    'les_ubar_slab_over_U':
+                        (float(les_deficit) if les_deficit is not None else None),
+                    'band_x_D': [float(b) for b in band_D],
+                    'band_y_half_D': 1.5}
 
 
 # ---------------------------------------------------------------- test B
@@ -225,18 +233,25 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     fig_dir = HERE / 'pngs' / 'reflection_probe' / ckpt.parent.name / args.member
 
-    # A. measured contamination
-    ratios_t, cal = measure_ratio(run, frames, run.run_dir)
-    r_mean = float(np.mean(list(ratios_t.values())))
-    print(f"[probe] measured U_local/U_in: mean {r_mean:.3f} "
-          f"(sign cal {cal['both_signs_frame0']}, LES ubar "
-          f"{cal['les_ubar_slab_over_U']})", flush=True)
+    # A. measured contamination -- NON-FATAL: a failure here degrades the
+    # probe to sweep-only (the constant-ratio sweep still yields a verdict)
+    try:
+        ratios_t, cal = measure_ratio(run, frames, run.run_dir)
+        r_mean = float(np.mean(list(ratios_t.values())))
+        print(f"[probe] measured U_local/U_in: mean {r_mean:.3f} "
+              f"(sign cal {cal['both_signs_frame0']}, LES ubar "
+              f"{cal['les_ubar_slab_over_U']})", flush=True)
+    except Exception as e:
+        ratios_t, cal, r_mean = None, {'error': repr(e)}, float('nan')
+        print(f"[probe] WARNING: measured-ratio unavailable ({e!r}) -- "
+              "sweep-only mode", flush=True)
 
     # B. predictions: baseline + measured r(t) + constant sweep
     ev_by_frame = {}
     for i, ev in enumerate(events):
         ev_by_frame.setdefault(ev['frame'], []).append(i)
-    modes = [('baseline', None)] + [('measured', 'measured')] \
+    modes = [('baseline', None)] \
+        + ([('measured', 'measured')] if ratios_t is not None else []) \
         + [(f'r={r:g}', r) for r in sweep]
     pred_at_events = {m: np.zeros(len(events)) for m, _ in modes}
     rmse_active = {m: [] for m, _ in modes}
@@ -273,7 +288,8 @@ def main():
     rows = []
     for i, ev in enumerate(events):
         row = dict(ev)
-        row['r_measured'] = ratios_t[ev['frame']]
+        row['r_measured'] = (ratios_t[ev['frame']]
+                             if ratios_t is not None else float('nan'))
         for m, _ in modes:
             row[f'pred_{m}'] = pred_at_events[m][i]
         for vn, vals in variants.items():
@@ -283,14 +299,17 @@ def main():
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         w.writeheader(); w.writerows(rows)
 
-    verdict = ('REFLECTION-SUPPORTED' if gap.get('measured', 9e9)
-               < 0.8 * gap['baseline'] else
+    # discriminant: the measured-r gap if available, else the best sweep point
+    sweep_gaps = [gap[m] for m, r in modes if isinstance(r, float)]
+    disc = gap.get('measured', min(sweep_gaps) if sweep_gaps else 9e9)
+    verdict = ('REFLECTION-SUPPORTED' if disc < 0.8 * gap['baseline'] else
                'REFLECTION-EXONERATED (conditioning moves <20% of the gap)')
     metrics = {'member': args.member, 'n_events': len(events),
                'sign_calibration': cal,
                'ratio_measured_mean': r_mean,
-               'ratio_per_frame': {int(k): float(v)
-                                   for k, v in ratios_t.items()},
+               'ratio_per_frame': ({int(k): float(v)
+                                    for k, v in ratios_t.items()}
+                                   if ratios_t is not None else 'unavailable'),
                'mean_abs_gap_at_events': gap,
                'rmse_active_q90_extreme_frames': ra,
                'variant_truth_rms_at_events':
