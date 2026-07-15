@@ -37,10 +37,22 @@ fi
 TOOL="${1:?usage: piff_tool_job.sh <script.py> [args...]}"
 shift
 
+# I23b opt-in (v1.4 retrofit): submitters that pass -v QG_DIGEST_RUN=<name>
+# get start/fail digest events even if the tool crashes before its own digest
+# emission (G5 advisory 2026-07-15). No-op for all existing callers.
+digest_event() {
+    [[ -n "${QG_DIGEST_RUN:-}" && -f "$BRANCH/diagnostics/digest_writer.py" ]] && \
+        python "$BRANCH/diagnostics/digest_writer.py" --repo-dir "$BRANCH" \
+            --run-name "$QG_DIGEST_RUN" --event "$1" --job-id "${JOB_ID:-}" \
+            --note "$2" || true
+}
+trap 'digest_event fail "$TOOL exited rc=$? -- raw log in <branch>/logs/"' ERR
+
 cd "$BRANCH/ml_closure"
 echo "[piff_tool] host $HOSTNAME date $(date -u +%FT%TZ)"
 echo "[piff_tool] cmd: python -u $TOOL $*"
 echo "----------------------------------------------------------------------"
+digest_event start "$TOOL $*"
 python -u "$TOOL" "$@"
 echo "----------------------------------------------------------------------"
 echo "[piff_tool] done at $(date -u +%FT%TZ)"
