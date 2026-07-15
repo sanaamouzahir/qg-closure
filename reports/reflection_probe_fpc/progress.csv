@@ -1,0 +1,2 @@
+timestamp,event,job_id,host,note
+2026-07-15T18:35:26,start,1835248,ibamd-compute-0-4.local,"probe_reflection_hypothesis.py --ckpt runs_piff/piff_fpc_gjs_ylp75/best.pt --config conf_piff_fpc_gjs_ylp75.yaml --member FPC-const --ratios 0.7,0.8,0.859,0.9,1.0 --device cpu --report-run reflection_probe_fpc"
