@@ -7,3 +7,8 @@ targets, val split; summaries pushed to reports/mean_prediction_diag_*). G4 PASS
 fixed), G5 PASS. RULING RECORDED: diagnostics NEVER on the GPU queue -> jobs run on all.q
 (--device cpu, thread caps); sge-checker brief updated on main. Submitter:
 scripts/sge/submit_mean_prediction_diag.sh; QG_DIGEST_RUN start/fail hook in piff_tool_job.sh.
+
+## 2026-07-15 | GREEN (diagnostics) | error-tails suite: diagnose_error_tails.py (exceedance
+maps + top-K extreme events [WHERE], k*RMSE + percentile counts + tail SS-shares [HOW MANY],
+activity split quiet/mid/active/near-zero [zero-padding check], Re-constant nan explanation).
+G4: 1 blocker (log hexbin on zeros) fixed + 2 LOW hardened. digest_writer autostash fix.
