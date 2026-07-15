@@ -1,0 +1,28 @@
+seed: 0
+variant: gaussian_jonly
+runs:
+- FPC-const
+- FPC-sine
+- FPC-ramp
+- FPC-ou
+- FPC-telS-A
+n_train_frames: 883
+n_val_frames: 250
+N_train_pixels: 119215596
+N_val_pixels: 33753000
+valid_per_frame:
+  FPC-const: 135012
+  FPC-sine: 135012
+  FPC-ramp: 135012
+  FPC-ou: 135012
+  FPC-telS-A: 135012
+lomo_holdout: null
+lr: 0.001
+weight_decay: 1.0e-05
+epochs: 2
+film: true
+ELBO_num_data: 119215596
+device: cuda
+init_hyperparams:
+  warm_start: runs_piff/piff_fpc_gj/last.pt
+  g2_scale: 73.61037365669023

@@ -1,0 +1,24 @@
+RERUN AFTER THE VARIANT-INHERIT FIX (2026-07-14 evening, Sanaa order: "re-run
+the plots, I still see the ringing").
+
+WHAT CHANGED IN CODE: replot_eval_fields.py now inherits data.variant from
+the checkpoint (it copied use_grad_feature/tshed_smooth but NOT variant -- a
+jonly ckpt replotted with a full-Pi config would silently have shown
+body-force truth). The original gjs replots were NOT hit by the trap (they
+passed the gjs configs, which set variant), so these rerun panels are
+scientifically identical to the originals: the truth panel is pixel-for-pixel
+IDENTICAL; prediction/sigma/error panels differ by rendering-level jitter
+only (max 22/255: the sigma panel now applies the (s_a,s_b) recalibration
+sidecar that postdates the originals, plus few-ULP CPU threading jitter
+quantized by the symlog map).
+
+WHERE THE RINGING ACTUALLY COMES FROM: the truth target was proven identical
+(rel 8e-12, all 37 val frames) to the Pi_J computed independently by
+diag_pi_jacobian_split.py -- the ringing is IN Pi_J itself:
+  1. the plus/cross AT the body = near-body Pi_J structure amplified by the
+     eval symlog scale (Pi_body's cross at the same station is ~400x larger
+     -- that is what the split figure showed as the BODY panel);
+  2. a REAL full-height background column at the obstacle x-station: 83x the
+     far-field level even >4 radii above/below the body, flat to the domain
+     edge (not a 1/r^2 local-physics decay) -- the reflection/BC suspect.
+     See pngs/jacobian_truth_ringing_isolation/ for the quantified figure.

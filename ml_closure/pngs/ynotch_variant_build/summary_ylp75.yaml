@@ -1,0 +1,306 @@
+what: gaussian_jonly_ylp75 payload build (in-band blended ylp75 on pi_ff only; all
+  other keys byte-identical)
+source_variant: gaussian_jonly
+filter: ylp75
+localizer: windowed
+prototypes:
+- diag_ring_filter_prototype.py
+- diag_cape_band_structure.py
+runs:
+- run: FPC-const
+  geometry: cylinder
+  filter: ylp75
+  localizer: windowed
+  output: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/outputs/SGS_closure_ensemble/FPC-const/DNS_LES_s4_gaussian_jonly_ylp75.npz
+  figure: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/pngs/ynotch_variant_build/FPC-const/fields_ylp75_t100.17.png
+  band_cols:
+  - 245
+  - 286
+  band_width_px: 42
+  band_width_D: 1.6406249999999991
+  band_x_station: 13.057244466482578
+  band_x_offset_from_obstacle_D: 0.3906249999999999
+  artefact_over_background_amplitude: 236.36959417947492
+  inband_row_corr_before: -0.9999662609709353
+  inband_row_corr_after: -0.6164746598412175
+  budget:
+    frac_global_pi2_removed: 0.0021648847925966183
+    frac_wake_pi2_removed: 0.002157117009190411
+    frac_quiescent_pi2_removed: 0.004142027898327734
+    removed_energy_share_quiescent: 0.00748745668710703
+  nonpi_keys_identical: true
+  out_of_band_bitwise_identical: true
+  localization_notes:
+  - post-filter corr -0.616 <= -0.3
+  loc_frames_t:
+  - 100.17
+  - 106.65
+  - 113.4
+  - 119.88
+- run: FPC-sine
+  geometry: cylinder
+  filter: ylp75
+  localizer: windowed
+  output: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/outputs/SGS_closure_ensemble/FPC-sine/DNS_LES_s4_gaussian_jonly_ylp75.npz
+  figure: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/pngs/ynotch_variant_build/FPC-sine/fields_ylp75_t100.35.png
+  band_cols:
+  - 245
+  - 290
+  band_width_px: 46
+  band_width_D: 1.796874999999999
+  band_x_station: 13.15541923690726
+  band_x_offset_from_obstacle_D: 0.468750000000001
+  artefact_over_background_amplitude: 34.247550913956225
+  inband_row_corr_before: -0.9999661986692947
+  inband_row_corr_after: -0.5383240841196434
+  budget:
+    frac_global_pi2_removed: 0.0020996123558586167
+    frac_wake_pi2_removed: 0.002107972455224199
+    frac_quiescent_pi2_removed: 0.0013973852506893355
+    removed_energy_share_quiescent: 0.00783016820583367
+  nonpi_keys_identical: true
+  out_of_band_bitwise_identical: true
+  localization_notes:
+  - post-filter corr -0.538 <= -0.3
+  loc_frames_t:
+  - 100.35000000000001
+  - 106.65
+  - 113.4
+  - 119.7
+- run: FPC-ramp
+  geometry: cylinder
+  filter: ylp75
+  localizer: windowed
+  output: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/outputs/SGS_closure_ensemble/FPC-ramp/DNS_LES_s4_gaussian_jonly_ylp75.npz
+  figure: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/pngs/ynotch_variant_build/FPC-ramp/fields_ylp75_t100.35.png
+  band_cols:
+  - 245
+  - 282
+  band_width_px: 38
+  band_width_D: 1.4843749999999991
+  band_x_station: 12.959069696057897
+  band_x_offset_from_obstacle_D: 0.31250000000000017
+  artefact_over_background_amplitude: 83.3511024721453
+  inband_row_corr_before: -0.9999670624448068
+  inband_row_corr_after: -0.5984082609543023
+  budget:
+    frac_global_pi2_removed: 0.002099886261290375
+    frac_wake_pi2_removed: 0.0021019553832563073
+    frac_quiescent_pi2_removed: 0.001874673294880138
+    removed_energy_share_quiescent: 0.008127382521932135
+  nonpi_keys_identical: true
+  out_of_band_bitwise_identical: true
+  localization_notes:
+  - post-filter corr -0.598 <= -0.3
+  loc_frames_t:
+  - 100.35000000000001
+  - 106.65
+  - 113.4
+  - 119.7
+- run: FPC-ou
+  geometry: cylinder
+  filter: ylp75
+  localizer: windowed
+  output: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/outputs/SGS_closure_ensemble/FPC-ou/DNS_LES_s4_gaussian_jonly_ylp75.npz
+  figure: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/pngs/ynotch_variant_build/FPC-ou/fields_ylp75_t100.35.png
+  band_cols:
+  - 245
+  - 287
+  band_width_px: 43
+  band_width_D: 1.6796874999999991
+  band_x_station: 13.081788159088749
+  band_x_offset_from_obstacle_D: 0.4101562500000005
+  artefact_over_background_amplitude: 389.3013907229463
+  inband_row_corr_before: -0.999966963173392
+  inband_row_corr_after: -0.6192075647242322
+  budget:
+    frac_global_pi2_removed: 0.0021288252881188213
+    frac_wake_pi2_removed: 0.0021253182558715316
+    frac_quiescent_pi2_removed: 0.0026688265684962765
+    removed_energy_share_quiescent: 0.00808935510532517
+  nonpi_keys_identical: true
+  out_of_band_bitwise_identical: true
+  localization_notes:
+  - post-filter corr -0.619 <= -0.3
+  loc_frames_t:
+  - 100.35000000000001
+  - 106.65
+  - 113.4
+  - 119.7
+- run: FPC-telS-A
+  geometry: cylinder
+  filter: ylp75
+  localizer: windowed
+  output: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/outputs/SGS_closure_ensemble/FPC-telS-A/DNS_LES_s4_gaussian_jonly_ylp75.npz
+  figure: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/pngs/ynotch_variant_build/FPC-telS-A/fields_ylp75_t100.35.png
+  band_cols:
+  - 244
+  - 284
+  band_width_px: 41
+  band_width_D: 1.6015624999999991
+  band_x_station: 12.983613388664066
+  band_x_offset_from_obstacle_D: 0.3320312499999994
+  artefact_over_background_amplitude: 197.42668127002167
+  inband_row_corr_before: -0.999967502523187
+  inband_row_corr_after: -0.6294001908454862
+  budget:
+    frac_global_pi2_removed: 0.0021242926985771578
+    frac_wake_pi2_removed: 0.002123670200244324
+    frac_quiescent_pi2_removed: 0.00220886375256193
+    removed_energy_share_quiescent: 0.007597768161260046
+  nonpi_keys_identical: true
+  out_of_band_bitwise_identical: true
+  localization_notes:
+  - post-filter corr -0.629 <= -0.3
+  loc_frames_t:
+  - 100.35000000000001
+  - 106.65
+  - 113.4
+  - 119.7
+- run: FPCape-const
+  geometry: cape
+  filter: ylp75
+  localizer: windowed
+  output: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/outputs/SGS_closure_ensemble/FPCape-const/DNS_LES_s4_gaussian_jonly_ylp75.npz
+  figure: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/pngs/ynotch_variant_build/FPCape-const/fields_ylp75_t100.35.png
+  band_cols:
+  - 103
+  - 126
+  band_width_px: 24
+  band_width_D: 1.1780972450961724
+  band_x_station: 5.64504929941916
+  band_x_offset_from_obstacle_D: 0.6185010536754909
+  artefact_over_background_amplitude: 23.123275794112498
+  inband_row_corr_before: -0.9968102711042786
+  inband_row_corr_after: 0.3842410607088619
+  budget:
+    frac_global_pi2_removed: 0.0004168598673321888
+    frac_wake_pi2_removed: 0.0004979127684270138
+    frac_quiescent_pi2_removed: 3.8436815828781195e-05
+    removed_energy_share_quiescent: 0.01626533805495805
+  nonpi_keys_identical: true
+  out_of_band_bitwise_identical: true
+  localization_notes: []
+  loc_frames_t:
+  - 100.35000000000001
+  - 106.65
+  - 113.4
+  - 119.7
+- run: FPCape-sine
+  geometry: cape
+  filter: ylp75
+  localizer: windowed
+  output: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/outputs/SGS_closure_ensemble/FPCape-sine/DNS_LES_s4_gaussian_jonly_ylp75.npz
+  figure: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/pngs/ynotch_variant_build/FPCape-sine/fields_ylp75_t100.35.png
+  band_cols:
+  - 170
+  - 250
+  band_width_px: 81
+  band_width_D: 3.9760782021995817
+  band_x_station: 10.332894587197679
+  band_x_offset_from_obstacle_D: 5.3063463414540095
+  artefact_over_background_amplitude: 151.6304705219502
+  inband_row_corr_before: 0.76499779607256
+  inband_row_corr_after: 0.765212349089088
+  budget:
+    frac_global_pi2_removed: 1.9872450366111912e-05
+    frac_wake_pi2_removed: 6.07524022477402e-07
+    frac_quiescent_pi2_removed: 9.450746307112785e-05
+    removed_energy_share_quiescent: 0.9757009477392854
+  nonpi_keys_identical: true
+  out_of_band_bitwise_identical: true
+  localization_notes:
+  - band x-station 5.31 D from obstacle (> 1.5 D)
+  - band width 3.98 D outside [0.3, 3] D
+  loc_frames_t:
+  - 100.35000000000001
+  - 106.65
+  - 113.4
+  - 119.7
+- run: FPCape-ramp
+  geometry: cape
+  filter: ylp75
+  localizer: windowed
+  output: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/outputs/SGS_closure_ensemble/FPCape-ramp/DNS_LES_s4_gaussian_jonly_ylp75.npz
+  figure: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/pngs/ynotch_variant_build/FPCape-ramp/fields_ylp75_t100.35.png
+  band_cols:
+  - 104
+  - 116
+  band_width_px: 13
+  band_width_D: 0.6381360077604268
+  band_x_station: 5.424156065963627
+  band_x_offset_from_obstacle_D: 0.39760782021995844
+  artefact_over_background_amplitude: 5.575026760667129
+  inband_row_corr_before: -0.9990207969764198
+  inband_row_corr_after: 0.15740576431341405
+  budget:
+    frac_global_pi2_removed: 0.0003090098903927172
+    frac_wake_pi2_removed: 0.0003843932552357168
+    frac_quiescent_pi2_removed: 2.744803048102261e-05
+    removed_energy_share_quiescent: 0.018759132456945448
+  nonpi_keys_identical: true
+  out_of_band_bitwise_identical: true
+  localization_notes: []
+  loc_frames_t:
+  - 100.35000000000001
+  - 106.65
+  - 113.4
+  - 119.7
+- run: FPCape-ou
+  geometry: cape
+  filter: ylp75
+  localizer: windowed
+  output: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/outputs/SGS_closure_ensemble/FPCape-ou/DNS_LES_s4_gaussian_jonly_ylp75.npz
+  figure: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/pngs/ynotch_variant_build/FPCape-ou/fields_ylp75_t100.35.png
+  band_cols:
+  - 102
+  - 120
+  band_width_px: 19
+  band_width_D: 0.9326603190344698
+  band_x_station: 5.473243451175968
+  band_x_offset_from_obstacle_D: 0.4466952054322988
+  artefact_over_background_amplitude: 9.036304286076719
+  inband_row_corr_before: -0.9991419712972623
+  inband_row_corr_after: -0.1086995802069798
+  budget:
+    frac_global_pi2_removed: 0.0005297058109481705
+    frac_wake_pi2_removed: 0.0006248014806317911
+    frac_quiescent_pi2_removed: 3.051075381810021e-05
+    removed_energy_share_quiescent: 0.009216796272899222
+  nonpi_keys_identical: true
+  out_of_band_bitwise_identical: true
+  localization_notes: []
+  loc_frames_t:
+  - 100.35000000000001
+  - 106.65
+  - 113.4
+  - 119.7
+- run: FPCape-tel
+  geometry: cape
+  filter: ylp75
+  localizer: windowed
+  output: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-simple-package-stable/src/qg/outputs/SGS_closure_ensemble/FPCape-tel/DNS_LES_s4_gaussian_jonly_ylp75.npz
+  figure: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/pngs/ynotch_variant_build/FPCape-tel/fields_ylp75_t100.35.png
+  band_cols:
+  - 100
+  - 127
+  band_width_px: 28
+  band_width_D: 1.3744467859455345
+  band_x_station: 5.5959619142068195
+  band_x_offset_from_obstacle_D: 0.5694136684631506
+  artefact_over_background_amplitude: 27.67886826572292
+  inband_row_corr_before: -0.9994609721694814
+  inband_row_corr_after: 0.1664742320913418
+  budget:
+    frac_global_pi2_removed: 0.0006516454046237204
+    frac_wake_pi2_removed: 0.0007847897585387102
+    frac_quiescent_pi2_removed: 4.36394164504549e-05
+    removed_energy_share_quiescent: 0.012030510008533859
+  nonpi_keys_identical: true
+  out_of_band_bitwise_identical: true
+  localization_notes: []
+  loc_frames_t:
+  - 100.35000000000001
+  - 106.65
+  - 113.4
+  - 119.7

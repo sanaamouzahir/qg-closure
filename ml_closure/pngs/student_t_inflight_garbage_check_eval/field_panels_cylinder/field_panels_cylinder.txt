@@ -1,0 +1,35 @@
+STUDENT-T IN-FLIGHT GARBAGE CHECK (2026-07-14 evening; Sanaa order ~16:05,
+same protocol as the 2026-07-13 jacobian_only_models_garbage_check_eval).
+
+WHAT WAS CHECKED: the two Student-t likelihood retrains, frozen MID-FLIGHT
+at last.pt (NOT best.pt -- best tracks val NLL and freezes too early):
+  cylinder  piff_fpc_gjs_studentt   snapshot ep 24
+  cape      piff_cape_gjs_studentt  snapshot ep 20
+The trainers (1833541/42) were later KILLED at ~16:50 by Sanaa's chat order
+(session-1's mid-run REJECT), so this doubles as the POST-MORTEM final eval.
+
+VERDICT: NOT GARBAGE (the mean field is real physics, wake tracking is
+genuine -- see wake-restricted R2 in the yaml twin), BUT the Student-t
+likelihood REJECT stands on the pre-registered criteria:
+  1. coverage: 1-sigma 0.978 cylinder / 0.983 cape -- MORE overdispersed
+     than the Gaussian parents (0.93), nowhere near the [0.63, 0.73] target;
+  2. nu collapsed to ~2.19 / ~2.71 (the heavy-tail floor) = structural
+     misfit being absorbed by the tail parameter, not t-distributed noise;
+  3. the gated NLL (nll_with_postvar, the closure-reviewer condition since
+     pv/nv is order 1): -2.721 cylinder / -2.250 cape -- does NOT beat the
+     Gaussian references (-2.73 / -2.29). Raw t-NLL (-2.765 / -2.294)
+     nominally beats them, but that comparison is void by the gate.
+READ: the overdispersion lives in the GP/FiLM variance pathway, not in the
+noise tail. Next lever (proposed to Sanaa): post-hoc (a,b) + posterior-
+variance-temperature recalibration on val NLL -- no retraining.
+
+SUBFOLDERS (standing convention -- one per test category):
+  field_panels_cylinder/          truth/prediction/sigma/error panels,
+                                  linear (field_panel_truth_vs_prediction_*)
+                                  and symlog + signed relative error
+                                  (field_panel_symlog_with_relative_error_*)
+  field_panels_cape/              same for cape
+  uncertainty_and_calibration/    calibration + spread-skill per geometry
+Numbers: yamls/student_t_inflight_garbage_check_eval/ (eval summaries +
+wake-restricted R2). Snapshots kept at
+runs_piff/piff_*_gjs_studentt/last_ep_snapshot_2026-07-14T16.pt.
