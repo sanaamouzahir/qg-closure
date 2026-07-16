@@ -101,7 +101,15 @@ def lap_expand_state_dict(model, sd, lap_scale, train_ds, seed):
     q = np.quantile(vals, (np.arange(M) + 0.5) / M)
     lap_col = torch.from_numpy(q).to(sd[ip_key].dtype).reshape(M, 1)
     sd[ip_key] = torch.cat([sd[ip_key], lap_col], dim=-1)
-    raw_new = sd[ls_key].mean(dim=-1, keepdim=True)
+    # NEAR-INERT init (Sanaa 2026-07-16, run 1836210 postmortem): the earlier
+    # mean-of-raws init made the lap dim FULLY ACTIVE at step 1 -- old weights
+    # + a hot new kernel dimension scrambled the posterior (ep5 R2 0.20 vs the
+    # warm ckpt's 0.86, i.e. the pretrain was being discarded). Init the raw
+    # lengthscale at 20 (softplus(20) ~ 20 >> the O(1) standardized lap
+    # spread): contribution (dlap/20)^2 <= ~2.5e-3 per kernel entry, so ep0
+    # reproduces the trained model and the dim anneals in by gradient only
+    # where it pays.
+    raw_new = torch.full_like(sd[ls_key].mean(dim=-1, keepdim=True), 20.0)
     sd[ls_key] = torch.cat([sd[ls_key], raw_new], dim=-1)
     return {'ckpt_gp_dim': d_ck, 'new_gp_dim': int(model.gp_input_dim),
             'lap_scale': float(lap_scale),
