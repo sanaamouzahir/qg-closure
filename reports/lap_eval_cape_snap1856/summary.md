@@ -1,0 +1,12 @@
+# mean-prediction diagnostics -- piff_cape_gjs_lap (val, filtered variant gaussian_jonly_ylp75)
+
+| member | n_frames | r2 | rmse | bias | max_err | min_err | pearson_Re_rmse | corr_ae_sdf | corr_ae_y | L_error | L_truth | L_pred | pred_truth_corr |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| FPCape-const | 44 | 0.9852 | 0.07839 | +1.361e-03 | 8.4374 | -15.6133 | nan | -0.152 | -0.122 | 0.0441 | 0.0582 | 0.0582 | 0.9928 |
+| FPCape-sine | 44 | 0.9053 | 0.31036 | +1.322e-03 | 177.107 | -127.4218 | -0.43 | -0.074 | -0.06 | 0.0404 | 0.0569 | 0.0566 | 0.9515 |
+| FPCape-ramp | 44 | 0.9814 | 0.09578 | +1.570e-03 | 12.5647 | -12.2097 | nan | -0.158 | -0.124 | 0.0428 | 0.0571 | 0.0571 | 0.9907 |
+| FPCape-ou | 44 | 0.9837 | 0.09593 | +1.515e-03 | 12.0196 | -17.7138 | -0.058 | -0.148 | -0.111 | 0.0331 | 0.0553 | 0.0554 | 0.9919 |
+| FPCape-tel | 44 | 0.9825 | 0.09366 | +1.279e-03 | 11.2768 | -13.3028 | nan | -0.145 | -0.112 | 0.0335 | 0.0574 | 0.0573 | 0.9914 |
+
+figures: pngs/mean_prediction_diag/piff_cape_gjs_lap_snap1856
+per-member yaml/csv: runs_piff/piff_cape_gjs_lap/mean_prediction_diag_snap1856
