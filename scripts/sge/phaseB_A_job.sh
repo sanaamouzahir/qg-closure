@@ -99,6 +99,14 @@ if [ -n "$SCALARS_OUT" ]; then
                 kill "$SOLVER_PID" 2>/dev/null
                 sleep 15
                 kill -9 "$SOLVER_PID" 2>/dev/null
+                # Sanaa 2026-07-16: email on every NaN-kill (saves compute +
+                # she knows immediately; spool works from network-less nodes)
+                SP=/gdata/projects/ml_scope/Closure_modeling/QG-closure/reporting/pending_mail
+                mkdir -p "$SP"
+                printf 'To: %s\nSubject: [QG][MONITOR][sgs-closure] NaN-KILL: job %s (%s)\n\nThe NaN guard killed this simulation the moment NaN appeared in its\nscalar diagnostics -- no further compute wasted.\nrun dir: %s\nscalars: %s\ntime: %s\n\nNEXT: this parameter point is numerically unstable (or the run was\ncorrupted); it will NOT be retried automatically.\n' \
+                    "${QG_NOTIFY_EMAIL:-sanaamz@mit.edu}" "${JOB_ID:-?}" "${JOB_NAME:-?}" \
+                    "$PWD" "$SCALARS_OUT" "$(date -u +%FT%TZ)" \
+                    > "$SP/$(date +%Y%m%dT%H%M%S)_nankill_${JOB_ID:-x}.mail"
                 exit 0
             fi
         done

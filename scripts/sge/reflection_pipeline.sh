@@ -68,7 +68,7 @@ SCEN_cape="flow_past_cape"          # the cape scenario has no _sponge suffix
 # (colleague catch 2026-07-16; F = -chi*(u-u_o)/eta, eta = penalty*dt).
 # Descending list = weak -> strong. Floor 0.5: dt/eta = 1/penalty reaches 2
 # there; explicit-sink stability degrades below that (NaN-guard covers).
-PENALTIES="1.25 1.1 1.0 0.9 0.8 0.7 0.6 0.5"
+PENALTIES="1.25 1.1 1.0 0.9 0.8 0.7"   # 0.6,0.5 REMOVED: proven NaN-unstable (Sanaa order 2026-07-16)
 
 # ---------------------------------------------------------------- S0
 [ -e "$STATE/terminal" ] && exit 0
@@ -121,6 +121,8 @@ for g in $(cat "$STATE/supported_geoms" 2>/dev/null); do
                 scenario="$scen" qg.grid.Nx=2048 qg.grid.Ny=2048 \
                 qg.time.T=35 qg.time.dt="$dtc" qg.time.save_rate=3600 \
                 qg.pde.penalty="$p" +qg.bc.inlet_table="$tbl" \
+                +qg.diag.scalar_rate=10 +qg.diag.flush_every=500 \
+                +qg.diag.out="$QG_DIR/$rd/scalars.npz" \
                 hydra.run.dir="$rd" 2>/dev/null | head -1)
             jid=${jid%%.*}; hold_ids="$hold_ids,$jid"
         done
@@ -191,6 +193,8 @@ for g in $(cat "$STATE/supported_geoms" 2>/dev/null); do
                 scenario="${!scen_var2}" qg.grid.Nx=2048 qg.grid.Ny=2048 \
                 qg.time.save_rate=3600 ${dtov:+qg.time.dt=$dtov} \
                 qg.pde.penalty="$P" +qg.bc.inlet_table="$tbl" \
+                +qg.diag.scalar_rate=10 +qg.diag.flush_every=500 \
+                +qg.diag.out="$md/scalars.npz" \
                 hydra.run.dir="outputs/SGS_closure_ensemble/$m" 2>/dev/null | head -1)
             sid=${sid%%.*}
             qsub -terse -N "ck_${m:0:9}" -hold_jid "$sid" -q all.q \
