@@ -1,0 +1,9 @@
+# error-tails diagnostics -- piff_fpc_gjs_lap (val, filtered gaussian_jonly_ylp75)
+
+| member | rmse | rel_rmse | n_px | n_gt_10x | frac_gt_10x | worst0.1pct_SS_share | r2_active_q90 | r2_quiet_q50 | rmse_active | rmse_quiet | near_zero_px_share | extremes_near_body | Re_corr |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| FPC-const | 0.17506 | 0.279 | 1080096 | 483 | 4.47e-04 | 93.5% | 0.922 | -3494.832 | 0.5535 | 0.0013 | 95.5% | 100% | undef(const) |
+| FPC-sine | 0.29461 | 0.353 | 1080096 | 532 | 4.93e-04 | 92.5% | 0.875 | -3997.893 | 0.9316 | 0.0016 | 95.9% | 92% | -0.73 |
+
+figures: pngs/error_tails_diag/piff_fpc_gjs_lap_snap1903q
+per-member yaml/csv: runs_piff/piff_fpc_gjs_lap/error_tails_diag_snap1903q
