@@ -417,6 +417,7 @@ def main():
     model.load_state_dict(ck['model'])
     model.eval()
     conf.setdefault('model', {})['use_grad_feature'] = model.use_grad_feature
+    conf['model']['use_lap_feature'] = getattr(model, 'use_lap_feature', False)
     ck_var = ck['conf'].get('data', {}).get('variant')
     if ck_var and not conf['data'].get('variant'):
         conf['data']['variant'] = ck_var

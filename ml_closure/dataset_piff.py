@@ -173,6 +173,23 @@ class RunData:
                 gm[k] = np.sqrt(gx * gx + gy * gy).astype(np.float32)
             self.gradmag = gm
 
+        # |laplacian omega_bar| planes for the GP lap feature — raw physical
+        # magnitude, centered 5-point stencil, periodic (mirrors gradmag; same
+        # mask/exclusion logic). Normalization D^3/U(t_n) applied at crop time
+        # with the frame's U (one extra D vs the grad feature's D^2/U: the
+        # laplacian of omega* in x/D coordinates).
+        self.need_lap = bool(conf.get('model', {}).get('use_lap_feature', False))
+        if self.need_lap:
+            lm = np.empty_like(self.omega)
+            for k in range(self.T):
+                om = self.omega[k].astype(np.float64)
+                lx = (np.roll(om, -1, axis=1) + np.roll(om, 1, axis=1)
+                      - 2.0 * om) / (self.dx * self.dx)
+                ly = (np.roll(om, -1, axis=0) + np.roll(om, 1, axis=0)
+                      - 2.0 * om) / (self.dy * self.dy)
+                lm[k] = np.abs(lx + ly).astype(np.float32)
+            self.lapmag = lm
+
         # ---- static masks -------------------------------------------------- #
         # SDF cache keyed by variant too: the Gaussian chi_obs_bar is smoother
         # than the sharp one, so their distance maps differ
@@ -250,10 +267,12 @@ class RunData:
 
     def crop(self, frame, cy, cx, size):
         """Periodic (wrap) crop centered at (cy, cx). Returns x(4,s,s), y(s,s),
-        mask(s,s), zeta, zeta_dot, g(s,s)|None — float32 torch tensors except
-        mask (bool). g = |grad omega_bar|* = |grad omega_bar| * D^2/U (the
-        gradient of omega* in x/D coordinates), None unless
-        model.use_grad_feature."""
+        mask(s,s), zeta, zeta_dot, g(s,s)|None, lap(s,s)|None — float32 torch
+        tensors except mask (bool). g = |grad omega_bar|* = |grad omega_bar| *
+        D^2/U (the gradient of omega* in x/D coordinates), None unless
+        model.use_grad_feature. lap = |lap omega_bar|* = |lap omega_bar| *
+        D^3/U (the laplacian of omega* in x/D coordinates), None unless
+        model.use_lap_feature."""
         iy = (cy - size // 2 + np.arange(size)) % self.Ny
         ix = (cx - size // 2 + np.arange(size)) % self.Nx
         sl = np.ix_(iy, ix)
@@ -277,12 +296,19 @@ class RunData:
             if self.upstream_blend is not None:
                 gs = gs * self.upstream_blend[ix][None, :]
             g = torch.from_numpy(gs.astype(np.float32))
+        lap = None
+        if self.need_lap:
+            ls = self.lapmag[frame][sl].astype(np.float64) * (
+                self.D * self.D * self.D / _f(U))
+            if self.upstream_blend is not None:
+                ls = ls * self.upstream_blend[ix][None, :]
+            lap = torch.from_numpy(ls.astype(np.float32))
         return (torch.from_numpy(x),
                 torch.from_numpy(pi.astype(np.float32)),
                 torch.from_numpy(self.valid[sl]),
                 torch.tensor(self.zeta_snap[frame], dtype=torch.float32),
                 torch.tensor(self.zeta_dot_snap[frame], dtype=torch.float32),
-                g)
+                g, lap)
 
     def full_frame(self, frame):
         """Whole-domain channels/target/mask for a priori eval (model is
@@ -364,6 +390,16 @@ def conditioning_stats(runs, split, conf):
         out['g_scale'] = s1 / n
         out['g2_scale'] = s2 / n          # s_feat normalization (structural prior)
         out['g_n_pixels'] = int(n)
+    if all(getattr(r, 'need_lap', False) for r in runs):
+        n, s1 = 0, 0.0
+        for ri, fi in frames:
+            r = runs[ri]
+            U = _f(r.U_snap[fi])
+            lv = r.lapmag[fi][r.valid].astype(np.float64) * (r.D * r.D * r.D / U)
+            n += lv.size
+            s1 += float(lv.sum())
+        out['lap_scale'] = s1 / n
+        out['lap_n_pixels'] = int(n)
     return out
 
 
@@ -454,11 +490,13 @@ class PiffCropDataset(Dataset):
     def __getitem__(self, i):
         ri, fi, cy, cx = self.table[i]
         r = self.runs[ri]
-        x, y, m, zeta, zeta_dot, g = r.crop(fi, cy, cx, self.size)
+        x, y, m, zeta, zeta_dot, g, lap = r.crop(fi, cy, cx, self.size)
         out = {'x': x, 'y': y, 'mask': m, 'zeta': zeta, 'zeta_dot': zeta_dot,
                'run': int(ri), 'frame': int(fi)}
         if g is not None:
             out['g'] = g
+        if lap is not None:
+            out['lap'] = lap
         return out
 
     def epoch_hash(self):
@@ -467,7 +505,7 @@ class PiffCropDataset(Dataset):
         h.update(self.table.tobytes())
         for i in range(len(self)):
             s = self[i]
-            for k in ('x', 'y', 'mask', 'zeta', 'zeta_dot', 'g'):
+            for k in ('x', 'y', 'mask', 'zeta', 'zeta_dot', 'g', 'lap'):
                 if k in s:
                     h.update(s[k].numpy().tobytes())
         return h.hexdigest()

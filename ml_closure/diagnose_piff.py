@@ -66,11 +66,12 @@ def gaussian_nll(y, mu, var):
 @torch.no_grad()
 def predict_frame(model, run, frame, device, gp_chunk):
     """Full-frame predictive mean/sigma on masked pixels (copy of eval_piff)."""
-    x, y, mask, zeta, zeta_dot, g = run.full_frame(frame)
+    x, y, mask, zeta, zeta_dot, g, lap = run.full_frame(frame)
     gpin = model.masked_gp_inputs(
         x[None].to(device), zeta[None].to(device), mask[None].to(device),
         zeta_dot=(zeta_dot[None].to(device) if model.use_zeta_dot else None),
-        g=(g[None].to(device) if model.use_grad_feature else None))
+        g=(g[None].to(device) if model.use_grad_feature else None),
+        lap=(lap[None].to(device) if getattr(model, 'use_lap_feature', False) else None))
     gm = (g[None].to(device)[mask[None].to(device)]
           if getattr(model, 'noise_prior', 'none') == 'structural' else None)
     mus, vars_ = [], []

@@ -144,12 +144,13 @@ def collect(model, runs, frames, device, gp_chunk, per_frame_cap=None,
     t0 = time.time()
     for n, (ri, fi) in enumerate(frames):
         run = runs[ri]
-        x, y, mask, zeta, zeta_dot, g = run.full_frame(fi)
+        x, y, mask, zeta, zeta_dot, g, lap = run.full_frame(fi)
         xm, mk = x[None].to(device), mask[None].to(device)
         gpin = model.masked_gp_inputs(
             xm, zeta[None].to(device), mk,
             zeta_dot=(zeta_dot[None].to(device) if model.use_zeta_dot else None),
-            g=g[None].to(device))
+            g=g[None].to(device),
+            lap=(lap[None].to(device) if getattr(model, 'use_lap_feature', False) else None))
         gm = g[None].to(device)[mk]                       # (P,) masked grad
         sdf_m = xm[:, 3][mk]                              # (P,) masked sdf*
         y_std = (y.numpy()[mask.numpy()].astype(np.float64) - y_mu) / y_sd

@@ -52,7 +52,7 @@ def batches(ds, batch_crops):
     for i0 in range(0, len(idx), batch_crops):
         sel = idx[i0:i0 + batch_crops]
         items = [ds[int(i)] for i in sel]
-        keys = [k for k in ('x', 'y', 'mask', 'zeta', 'zeta_dot', 'g') if k in items[0]]
+        keys = [k for k in ('x', 'y', 'mask', 'zeta', 'zeta_dot', 'g', 'lap') if k in items[0]]
         yield {k: torch.stack([it[k] for it in items]) for k in keys}
 
 
@@ -60,7 +60,8 @@ def cond_kwargs(model, b, device):
     """Conditioning tensors for the model forward, from a batch dict (None
     when the corresponding ORDER-3 flag is off — exact legacy path)."""
     return {'zeta_dot': b['zeta_dot'].to(device) if model.use_zeta_dot else None,
-            'g': b['g'].to(device) if model.use_grad_feature else None}
+            'g': b['g'].to(device) if model.use_grad_feature else None,
+            'lap': b['lap'].to(device) if model.use_lap_feature else None}
 
 
 def gaussian_nll(y, mu, var):
@@ -266,10 +267,11 @@ def main():
             print(f"[train] Student-t: residual excess kurtosis {k:.3e} -> "
                   f"nu_init {nu_init:.3f} (learnable)")
     else:
-        if model.use_zeta_dot or model.use_grad_feature:
+        if model.use_zeta_dot or model.use_grad_feature or model.use_lap_feature:
             cstats = conditioning_stats(runs, 'train', conf)
             cond_const = model.set_conditioning_stats(
-                zdot_sd=cstats.get('zdot_sd'), g_scale=cstats.get('g_scale'))
+                zdot_sd=cstats.get('zdot_sd'), g_scale=cstats.get('g_scale'),
+                lap_scale=cstats.get('lap_scale'))
             if model.noise_prior == 'structural':
                 cond_const.update(
                     model.set_noise_feature_scale(cstats['g2_scale']))
@@ -288,7 +290,7 @@ def main():
             0.0, 1.0, noise_frac=_f(tc['init_noise_frac']))
         hyper0.update(std_const)
         hyper0['stats_n_pixels'] = ystats['n']
-        if model.use_zeta_dot or model.use_grad_feature:
+        if model.use_zeta_dot or model.use_grad_feature or model.use_lap_feature:
             hyper0.update(cond_const)
             hyper0['conditioning_stats'] = cstats
     info['init_hyperparams'] = hyper0
@@ -319,8 +321,8 @@ def main():
     spread0, kurt = None, None
     hist = {k: [] for k in ('train_elbo', 'val_nll', 'val_rmse', 'val_r2',
                             'val_sigma', 'zeta_ls', 'zdot_ls', 'grad_ls',
-                            'film_dgamma', 'film_beta', 'feat_spread', 'lr',
-                            'val_cov68', 'val_nu', 'val_pv_ratio')}
+                            'lap_ls', 'film_dgamma', 'film_beta', 'feat_spread',
+                            'lr', 'val_cov68', 'val_nu', 'val_pv_ratio')}
     best_nll = np.inf
 
     for ep in range(epochs):
@@ -359,6 +361,7 @@ def main():
         hist['zeta_ls'].append(zls)
         hist['zdot_ls'].append(ards.get('zeta_dot', np.nan))
         hist['grad_ls'].append(ards.get('grad', np.nan))
+        hist['lap_ls'].append(ards.get('lap', np.nan))
         hist['film_dgamma'].append(dg)
         hist['film_beta'].append(bnorm); hist['feat_spread'].append(spread)
         hist['lr'].append(opt.param_groups[0]['lr'])
@@ -372,6 +375,8 @@ def main():
             extra_ls += f" zdot_ls {ards['zeta_dot']:.3f}"
         if model.use_grad_feature:
             extra_ls += f" grad_ls {ards['grad']:.3f}"
+        if model.use_lap_feature:
+            extra_ls += f" lap_ls {ards['lap']:.3f}"
         if model.noise_prior == 'structural':
             import torch.nn.functional as _F
             extra_ls += (f" a {float(_F.softplus(model.noise_a)):.4f}"

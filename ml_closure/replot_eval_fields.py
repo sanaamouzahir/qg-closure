@@ -55,11 +55,12 @@ def predict_frame_full(model, run, frame, device, gp_chunk, recal=None):
     (structural models only): var' = var_gp + clamp(s_a*sp(a) +
     s_b*sp(b)*g^2/g2_scale, 1e-3, 10), exactly recalibrate_structural_sigma's
     formula. Mean is untouched."""
-    x, y, mask, zeta, zeta_dot, g = run.full_frame(frame)
+    x, y, mask, zeta, zeta_dot, g, lap = run.full_frame(frame)
     gpin = model.masked_gp_inputs(
         x[None].to(device), zeta[None].to(device), mask[None].to(device),
         zeta_dot=(zeta_dot[None].to(device) if model.use_zeta_dot else None),
-        g=(g[None].to(device) if model.use_grad_feature else None))
+        g=(g[None].to(device) if model.use_grad_feature else None),
+        lap=(lap[None].to(device) if getattr(model, 'use_lap_feature', False) else None))
     structural = getattr(model, 'noise_prior', 'none') == 'structural'
     gm = (g[None].to(device)[mask[None].to(device)] if structural else None)
     if recal is not None and not structural:

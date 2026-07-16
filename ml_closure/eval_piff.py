@@ -53,11 +53,12 @@ NOMINAL = {1.0: 0.682689, 2.0: 0.954500, 3.0: 0.997300}
 def predict_frame(model, run, frame, device, gp_chunk):
     """Full-frame predictive mean/sigma on masked pixels; returns 2D fields
     (NaN outside mask) + flat arrays."""
-    x, y, mask, zeta, zeta_dot, g = run.full_frame(frame)
+    x, y, mask, zeta, zeta_dot, g, lap = run.full_frame(frame)
     gpin = model.masked_gp_inputs(
         x[None].to(device), zeta[None].to(device), mask[None].to(device),
         zeta_dot=(zeta_dot[None].to(device) if model.use_zeta_dot else None),
-        g=(g[None].to(device) if model.use_grad_feature else None))
+        g=(g[None].to(device) if model.use_grad_feature else None),
+        lap=(lap[None].to(device) if getattr(model, 'use_lap_feature', False) else None))
     gm = (g[None].to(device)[mask[None].to(device)]
           if getattr(model, 'noise_prior', 'none') == 'structural' else None)
     student = model.is_student_t()
@@ -162,6 +163,7 @@ def main():
     # the data must carry whatever conditioning the CKPT was trained with,
     # regardless of the eval conf (ORDER-3 flags travel with the model)
     conf.setdefault('model', {})['use_grad_feature'] = model.use_grad_feature
+    conf['model']['use_lap_feature'] = getattr(model, 'use_lap_feature', False)
     # the data variant (sharp vs gaussian filter) travels with the ckpt too —
     # evaluating a gaussian-trained model on sharp targets is a different
     # experiment and must be asked for explicitly, never happen by default

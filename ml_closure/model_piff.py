@@ -177,8 +177,14 @@ class PiffModel(nn.Module):
         # use_grad_feature: local |grad omega_bar|* (crop-computed by the
         #   dataset, train-mean normalized via g_scale) as one more ARD dim —
         #   arm F's structural sigma prior moved INTO the kernel.
+        # use_lap_feature (Sanaa GO 2026-07-16): local |lap omega_bar|*
+        #   (crop-computed by the dataset, train-mean normalized via
+        #   lap_scale) as one more ARD dim — GP-side only, exactly like
+        #   use_grad_feature (FiLM-CNN inputs untouched). Default OFF ->
+        #   bit-identical to the pre-lap model.
         self.use_zeta_dot = bool(mc.get('use_zeta_dot', False))
         self.use_grad_feature = bool(mc.get('use_grad_feature', False))
+        self.use_lap_feature = bool(mc.get('use_lap_feature', False))
         # arm-F structural noise prior, PRODUCTION port (Sanaa 2026-07-13
         # night): sigma^2(x) = softplus(a) + softplus(b) * s_feat(x), s_feat =
         # train-mean-normalized g^2 (g = the grad feature; requires
@@ -209,7 +215,8 @@ class PiffModel(nn.Module):
                            cond_dim=cond_dim)
         self.zeta_idx = self.cnn.out_dim                  # position of zeta in GP inputs
         self.gp_input_dim = (self.cnn.out_dim + 1 + int(self.use_zeta_dot)
-                             + int(self.use_grad_feature))
+                             + int(self.use_grad_feature)
+                             + int(self.use_lap_feature))
         init_z = torch.randn(int(mc['n_inducing']), self.gp_input_dim)
         self.gp = PiffSVGP(init_z)
         if gpytorch is None:
@@ -241,6 +248,7 @@ class PiffModel(nn.Module):
         # the flag is on, so pre-ORDER-3 ckpts still load strict=True.
         self.register_buffer('zdot_sd', torch.ones(()), persistent=self.use_zeta_dot)
         self.register_buffer('g_scale', torch.ones(()), persistent=self.use_grad_feature)
+        self.register_buffer('lap_scale', torch.ones(()), persistent=self.use_lap_feature)
         self.register_buffer('g2_scale', torch.ones(()),
                              persistent=self.noise_prior == 'structural')
 
@@ -257,7 +265,7 @@ class PiffModel(nn.Module):
         # reopens the buy-out channel under b@10x-lr)
         return s2.clamp(1.0e-3, 10.0)
 
-    def set_conditioning_stats(self, zdot_sd=None, g_scale=None):
+    def set_conditioning_stats(self, zdot_sd=None, g_scale=None, lap_scale=None):
         """Recorded normalization constants for the conditioning inputs, from
         exact train-split stats. Returns the manifest dict."""
         out = {}
@@ -275,6 +283,12 @@ class PiffModel(nn.Module):
                 raise ValueError(f"bad g_scale={g_scale}")
             self.g_scale.fill_(g_scale)
             out['g_scale'] = g_scale
+        if self.use_lap_feature:
+            lap_scale = float(lap_scale)
+            if not lap_scale > 0.0:
+                raise ValueError(f"bad lap_scale={lap_scale}")
+            self.lap_scale.fill_(lap_scale)
+            out['lap_scale'] = lap_scale
         return out
 
     def is_student_t(self):
@@ -346,10 +360,11 @@ class PiffModel(nn.Module):
             mu = mu.mean(dim=0)
         return mu * self.y_sd + self.y_mu, var * self.y_sd * self.y_sd
 
-    def features(self, x, zeta, zeta_dot=None, g=None):
-        """(B,4,H,W),(B,)[,(B,)][,(B,H,W)] -> per-pixel GP inputs
-        (B,H,W,F+1[+zdot][+grad]). Column order: F CNN features, zeta,
-        then zeta_dot (normalized), then |grad omega_bar|* (normalized)."""
+    def features(self, x, zeta, zeta_dot=None, g=None, lap=None):
+        """(B,4,H,W),(B,)[,(B,)][,(B,H,W)][,(B,H,W)] -> per-pixel GP inputs
+        (B,H,W,F+1[+zdot][+grad][+lap]). Column order: F CNN features, zeta,
+        then zeta_dot (normalized), then |grad omega_bar|* (normalized),
+        then |lap omega_bar|* (normalized)."""
         if self.use_zeta_dot:
             if zeta_dot is None:
                 raise ValueError("use_zeta_dot=true but zeta_dot not supplied")
@@ -366,12 +381,16 @@ class PiffModel(nn.Module):
             if g is None:
                 raise ValueError("use_grad_feature=true but g not supplied")
             cols.append((g / self.g_scale).unsqueeze(-1))   # (B,H,W,1)
+        if self.use_lap_feature:
+            if lap is None:
+                raise ValueError("use_lap_feature=true but lap not supplied")
+            cols.append((lap / self.lap_scale).unsqueeze(-1))   # (B,H,W,1)
         return torch.cat(cols, dim=-1)
 
-    def masked_gp_inputs(self, x, zeta, mask, zeta_dot=None, g=None):
+    def masked_gp_inputs(self, x, zeta, mask, zeta_dot=None, g=None, lap=None):
         """Flatten to masked pixels: returns (P, gp_input_dim). Loss/eval
         masking lives HERE — inputs are never zeroed (spec S1.5)."""
-        return self.features(x, zeta, zeta_dot=zeta_dot, g=g)[mask]
+        return self.features(x, zeta, zeta_dot=zeta_dot, g=g, lap=lap)[mask]
 
     def zeta_ard_lengthscale(self):
         """Learned ARD lengthscale of the zeta input dim — reported in every
@@ -381,14 +400,17 @@ class PiffModel(nn.Module):
 
     def ard_lengthscales(self):
         """Named ARD lengthscales of the conditioning dims (acceptance
-        predictions, ORDER 3d): zeta always; zeta_dot / grad when enabled."""
+        predictions, ORDER 3d): zeta always; zeta_dot / grad / lap when
+        enabled."""
         ls = self.gp.covar_module.base_kernel.lengthscale[0]
         out = {'zeta': float(ls[self.zeta_idx])}
         i = self.zeta_idx + 1
         if self.use_zeta_dot:
             out['zeta_dot'] = float(ls[i]); i += 1
         if self.use_grad_feature:
-            out['grad'] = float(ls[i])
+            out['grad'] = float(ls[i]); i += 1
+        if self.use_lap_feature:
+            out['lap'] = float(ls[i])
         return out
 
     @torch.no_grad()
@@ -405,7 +427,8 @@ class PiffModel(nn.Module):
                 s['x'][None].to(device), s['zeta'][None].to(device),
                 s['mask'][None].to(device),
                 zeta_dot=(s['zeta_dot'][None].to(device) if self.use_zeta_dot else None),
-                g=(s['g'][None].to(device) if self.use_grad_feature else None))
+                g=(s['g'][None].to(device) if self.use_grad_feature else None),
+                lap=(s['lap'][None].to(device) if self.use_lap_feature else None))
             if f.shape[0] == 0:
                 continue
             take = min(f.shape[0], max(1, need // 4))

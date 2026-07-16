@@ -44,11 +44,12 @@ MEMBER_COLORS = ['#4477AA', '#EE6677', '#228833', '#CCBB44', '#AA3377']
 def frame_stats(model, run, frame, device, gp_chunk):
     """Posterior GP variance (no likelihood), total predictive sigma, |error|,
     and |grad omega*| — physical target units, masked pixels."""
-    x, y, mask, zeta, zeta_dot, g = run.full_frame(frame)
+    x, y, mask, zeta, zeta_dot, g, lap = run.full_frame(frame)
     gpin = model.masked_gp_inputs(
         x[None].to(device), zeta[None].to(device), mask[None].to(device),
         zeta_dot=(zeta_dot[None].to(device) if model.use_zeta_dot else None),
-        g=(g[None].to(device) if model.use_grad_feature else None))
+        g=(g[None].to(device) if model.use_grad_feature else None),
+        lap=(lap[None].to(device) if getattr(model, 'use_lap_feature', False) else None))
     y_sd2 = float(model.y_sd) ** 2
     mus, pvars, tvars = [], [], []
     for i0 in range(0, gpin.shape[0], gp_chunk):
