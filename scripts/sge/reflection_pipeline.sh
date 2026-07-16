@@ -59,7 +59,7 @@ flag_hold() {  # $1 stage  $2 body -- FLAG once and hold the stage
 MEMBERS_fpc="FPC-const FPC-sine FPC-ramp FPC-ou FPC-telS-A"
 MEMBERS_cape="FPCape-const FPCape-sine FPCape-ramp FPCape-ou FPCape-tel"
 SCEN_fpc="flow_past_cylinder_sponge"
-SCEN_cape="flow_past_cape_sponge"
+SCEN_cape="flow_past_cape"          # the cape scenario has no _sponge suffix
 PENALTIES="1.25 1.35 1.45 1.55 1.65 1.75 1.85 1.95 2.05 2.15 2.25"
 
 # ---------------------------------------------------------------- S0
@@ -99,6 +99,10 @@ for g in $(cat "$STATE/supported_geoms" 2>/dev/null); do
         cm=$(eval echo \"\$MEMBERS_$g\" | awk '{print $1}')
         tbl=$ENS/$cm/U_of_t.npz
         [ -f "$tbl" ] || { flag_hold "s1_$g" "member table $tbl missing"; continue; }
+        # solver dt MUST match the table dt (no runtime interpolation by
+        # design; phaseB_A bakes 1.25e-4 -- override with the member's dt)
+        dtc=$(grep -E '^\s+dt:' "$ENS/$cm/config.yaml" | head -1 | awk '{print $2}')
+        [ -n "$dtc" ] || { flag_hold "s1_$g" "cannot read dt from $ENS/$cm/config.yaml"; continue; }
         hold_ids=""
         for p in $PENALTIES; do
             rd="outputs/sponge_sweep/$g/p${p/./p}"
@@ -107,8 +111,8 @@ for g in $(cat "$STATE/supported_geoms" 2>/dev/null); do
                 -m a -M "$EMAIL" \
                 "$BRANCH/scripts/sge/phaseB_A_job.sh" \
                 scenario="$scen" qg.grid.Nx=2048 qg.grid.Ny=2048 \
-                qg.time.T=35 qg.time.save_rate=3600 qg.pde.penalty="$p" \
-                +qg.bc.inlet_table="$tbl" \
+                qg.time.T=35 qg.time.dt="$dtc" qg.time.save_rate=3600 \
+                qg.pde.penalty="$p" +qg.bc.inlet_table="$tbl" \
                 hydra.run.dir="$rd" 2>/dev/null | head -1)
             jid=${jid%%.*}; hold_ids="$hold_ids,$jid"
         done
