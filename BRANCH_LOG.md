@@ -2,6 +2,19 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-16 — LAP FEATURE LANDED; RETRAINS FLAGGED-HELD (Fable, local station, day mode)
+- 62825c6 [red-approved]: use_lap_feature |lap(omega_bar)|* GP-ARD channel, exact mirror of
+  use_grad_feature (5-pt periodic stencil in RunData, crop-time D^3/U, lap_scale buffer,
+  GP-side only, FiLM untouched); off-flag BIT-IDENTICAL (reviewer-confirmed). Configs
+  conf_piff_{fpc,cape}_gjs_lap.yaml = ylp75 copies + flag. Gates: G4 PASS (0 blocking),
+  ast 10/10 via qg-env-piff, yaml float check OK. Pushed.
+- Retrains NOT fired: mid-task amendment ordered warm-start from ylp75 best.pt, but the
+  lap model changes gp_input_dim 19->20 (inducing_points, raw_lengthscale mismatch) and
+  no dim-expanding warm-load exists in the repo; fallback would scrub the trained GP head
+  (I8 spirit). Companion qdel-two-running-sweeps-for-GPU-priority is outside I14. Both
+  FLAGGED: reporting/pending_mail/20260716_121743_lap_flag.mail (options a/b/c, rec: b =
+  column-append surgery + init-exactness probe + G4 re-review). WAITING on ruling.
+
 ## 2026-07-15 — CHARTER v1.4/v1.5 PROPAGATION + T4 RETROFIT (global supervisor Fable, local station)
 - Execution-model section appended to CLAUDE.md: I21c ssh sequence is the ONLY day-mode
   submission path; I22 path partition; I23 digest logging; I24 reflex ladder; I25 session-open.
