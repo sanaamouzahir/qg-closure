@@ -946,6 +946,28 @@ def main():
                         'a-priori run; cond_v2 used 0.1)')
     p.add_argument('--anchor-val-batches', type=int, default=25,
                    help='anchor val batches per epoch (0 = full val split)')
+    p.add_argument('--anchor-mode', choices=['floor', 'trust'], default='floor',
+                   help="'floor' = the original floored per-order rel-L2 "
+                        "(train_deriv objective). 'trust' = TRUST-REGION "
+                        "anchor (Sanaa GO 2026-07-16): per SAMPLE, per order, "
+                        "UNFLOORED rel-L2 divided by that sample's own "
+                        "(member x dT) baseline from the warm ckpt's "
+                        "eval_by_root_val.csv; loss = mean relu(err/baseline "
+                        "- (1+tol)) over Ndot+Nddot ONLY (N3dot excluded by "
+                        "order - its baseline is uniformly bad, protecting "
+                        "it fights the FT). Fixes the floor blind spot: "
+                        "members already below the pooled floor (kf4 0.02, "
+                        "combo 0.039) produced ZERO anchor gradient under "
+                        "'floor' and degraded freely (both p1 arms FAILed "
+                        "the 10% gate).")
+    p.add_argument('--anchor-baseline-csv', type=Path, default=None,
+                   help='trust mode: per-(member,dT) baseline table '
+                        '(eval_by_root_val.csv format; default: the file '
+                        'next to --init-ckpt)')
+    p.add_argument('--anchor-trust-tol', type=float, default=0.10,
+                   help='trust mode: allowed relative degradation vs the '
+                        'baseline before the hinge engages (0.10 = the '
+                        'acceptance gate tolerance)')
     p.add_argument('--val-free-steps', type=int, default=16,
                    help='val probe: truth-free steps rolled from the '
                         'stencil (blow-up fraction + annulus growth)')
@@ -1049,7 +1071,10 @@ def main():
     free_on = bool(args.free_horizon or args.free_steps)
     objective = ('rollout_relL2+annulus_stab' if free_on else 'rollout_relL2')
     if args.anchor_lambda > 0.0:
-        objective += f'+{args.anchor_lambda:g}*apriori_anchor'
+        objective += (f'+{args.anchor_lambda:g}*trust_anchor'
+                      f'(Ndot+Nddot,tol{args.anchor_trust_tol:g})'
+                      if args.anchor_mode == 'trust' else
+                      f'+{args.anchor_lambda:g}*apriori_anchor')
     (run_dir / 'config.json').write_text(json.dumps(
         vars(args) | {'model': model_name, 'n_snapshots': n_snap,
                       'objective': objective,
@@ -1130,6 +1155,48 @@ def main():
         print(f"[anchor] lambda={args.anchor_lambda:g}  roots={len(anc_roots)}"
               f"  batch={args.anchor_batch}  rel_floor={args.anchor_rel_floor}"
               f"  shapes={sorted(rep)}  (one anchor batch per optimizer step)")
+        if args.anchor_mode == 'trust':
+            # TRUST-REGION anchor (Sanaa GO 2026-07-16): per-(member,dT)
+            # baselines ride the regime vector (indices 9:11) so shape-
+            # homogeneous MIXED-root batches need no id lookup at step time.
+            # regime_vec is per-SUBSET and nothing reads beyond index 8, so
+            # appending is backward-compatible; anchor loaders run
+            # num_workers=0, so the in-place extension is visible.
+            import csv as _csv
+            bcsv = args.anchor_baseline_csv
+            if bcsv is None and args.init_ckpt is not None:
+                bcsv = args.init_ckpt.parent / 'eval_by_root_val.csv'
+            if bcsv is None or not Path(bcsv).exists():
+                raise SystemExit('[anchor] trust mode needs '
+                                 '--anchor-baseline-csv (or eval_by_root_'
+                                 'val.csv next to --init-ckpt)')
+            base = {}
+            with open(bcsv) as f:
+                for row in _csv.DictReader(f):
+                    base[(row['member'], round(float(row['Delta_T']), 9))] = (
+                        float(row['Ndot']), float(row['Nddot']))
+            print(f"[anchor] TRUST-REGION: baselines from {bcsv} "
+                  f"({len(base)} rows)  tol +{args.anchor_trust_tol:.0%}  "
+                  f"orders Ndot+Nddot ONLY (N3dot excluded, Sanaa "
+                  f"2026-07-16)")
+            for i_ds, ds_ in enumerate((anc_train_ds, anc_val_ds)):
+                for sub in ds_.subsets:
+                    key = (sub.root.parent.name,
+                           round(float(sub.man['Delta_T']), 9))
+                    if key not in base:
+                        raise SystemExit(f'[anchor] no baseline row for '
+                                         f'{key} in {bcsv}')
+                    bn, bd = base[key]
+                    if len(sub.regime_vec) != 9:
+                        raise SystemExit(f'[anchor] regime_vec len '
+                                         f'{len(sub.regime_vec)} != 9 at '
+                                         f'{sub.root} (double extension?)')
+                    sub.regime_vec = torch.cat(
+                        [sub.regime_vec,
+                         torch.tensor([bn, bd], dtype=torch.float32)])
+                    if i_ds == 0:
+                        print(f"[anchor]   {key[0]:>10s} dT={key[1]:<8g} "
+                              f"baseline Ndot={bn:.4f} Nddot={bd:.4f}")
 
     def anchor_loss(batch, want_per=False):
         """floored per-order rel-L2 of the a-priori derivative targets --
@@ -1143,11 +1210,26 @@ def main():
         dT = regime[:, 0].to(x.dtype)
         dxb = regime[:, 4].to(x.dtype)
         dyb = regime[:, 5].to(x.dtype)
+        nd = model(x, dt=dT, dx=dxb, dy=dyb)
+        nd = anc_project[(x.shape[-2], x.shape[-1])](nd)
+        if args.anchor_mode == 'trust':
+            # per-sample per-order rel-L2, UNFLOORED, over the sample's own
+            # (member x dT) baseline (regime[9:11]); hinge on Ndot+Nddot
+            # only. Zero loss (and zero gradient) anywhere inside the trust
+            # region -- the anchor engages exactly where the acceptance
+            # gate would fail, on EVERY member (no pooled-floor blind spot).
+            rel = relative_l2_persample(nd, y, None)          # (B,3) graph
+            bl = regime[:, 9:11].to(rel.dtype)                # (B,2)
+            hinge = torch.relu(rel[:, :2] / bl
+                               - (1.0 + args.anchor_trust_tol))
+            loss = hinge.mean()
+            # logged per-sample numbers = RAW unfloored rel-L2 (directly
+            # comparable to eval_by_root_val.csv / the gate table)
+            per = rel.detach().cpu().numpy() if want_per else None
+            return loss, per
         floor = (args.anchor_rel_floor
                  * regime[:, 6:6 + args.out_orders]
                  if args.anchor_rel_floor > 0 else None)
-        nd = model(x, dt=dT, dx=dxb, dy=dyb)
-        nd = anc_project[(x.shape[-2], x.shape[-1])](nd)
         loss = relative_l2_perchannel(nd, y, floor)
         per = (relative_l2_persample(nd, y, floor).detach().cpu().numpy()
                if want_per else None)
