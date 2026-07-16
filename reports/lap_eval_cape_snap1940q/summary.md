@@ -1,0 +1,9 @@
+# mean-prediction diagnostics -- piff_cape_gjs_lap (val, filtered variant gaussian_jonly_ylp75)
+
+| member | n_frames | r2 | rmse | bias | max_err | min_err | pearson_Re_rmse | corr_ae_sdf | corr_ae_y | L_error | L_truth | L_pred | pred_truth_corr |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| FPCape-sine | 8 | 0.897 | 0.45835 | -2.921e-03 | 143.1565 | -121.3855 | -0.823 | -0.079 | -0.071 | 0.0398 | 0.0577 | 0.0574 | 0.9471 |
+| FPCape-tel | 8 | 0.9851 | 0.08759 | +5.920e-04 | 10.5498 | -7.58 | nan | -0.155 | -0.119 | 0.0438 | 0.0581 | 0.0581 | 0.9926 |
+
+figures: pngs/mean_prediction_diag/piff_cape_gjs_lap_snap1940q
+per-member yaml/csv: runs_piff/piff_cape_gjs_lap/mean_prediction_diag_snap1940q
