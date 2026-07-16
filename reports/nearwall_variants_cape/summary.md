@@ -9,6 +9,9 @@ sharp:
 gaussian:
   row_corr_median: 0.8458007785824488
   high_ky_power_frac_median: 0.005065283213568218
+jonly:
+  row_corr_median: 0.688693632330249
+  high_ky_power_frac_median: 0.0019503803721956285
 ylp75:
   row_corr_median: 0.688693632330249
   high_ky_power_frac_median: 0.0019503803721956285
