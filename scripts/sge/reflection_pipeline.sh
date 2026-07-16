@@ -128,6 +128,31 @@ for g in $(cat "$STATE/supported_geoms" 2>/dev/null); do
             "jobs sw${g:0:1}_* on ibgpu.q, analysis swAna_$g held on all of them.\nPick lands in $STATE/penalty_$g.txt; S2 reruns fire automatically."
     fi
 
+    # -------------------------------------------------- S1b early exit
+    # Sanaa 21:35: once a sponge passes (pick written), qdel queued sweeps;
+    # meanwhile re-run the analyzer on PARTIAL results as runs complete.
+    if [ -f "$STATE/penalty_$g.txt" ]; then
+        ids=$(qstat -u sanaamz 2>/dev/null | awk -v p="sw${g:0:1}_" '$3 ~ p {print $1}')
+        if [ -n "$ids" ]; then
+            # shellcheck disable=SC2086
+            qdel $ids >/dev/null 2>&1
+            mail_once "s1cut_$g" "[QG][MONITOR][sgs-closure] $g sponge picked -- remaining sweep jobs qdel'd" \
+                "penalty $(head -1 "$STATE/penalty_$g.txt") selected early; queued sweeps cancelled (GPU freed)."
+        fi
+    elif [ -e "$STATE/s1_fired_$g" ]; then
+        n_done=$(ls "$QG_DIR/outputs/sponge_sweep/$g"/p*/DNS_FR.npz 2>/dev/null | wc -l)
+        last=$(cat "$STATE/early_n_$g" 2>/dev/null || echo 0)
+        if [ "$n_done" -ge 2 ] && [ "$n_done" -gt "$last" ]; then
+            echo "$n_done" > "$STATE/early_n_$g"
+            qsub -q all.q -N "swEar_$g" -o "$LOGDIR/" -j y -cwd -V \
+                -m a -M "$EMAIL" \
+                "$BRANCH/scripts/sge/piff_tool_job.sh" analyze_sponge_sweep.py \
+                --sweep-root "$QG_DIR/outputs/sponge_sweep/$g" \
+                --geometry "$g" --t-window 25 35 \
+                --out "$STATE/penalty_$g.txt" >/dev/null 2>&1
+        fi
+    fi
+
     # ------------------------------------------------------------ S2
     if [ -f "$STATE/penalty_$g.txt" ] && [ ! -e "$STATE/s2_fired_$g" ]; then
         P=$(head -1 "$STATE/penalty_$g.txt")

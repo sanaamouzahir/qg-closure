@@ -199,7 +199,9 @@ def main():
              body + f'\n\nPICK: {pick} (smallest passing with passing '
              'successor; deployed value = successor for margin).\n'
              'S2 member reruns fire on the next pipeline tick.')
-    else:
+    elif len([r for _, r in rows if not isinstance(r, str)]) >= 11:
+        # no-pick mail only when the FULL sweep has reported (partial early
+        # runs stay silent -- Sanaa 21:35 early-exit mode reruns this often)
         mail(f'sweep_{args.geometry}',
              f'[QG][FLAG][sgs-closure] sponge sweep {args.geometry}: '
              'NO penalty in 1.25-2.25 passes',
