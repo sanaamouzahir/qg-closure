@@ -32,7 +32,11 @@
 # named file it asks for (or fix the tool) and the next tick resumes. The
 # machine never guesses and never edits code (I24 philosophy).
 set -u
-export PATH=/opt/rocks/bin:$PATH
+# cron has NO SGE env (2026-07-16 incident: every cron-tick qsub failed
+# silently overnight) -- load it explicitly, plus the worktree-capable git
+export SGE_ROOT=${SGE_ROOT:-/opt/gridengine}
+export SGE_CELL=${SGE_CELL:-default}
+export PATH=/opt/gridengine/bin/lx-amd64:/opt/rocks/bin:$PATH
 QG_ROOT=/gdata/projects/ml_scope/Closure_modeling/QG-closure
 QG_DIR=$QG_ROOT/qg-simple-package-stable/src/qg
 BRANCH=$QG_ROOT/qg-sgs-closure
