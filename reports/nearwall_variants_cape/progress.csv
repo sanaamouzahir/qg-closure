@@ -1,3 +1,4 @@
 timestamp,event,job_id,host,note
 2026-07-15T20:16:40,start,1835309,ibfdr-compute-0-2.local,diagnose_nearwall_variants.py --config conf_piff_cape_gjs_ylp75.yaml --member FPCape-sine --events runs_piff/piff_cape_gjs_ylp75/error_tails_diag/FPCape-sine/extreme_events.csv --report-run nearwall_variants_cape
 2026-07-15T20:23:35,done,1835309,ibfdr-compute-0-2.local,FPCape-sine: SMOOTH-PHYSICS: the near-wall excess is coherent in every variant -- real bounda
+2026-07-15T20:31:53,start,1835311,ibfdr-compute-0-2.local,diagnose_nearwall_variants.py --config conf_piff_cape_gjs_ylp75.yaml --member FPCape-sine --events runs_piff/piff_cape_gjs_ylp75/error_tails_diag/FPCape-sine/extreme_events.csv --report-run nearwall_variants_cape
