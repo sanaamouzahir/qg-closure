@@ -110,6 +110,11 @@ TRAIN_PAT="lap[0-9]*_|w31p|piff_|deriv7_|rollout_ft"   # any TRAINING name famil
 QS=$(qstat -u sanaamz 2>/dev/null)
 n_qw_train=$(echo "$QS" | awk -v P="$TRAIN_PAT" '$3 ~ P && $5 == "qw" {c++} END {print c+0}')
 if [ "$n_qw_train" -gt 0 ]; then
+    # ALSO clear QUEUED sweeps: they sit ahead of the trainers in FIFO and
+    # would steal the freed slots (observed 16:47 2026-07-16 — lap6 stayed qw
+    # while older-queued cape sweeps grabbed the yield). They refill later.
+    echo "$QS" | awk '$3 ~ /^sw[cf]_/ && $5 == "qw" {print $1}' \
+        | while read -r jid; do qdel "$jid" >/dev/null 2>&1; done
     echo "$QS" | awk '$3 ~ /^sw[cf]_/ && $5 == "r" {print $1, $3}' \
         | sort -k2,2r | head -n "$n_qw_train" | while read -r jid name; do
         qdel "$jid" >/dev/null 2>&1
