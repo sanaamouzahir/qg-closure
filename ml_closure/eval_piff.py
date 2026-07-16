@@ -281,14 +281,16 @@ def main():
         vmax = np.nanmax(np.abs(np.where(ring2d, tr, np.nan)))
         if not np.isfinite(vmax):
             vmax = np.nanmax(np.abs(tr))
-        for ax, f2d, ttl, vm in zip(
+        # Sanaa convention 2026-07-16: ALL panels on ONE color scale -- the
+        # TRUTH's (ring-excluded max) -- and every title carries t + Re(t).
+        stamp = f"t={p['t']:.2f} Re(t)={p['Re']:.0f}"
+        for ax, f2d, ttl in zip(
                 axs, [tr, p['mu2d'], p['sigma2d'], err],
-                [f"truth Pi*  t={p['t']:.2f} Re={p['Re']:.0f}", 'predictive mean',
-                 'predictive sigma', '|error|'],
-                [vmax, vmax, None, None]):
-            im = imshow_field(ax, f2d, run, ttl, vmax=vm)
-            fig.colorbar(im, ax=ax, fraction=0.046)
-        fig.tight_layout()
+                [f"truth Pi*  {stamp}", f"predictive mean  {stamp}",
+                 f"predictive sigma  {stamp}", f"|error|  {stamp}"]):
+            im = imshow_field(ax, f2d, run, ttl, vmax=vmax)
+        fig.colorbar(im, ax=list(axs), fraction=0.02, pad=0.02,
+                     label='truth color scale (shared)')
         fig.savefig(outdir / f'field_{j}_t{p["t"]:.2f}.png', dpi=130)
         plt.close(fig)
 
