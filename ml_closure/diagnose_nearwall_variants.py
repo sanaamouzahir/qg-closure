@@ -37,7 +37,8 @@ from dataset_piff import load_conf, build_runs
 HERE = Path(__file__).resolve().parent
 BRANCH_ROOT = HERE.parent
 VARIANTS = [('sharp', ''), ('gaussian', 'gaussian'),
-            ('ylp75', 'gaussian_jonly_ylp75')]
+            ('jonly', 'gaussian_jonly'),      # isolates the commutator removal
+            ('ylp75', 'gaussian_jonly_ylp75')]  # ...from the y-notch
 
 
 def load_member(config, member, variant):
@@ -65,8 +66,9 @@ def main():
     fig_dir.mkdir(parents=True, exist_ok=True)
 
     stats = {}
-    fig, axs = plt.subplots(len(evs), 3,
-                            figsize=(11, 3.6 * len(evs)), squeeze=False)
+    fig, axs = plt.subplots(len(evs), len(VARIANTS),
+                            figsize=(3.7 * len(VARIANTS), 3.6 * len(evs)),
+                            squeeze=False)
     for vi, (vname, vkey) in enumerate(VARIANTS):
         run = load_member(args.config, args.member, vkey)
         band = np.abs(run.sdf) < 1.0 * run.D          # near-wall rows/cols
