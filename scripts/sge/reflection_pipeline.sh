@@ -106,7 +106,7 @@ submit_sweep() {  # $1 geometry  $2 penalty -- one sweep short (used by S1 + ref
 # ------------------------------------------- SWEEP-FILL (Sanaa 2026-07-16):
 # TRAININGS NEVER QUEUE BEHIND SWEEPS; sweeps refill freed GPUs and resume
 # after yielding -- perpetually, per geometry, until its pick exists.
-TRAIN_PAT="lap2_|w31p|piff_"
+TRAIN_PAT="lap[0-9]*_|w31p|piff_|deriv7_|rollout_ft"   # any TRAINING name family
 QS=$(qstat -u sanaamz 2>/dev/null)
 n_qw_train=$(echo "$QS" | awk -v P="$TRAIN_PAT" '$3 ~ P && $5 == "qw" {c++} END {print c+0}')
 if [ "$n_qw_train" -gt 0 ]; then
