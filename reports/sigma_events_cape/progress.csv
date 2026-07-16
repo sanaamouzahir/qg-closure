@@ -1,2 +1,3 @@
 timestamp,event,job_id,host,note
 2026-07-15T21:04:46,start,1835394,ibfdr-compute-0-4.local,diagnose_sigma_at_events.py --ckpt runs_piff/piff_cape_gjs_ylp75/best.pt --config conf_piff_cape_gjs_ylp75.yaml --member FPCape-sine --events runs_piff/piff_cape_gjs_ylp75/error_tails_diag/FPCape-sine/extreme_events.csv --report-run sigma_events_cape
+2026-07-15T21:09:37,done,1835394,ibfdr-compute-0-4.local,FPCape-sine: CONFIDENTLY-WRONG: truth is 14 sigma away (median) -- features cannot 
