@@ -24,7 +24,7 @@ for a in rollout_ft_w31_p1a rollout_ft_w31_p1b; do
     echo "== eval $a ($ck)"
     # shellcheck disable=SC2086
     python -u eval_deriv_by_root.py --ckpt "$ck" --sweep-roots $ROOTS \
-        --device cpu || echo "EVAL_FAIL_$a"
+        --grad-kernel 31 --device cpu || echo "EVAL_FAIL_$a"
 done
 for a in rollout_ft_w31_p1a rollout_ft_w31_p1b; do
     python -u accept_ft_gate.py \
