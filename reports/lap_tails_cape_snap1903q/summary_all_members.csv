@@ -1,0 +1,3 @@
+member,rmse,rel_rmse,n_px,n_gt_10x,frac_gt_10x,worst0.1pct_SS_share,r2_active_q90,r2_quiet_q50,rmse_active,rmse_quiet,near_zero_px_share,extremes_near_body,Re_corr
+FPCape-sine,0.46241,0.324,1257824,906,7.20e-04,87.0%,0.896,-291.322,1.4584,0.004,88.2%,100%,-0.821
+FPCape-tel,0.09178,0.128,1257824,2443,1.94e-03,64.6%,0.984,-145.908,0.2893,0.0009,90.9%,58%,undef(const)
