@@ -102,8 +102,34 @@ def run_metrics(run_dir, t_lo=None, t_hi=None):
     m = {'u_deficit': float(np.median(ud)), 'v_rms': float(np.median(vr)),
          'om_rms': float(np.median(orr)), 'st_leak': st_leak,
          'n_frames': int(idx.size)}
-    m['pass'] = all(m[k] < TOL[k] for k in TOL)
+    # Sanaa 2026-07-15 21:20: u/v/omega are the binding checks; St-leak is
+    # ADVISORY when they pass (St may sit within range of truth).
+    m['pass'] = all(m[k] < TOL[k] for k in ('u_deficit', 'v_rms', 'om_rms'))
+    m['st_advisory_exceeded'] = bool(st_leak >= TOL['st_leak'])
     return m
+
+
+def snapshot_plot(run_dir, out_png, title):
+    """Last-snapshot omega + inlet-strip panels on a VERY TIGHT color scale
+    (Sanaa: triple-sure visual -- residual reflection shows at clim ~1e-3)."""
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    z = np.load(Path(run_dir) / 'DNS_FR.npz')
+    om = z['omega_FR'] if 'omega_FR' in z.files else z['omega']
+    om = om[0] if om.ndim == 4 else om
+    last = np.asarray(om[-1], dtype=np.float64)
+    fig, axs = plt.subplots(1, 2, figsize=(13, 5))
+    for ax, clim, tag in ((axs[0], 1.0, 'omega, clim +-1'),
+                          (axs[1], 1e-3, 'omega, clim +-1e-3 (reflection scale)')):
+        im = ax.imshow(last, origin='lower', cmap='seismic',
+                       vmin=-clim, vmax=clim, aspect='equal',
+                       interpolation='nearest')
+        ax.set_title(f'{title}: {tag}', fontsize=9)
+        plt.colorbar(im, ax=ax, shrink=0.8)
+    Path(out_png).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_png, dpi=130, bbox_inches='tight')
+    plt.close(fig)
 
 
 def main():
@@ -154,6 +180,19 @@ def main():
         for p, r in rows)
     if pick is not None:
         Path(args.out).write_text(f'{pick}\n')
+        # triple-sure snapshots (tight colorbar) -> reports/, pushed by the
+        # relay cron; email carries the paths
+        rep = Path('/gdata/projects/ml_scope/Closure_modeling/QG-closure/'
+                   f'qg-sgs-closure/reports/sponge_sweep_{args.geometry}')
+        for p, r in rows:
+            if isinstance(r, str) or abs(p - pick) > 0.051:
+                continue
+            d = root / f"p{str(p).replace('.', 'p')}"
+            try:
+                snapshot_plot(d, rep / f'last_snapshot_p{p}.png',
+                              f'{args.geometry} penalty {p}')
+            except Exception as e:
+                print(f'[snapshot] {p}: {e!r}', flush=True)
         mail(f'sweep_{args.geometry}',
              f'[QG][MONITOR][sgs-closure] sponge sweep {args.geometry}: '
              f'PICKED penalty {pick}',

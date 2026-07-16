@@ -167,6 +167,9 @@ for g in $(cat "$STATE/supported_geoms" 2>/dev/null); do
                 --append "$STATE/member_checks_$g.txt" >/dev/null 2>&1
         done
         touch "$STATE/s2_fired_$g"
+        # Sanaa 21:20: delete the sweep runs once reruns are fired (analysis
+        # yaml + tight-colorbar snapshots survive in reports/)
+        rm -rf "$QG_DIR/outputs/sponge_sweep/$g"
         mail_once "s2_$g" "[QG][SUBMIT][sgs-closure] reruns fired: $g at penalty $P (v1 LES archived to _v1_reflected/)" \
             "All ${g} members resubmitted full-length, ONLY qg.pde.penalty=$P changed.\nEach sim chains an inlet-check appending to member_checks_$g.txt; S3 fires when ALL PASS."
     fi
