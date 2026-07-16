@@ -68,6 +68,90 @@ def gaussian_nll(y, mu, var):
     return 0.5 * (np.log(2 * np.pi * var) + (y - mu) ** 2 / var)
 
 
+# ---- lap warm-start surgery (option b, Sanaa GO 2026-07-16) --------------- #
+def lap_expand_state_dict(model, sd, lap_scale, train_ds, seed):
+    """Expand a pre-lap ckpt state dict to the +lap GP input dim. ONLY the new
+    column/lengthscale initialize fresh; every other tensor loads 1:1.
+    - inducing_points gain a lap column = the M evenly-spaced quantiles of the
+      normalized lap feature over a seeded train-pixel sample (k-means-
+      consistent: init_inducing_kmeans places centers over the empirical
+      distribution of the normalized GP inputs, so the fresh dim spreads the
+      same way; the assignment order is arbitrary — the ARD kernel only sees
+      per-dim coordinate values).
+    - raw_lengthscale gains one entry = the mean of the loaded raw ARD values
+      (data-informed init, mobile from step one).
+    Mutates sd in place; returns the manifest dict."""
+    ip_key = 'gp.variational_strategy.inducing_points'
+    ls_key = 'gp.covar_module.base_kernel.raw_lengthscale'
+    d_ck = int(sd[ip_key].shape[-1])
+    if d_ck != model.gp_input_dim - 1:
+        raise RuntimeError(f"lap surgery: ckpt GP input dim {d_ck} != model "
+                           f"{model.gp_input_dim} - 1 — not the +lap case")
+    rng = np.random.default_rng([int(seed), 99])
+    vals, have = [], 0
+    for i in rng.permutation(len(train_ds)):
+        s = train_ds[int(i)]
+        v = s['lap'][s['mask']].numpy().astype(np.float64) / float(lap_scale)
+        vals.append(v)
+        have += v.size
+        if have >= 20000:
+            break
+    vals = np.concatenate(vals)
+    M = int(sd[ip_key].shape[0])
+    q = np.quantile(vals, (np.arange(M) + 0.5) / M)
+    lap_col = torch.from_numpy(q).to(sd[ip_key].dtype).reshape(M, 1)
+    sd[ip_key] = torch.cat([sd[ip_key], lap_col], dim=-1)
+    raw_new = sd[ls_key].mean(dim=-1, keepdim=True)
+    sd[ls_key] = torch.cat([sd[ls_key], raw_new], dim=-1)
+    return {'ckpt_gp_dim': d_ck, 'new_gp_dim': int(model.gp_input_dim),
+            'lap_scale': float(lap_scale),
+            'lap_col_q_range': [float(q[0]), float(q[-1])],
+            'lap_raw_lengthscale_init': float(raw_new),
+            'n_lap_sample_pixels': int(vals.size)}
+
+
+@torch.no_grad()
+def lap_init_probe(model, ref, val_ds, device, tol=1.0e-5):
+    """I8-spirit init-exactness gate for the lap surgery: with the lap ARD raw
+    lengthscale pushed to 1.0e6 (softplus is identity out there, so the lap
+    dim contributes (dlap/1e6)^2 ~ 1e-11 to the kernel distance = round-off),
+    the expanded GP must reproduce the pre-lap reference model's latent
+    posterior mean AND variance on a fixed val batch. Run in float64 so the
+    K_zz Cholesky's conditioning neither launders a genuine surgery bug into
+    'round-off' nor amplifies round-off into a false failure. Hard-fails
+    otherwise; the training-init lengthscale is restored either way."""
+    b = next(batches(val_ds, 8))
+    model.double().eval()
+    ref.double().eval()
+    try:
+        x = b['x'].to(device).double()
+        zeta = b['zeta'].to(device).double()
+        mask = b['mask'].to(device)
+        zd = b['zeta_dot'].to(device).double() if ref.use_zeta_dot else None
+        g = b['g'].to(device).double() if ref.use_grad_feature else None
+        lap = b['lap'].to(device).double()
+        p_ref = ref.gp(ref.masked_gp_inputs(x, zeta, mask, zeta_dot=zd, g=g))
+        ls = model.gp.covar_module.base_kernel.raw_lengthscale
+        saved = ls.data[..., -1].clone()
+        ls.data[..., -1] = 1.0e6
+        p_new = model.gp(model.masked_gp_inputs(x, zeta, mask, zeta_dot=zd,
+                                                g=g, lap=lap))
+        ls.data[..., -1] = saved
+        dmu = float((p_new.mean - p_ref.mean).abs().max()
+                    / p_ref.mean.abs().max().clamp_min(1e-30))
+        dvar = float((p_new.variance - p_ref.variance).abs().max()
+                     / p_ref.variance.abs().max().clamp_min(1e-30))
+    finally:
+        model.float()
+    if not (dmu < tol and dvar < tol):
+        raise RuntimeError(
+            f"lap init-exactness probe FAILED: rel dmu={dmu:.3e} "
+            f"dvar={dvar:.3e} (tol {tol:.1e}) — the expanded GP does not "
+            f"reproduce the ckpt with the lap dim inert; NOT training (I8)")
+    return {'probe_rel_dmu': dmu, 'probe_rel_dvar': dvar,
+            'probe_tol': float(tol), 'probe_n_pixels': int(p_ref.mean.numel())}
+
+
 # ---- Student-t observation model (B-item, Sanaa 2026-07-14) --------------- #
 # scipy is an existing pipeline dependency (dataset_piff / calibrate_piff /
 # diagnose_piff); scipy.stats.t gives the exact per-pixel NLL and the central-
@@ -218,14 +302,45 @@ def main():
         yaml.safe_dump(info, f, sort_keys=False)
 
     model = PiffModel(conf).to(device)
+    cstats = None
+    lap_info = None
     if args.init_ckpt:
         wck = torch.load(args.init_ckpt, map_location='cpu', weights_only=False)
-        missing, unexpected = model.load_state_dict(wck['model'], strict=False)
+        sd = wck['model']
+        # option-b lap warm-start surgery (Sanaa GO 2026-07-16): warm-starting
+        # a +lap model from a pre-lap ckpt expands the two GP input-dim
+        # tensors (inducing_points, raw_lengthscale) in place instead of
+        # crashing on the shape mismatch. The pre-lap REFERENCE model is built
+        # from the UNmutated dict first (init-probe target). lap_scale is
+        # fresh (the ckpt predates the feature) and must be set BEFORE
+        # sampling normalized lap values for the new inducing column.
+        ck_lap = bool(wck.get('conf', {}).get('model', {})
+                      .get('use_lap_feature', False))
+        ref = None
+        if model.use_lap_feature and not ck_lap:
+            # G4 LOW-1 guard: the dim check alone would accept a ckpt whose
+            # SHARED columns misalign (same count, different flags) — refuse
+            ck_mc = wck.get('conf', {}).get('model', {})
+            for fl in ('use_zeta_dot', 'use_grad_feature'):
+                if bool(ck_mc.get(fl, False)) != bool(getattr(model, fl)):
+                    raise RuntimeError(
+                        f"lap surgery: ckpt {fl}={bool(ck_mc.get(fl, False))} "
+                        f"!= model {bool(getattr(model, fl))} — shared GP "
+                        f"columns would misalign")
+            ref = PiffModel(wck['conf']).to(device)
+            ref.load_state_dict(sd)
+            cstats = conditioning_stats(runs, 'train', conf)
+            model.lap_scale.fill_(float(cstats['lap_scale']))
+            lap_info = lap_expand_state_dict(model, sd, cstats['lap_scale'],
+                                             train_ds, seed)
+        missing, unexpected = model.load_state_dict(sd, strict=False)
         # the ONLY tolerated missing keys: the structural-noise head (when warm-
-        # starting a structural model from a non-structural ckpt) and, for the
-        # gaussian->student_t swap, the fresh Student-t dof (the head itself —
-        # noise_a/noise_b/g2_scale — carries over 1:1 from the gaussian ckpt).
-        allowed = {'noise_a', 'noise_b', 'g2_scale',
+        # starting a structural model from a non-structural ckpt), the fresh
+        # lap_scale buffer (lap surgery path — set above, absent from pre-lap
+        # ckpts) and, for the gaussian->student_t swap, the fresh Student-t
+        # dof (the head itself — noise_a/noise_b/g2_scale — carries over 1:1
+        # from the gaussian ckpt).
+        allowed = {'noise_a', 'noise_b', 'g2_scale', 'lap_scale',
                    'likelihood.noise_covar.noise', 'likelihood.raw_nu'}
         bad_m = [k for k in missing if k not in allowed]
         bad_u = [k for k in unexpected
@@ -238,6 +353,12 @@ def main():
                                f"noise keys: missing={bad_m} unexpected={bad_u}")
         print(f"[train] warm start from {args.init_ckpt} (epoch="
               f"{wck.get('epoch')}); fresh keys: {sorted(missing)}")
+        if ref is not None:
+            # I8-spirit gate: hard-fails the job (no training) on mismatch
+            lap_info.update(lap_init_probe(model, ref, val_ds, device))
+            del ref
+            print(f"[train] lap surgery + init-exactness probe PASS: "
+                  f"{json.dumps(lap_info)}")
     # conditioning normalization MUST precede the inducing k-means (G4 finding
     # 2026-07-13): the centers live in feature space, and the zeta_dot/grad
     # columns are built through the zdot_sd/g_scale buffers — identity buffers
@@ -249,8 +370,11 @@ def main():
         # upstream mask changes the pool stats, the model must not re-scale).
         # Only the FRESH structural-noise feature scale is computed here.
         hyper0 = {'warm_start': str(args.init_ckpt)}
+        if lap_info is not None:
+            hyper0['lap_surgery'] = lap_info
         if model.noise_prior == 'structural':
-            cstats = conditioning_stats(runs, 'train', conf)
+            if cstats is None:
+                cstats = conditioning_stats(runs, 'train', conf)
             hyper0.update(model.set_noise_feature_scale(cstats['g2_scale']))
             print(f"[train] structural-noise s_feat scale (fresh): "
                   f"g2_scale={cstats['g2_scale']:.6e}")
