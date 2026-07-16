@@ -15,11 +15,16 @@ SPOOL=$QG_ROOT/reporting/pending_mail
 source "$QG_ROOT/qg-env/bin/activate"
 cd "$QG_ROOT/qg-wiener-conditioning/training"
 
+# the a-priori pool = the warm ckpt's own 41 roots (config.json, relative to
+# this training dir via the data symlink)
+ROOTS=$(python -c "import json; print(' '.join(json.load(open('$D/deriv7_cond_local_w31/config.json'))['roots']))")
 for a in rollout_ft_w31_p1a rollout_ft_w31_p1b; do
     ck=$D/$a/best.pt
     [ -f "$ck" ] || ck=$D/$a/last.pt
     echo "== eval $a ($ck)"
-    python -u eval_deriv_by_root.py --ckpt "$ck" || echo "EVAL_FAIL_$a"
+    # shellcheck disable=SC2086
+    python -u eval_deriv_by_root.py --ckpt "$ck" --sweep-roots $ROOTS \
+        --device cpu || echo "EVAL_FAIL_$a"
 done
 for a in rollout_ft_w31_p1a rollout_ft_w31_p1b; do
     python -u accept_ft_gate.py \
