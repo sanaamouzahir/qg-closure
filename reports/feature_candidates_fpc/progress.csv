@@ -1,0 +1,3 @@
+timestamp,event,job_id,host,note
+2026-07-15T21:46:17,start,1835425,ibfdr-compute-0-4.local,diagnose_feature_candidates.py --config conf_piff_fpc_gjs_ylp75.yaml --report-run feature_candidates_fpc
+2026-07-15T21:49:38,done,1835425,ibfdr-compute-0-4.local,feature screen done
