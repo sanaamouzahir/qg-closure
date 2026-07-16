@@ -172,11 +172,16 @@ def main():
         rows.append((p, m))
         if m['pass']:
             passing.append(p)
+    # STRENGTH = 1/penalty (2026-07-16 direction fix): the WEAKEST passing
+    # sponge is the LARGEST passing penalty; deploy its next-STRONGER (next
+    # smaller penalty) neighbor as margin, requiring it to pass too.
     pick = None
-    for i, p in enumerate(passing):
-        if any(abs(q - (p + 0.1)) < 1e-6 for q in passing):
-            pick = p + 0.1          # smallest passing WITH passing successor,
-            break                   # deployed with the successor as margin
+    all_ps = sorted({p for p, r in rows if not isinstance(r, str)}, reverse=True)
+    for p in sorted(passing, reverse=True):        # weakest passing first
+        stronger = [q for q in all_ps if q < p]
+        if stronger and stronger[0] in passing:
+            pick = stronger[0]
+            break
     body = '\n'.join(
         f'p={p}: ' + (r if isinstance(r, str) else
                       ' '.join(f'{k}={r[k]:.2e}' for k in TOL)

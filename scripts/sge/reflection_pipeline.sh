@@ -64,7 +64,11 @@ MEMBERS_fpc="FPC-const FPC-sine FPC-ramp FPC-ou FPC-telS-A"
 MEMBERS_cape="FPCape-const FPCape-sine FPCape-ramp FPCape-ou FPCape-tel"
 SCEN_fpc="flow_past_cylinder_sponge"
 SCEN_cape="flow_past_cape"          # the cape scenario has no _sponge suffix
-PENALTIES="1.25 1.35 1.45 1.55 1.65 1.75 1.85 1.95 2.05 2.15 2.25"
+# SPONGE STRENGTH = 1/(penalty*dt): SMALLER penalty = STRONGER sponge
+# (colleague catch 2026-07-16; F = -chi*(u-u_o)/eta, eta = penalty*dt).
+# Descending list = weak -> strong. Floor 0.5: dt/eta = 1/penalty reaches 2
+# there; explicit-sink stability degrades below that (NaN-guard covers).
+PENALTIES="1.25 1.1 1.0 0.9 0.8 0.7 0.6 0.5"
 
 # ---------------------------------------------------------------- S0
 [ -e "$STATE/terminal" ] && exit 0
