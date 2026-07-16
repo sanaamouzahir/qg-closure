@@ -13,7 +13,9 @@
 #
 # Usage:
 #   qsub -q all.q -N longroll_<x> scripts/sge/postft_longroll_job.sh \
-#       <CKPT-path-relative-to-training/> "FRC-kf4 532" "FRC-kf4 912" ...
+#       <CKPT> <CKPT2|NONE> "FRC-kf4 532" "FRC-kf4 912" ...
+# CKPT2 != NONE adds arm 'closure2' (--ckpt2, identical code path) -- used
+# 2026-07-16 to roll BOTH FT arms in one pass after both gates FAILed.
 #$ -S /bin/bash
 #$ -q all.q
 #$ -cwd
@@ -33,9 +35,16 @@ export MPLCONFIGDIR=$QG_ROOT/.mplcache; mkdir -p "$MPLCONFIGDIR"
 source "$QG_ROOT/qg-env/bin/activate"
 cd "$WT/training"
 
-CKPT=$1; shift
-echo "[longroll] host=$HOSTNAME date=$(date -u +%FT%TZ) ckpt=$CKPT draws: $*"
+CKPT=$1; CKPT2=$2; shift 2
+echo "[longroll] host=$HOSTNAME date=$(date -u +%FT%TZ) ckpt=$CKPT ckpt2=$CKPT2 draws: $*"
 [ -f "$CKPT" ] || { echo "[longroll] HARD-FAIL: ckpt $CKPT not found"; exit 4; }
+ARMS=bare,closure
+EXTRA=""
+if [ "$CKPT2" != "NONE" ]; then
+    [ -f "$CKPT2" ] || { echo "[longroll] HARD-FAIL: ckpt2 $CKPT2 not found"; exit 4; }
+    ARMS=bare,closure,closure2
+    EXTRA="--ckpt2 $CKPT2"   # no spaces in repo paths; old-bash set -u safe
+fi
 
 for spec in "$@"; do
     set -- $spec; member=$1; ic=$2
@@ -51,7 +60,7 @@ for spec in "$@"; do
             --root-dir "data/ensemble_N5_7lag/$member/sweep_dT_5em3" \
             --ckpt "$CKPT" \
             --ic-index "$ic" --K 500 --n-steps "$H" --n-checkpoints 24 \
-            --arms bare,closure --log-sigma \
+            --arms "$ARMS" --log-sigma $EXTRA \
             --device cpu --out-dir "$CD" \
             --tag "ic${ic}_5em3_h${H}_postft" \
             --load-refs "$RH" || echo "ROLL_FAIL $member $ic h$H"
