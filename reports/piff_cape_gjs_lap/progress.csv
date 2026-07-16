@@ -1,3 +1,5 @@
 timestamp,event,job_id,host,note
 2026-07-16T13:23:29,start,1836097,ibgpu-compute-0-0.local,piff grid point launched: --config conf_piff_cape_gjs_lap.yaml --run-name piff_cape_gjs_lap --init-ckpt runs_piff/piff_cape_gjs_ylp75/best.pt --lr 1.0e-3 --weight-decay 1.0e-5 --epochs 100
 2026-07-16T13:27:27,fail,1836097,ibgpu-compute-0-0.local,piff train exited rc=1
+2026-07-16T15:10:40,start,1836213,ibgpu-compute-0-0.local,piff grid point launched: --config conf_piff_cape_gjs_lap.yaml --run-name piff_cape_gjs_lap --init-ckpt runs_piff/piff_cape_gjs_ylp75/best.pt --lr 1.0e-3 --weight-decay 1.0e-5 --epochs 100
+2026-07-16T15:40:10,start,1836222,ibgpu-compute-0-0.local,piff grid point launched: --config conf_piff_cape_gjs_lap.yaml --run-name piff_cape_gjs_lap --init-ckpt runs_piff/piff_cape_gjs_ylp75/best.pt --lr 1.0e-3 --weight-decay 1.0e-5 --epochs 100
