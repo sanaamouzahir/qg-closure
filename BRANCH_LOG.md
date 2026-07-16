@@ -2,6 +2,25 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-16 — post-fine-tune analysis session (Wiener runner, local station, I21c)
+- Session order (Sanaa): (1) per-member table from postFT eval + gates, (2) long CPU rollouts
+  (64/128 steps, refs reused) of the accepted arm, (3) val-definition appendix from
+  train_deriv_rollout.py source. All compute CPU (all.q) per standing order.
+- FOUND: postFT4 (1836024) exited 0 but produced NO eval CSVs — eval_deriv_by_root built the
+  model at default --grad-kernel 15 vs the arms' 31x31 stencils (state_dict size mismatch);
+  the acceptance gate then wrote its FileNotFoundError traceback into both gate_verdict.txt.
+  NB the arms' config.json says grad_kernel 15 (stale CLI default recorded by the FT trainer);
+  the ckpt state_dict (grad.wx 31x31) is authoritative — trainers/rollout driver infer gk from
+  the ckpt, eval_deriv_by_root does not.
+- FIX (GREEN, one flag): --grad-kernel 31 in postft_eval_job.sh; resubmitted as postFT5
+  1836086 (all.q, CPU). Arm A best=ep17, arm B best=ep12 (score = val + lambda*anc_val).
+- AUTHORED: scripts/sge/postft_longroll_job.sh — 64/128-step a-posteriori rollouts at 5e-3,
+  K=500 (h_fine 1e-5, RESULT tier), arms bare+closure, truth refs REUSED from
+  apost_opt2_rep_20260711 (hard-fail if missing; never recomputed on CPU). sge-checker G5
+  PASS (advisory: digest_writer retrofit gap is branch-wide, unchanged). Refs exist ONLY for
+  FRC-kf4/combo/256 (10 ICs); all other members have no long refs — reported, not computed.
+- Pending at write time: postFT5 verdicts -> arm pick -> longroll submission -> emails 1+2.
+
 ## 2026-07-15 — CHARTER v1.4/v1.5 PROPAGATION (global supervisor Fable, local station)
 - Execution-model section appended to CLAUDE.md: I21c ssh sequence is the ONLY day-mode
   submission path; I22 path partition; I23 digest logging; I24 reflex ladder; I25 session-open.
