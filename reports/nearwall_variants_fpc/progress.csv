@@ -1,3 +1,4 @@
 timestamp,event,job_id,host,note
 2026-07-15T20:16:40,start,1835308,ibfdr-compute-0-2.local,diagnose_nearwall_variants.py --config conf_piff_fpc_gjs_ylp75.yaml --member FPC-const --events runs_piff/piff_fpc_gjs_ylp75/error_tails_diag/FPC-const/extreme_events.csv --report-run nearwall_variants_fpc
 2026-07-15T20:23:44,done,1835308,ibfdr-compute-0-2.local,FPC-const: MIXED: see per-variant numbers; needs a ruling.
+2026-07-15T20:31:53,start,1835310,ibfdr-compute-0-2.local,diagnose_nearwall_variants.py --config conf_piff_fpc_gjs_ylp75.yaml --member FPC-const --events runs_piff/piff_fpc_gjs_ylp75/error_tails_diag/FPC-const/extreme_events.csv --report-run nearwall_variants_fpc
