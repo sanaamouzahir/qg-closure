@@ -71,13 +71,22 @@ SCEN_cape="flow_past_cape"          # the cape scenario has no _sponge suffix
 PENALTIES="1.25 1.1 1.0 0.9 0.8 0.7"   # 0.6,0.5 REMOVED: proven NaN-unstable (Sanaa order 2026-07-16)
 
 submit_sweep() {  # $1 geometry  $2 penalty -- one sweep short (used by S1 + refill)
+    # v3 (Sanaa GO 2026-07-16 evening): SAME PHYSICS AS THE MEMBERS -- the
+    # full pde block (nu, mu, B, nv) is read from the member's recorded
+    # config and passed through; ONLY the penalty differs. v2 cherry-picked
+    # grid/dt/penalty and silently ran scenario-default physics (nu 5e-3 vs
+    # member 6.44e-4); every v2 run went NaN (mechanism under probe).
     local g=$1 p=$2
-    local cm tbl dtc rd scen_v scen
+    local cm tbl dtc rd scen_v scen nuv muv Bv nvv
     scen_v="SCEN_$g"; scen=${!scen_v}
     cm=$(eval echo \"\$MEMBERS_$g\" | awk '{print $1}')
     tbl=$ENS/$cm/U_of_t.npz
     dtc=$(grep -E '^\s+dt:' "$ENS/$cm/config.yaml" | head -1 | awk '{print $2}')
-    [ -f "$tbl" ] && [ -n "$dtc" ] || return 1
+    nuv=$(grep -E '^\s+nu:' "$ENS/$cm/config.yaml" | head -1 | awk '{print $2}')
+    muv=$(grep -E '^\s+mu:' "$ENS/$cm/config.yaml" | head -1 | awk '{print $2}')
+    Bv=$(grep -E '^\s+B:' "$ENS/$cm/config.yaml" | head -1 | awk '{print $2}')
+    nvv=$(grep -E '^\s+nv:' "$ENS/$cm/config.yaml" | head -1 | awk '{print $2}')
+    [ -f "$tbl" ] && [ -n "$dtc" ] && [ -n "$nuv" ] || return 1
     rd="outputs/sponge_sweep/$g/p${p/./p}"
     rm -rf "$QG_DIR/$rd"          # stale partial from a yielded run
     ( cd "$BRANCH" && qsub -terse -N "sw${g:0:1}_${p/./}" \
@@ -86,6 +95,8 @@ submit_sweep() {  # $1 geometry  $2 penalty -- one sweep short (used by S1 + ref
         "$BRANCH/scripts/sge/phaseB_A_job.sh" \
         scenario="$scen" qg.grid.Nx=2048 qg.grid.Ny=2048 \
         qg.time.T=35 qg.time.dt="$dtc" qg.time.save_rate=3600 \
+        qg.pde.nu="$nuv" ${muv:+qg.pde.mu=$muv} ${Bv:+qg.pde.B=$Bv} \
+        ${nvv:+qg.pde.nv=$nvv} \
         qg.pde.penalty="$p" +qg.bc.inlet_table="$tbl" \
         +qg.diag.scalar_rate=10 +qg.diag.flush_every=500 \
         +qg.diag.out="$QG_DIR/$rd/scalars.npz" \
