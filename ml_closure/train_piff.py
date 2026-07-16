@@ -112,14 +112,19 @@ def lap_expand_state_dict(model, sd, lap_scale, train_ds, seed):
 
 @torch.no_grad()
 def lap_init_probe(model, ref, val_ds, device, tol=1.0e-5):
-    """I8-spirit init-exactness gate for the lap surgery: with the lap ARD raw
-    lengthscale pushed to 1.0e6 (softplus is identity out there, so the lap
-    dim contributes (dlap/1e6)^2 ~ 1e-11 to the kernel distance = round-off),
-    the expanded GP must reproduce the pre-lap reference model's latent
-    posterior mean AND variance on a fixed val batch. Run in float64 so the
-    K_zz Cholesky's conditioning neither launders a genuine surgery bug into
-    'round-off' nor amplifies round-off into a false failure. Hard-fails
-    otherwise; the training-init lengthscale is restored either way."""
+    """I8-spirit init-exactness gate for the lap surgery: with the lap
+    COORDINATE zeroed on both the data batch and the inducing points, the lap
+    dim's squared-distance term is IDENTICALLY zero (kernel factor exp(0)=1,
+    independent of lengthscale AND of K_zz conditioning), so the expanded GP
+    must reproduce the pre-lap reference model's latent posterior mean AND
+    variance on a fixed val batch to f64 op-order round-off. Hard-fails
+    otherwise; the surgery's inducing lap column is restored either way.
+    HISTORY (jobs 1836094/1836097): the first gate pushed the lap raw
+    LENGTHSCALE to 1e6 instead — its residual leakage, (dlap/1e6)^2 ~ 1e-10
+    per kernel entry, is amplified by cond(K_zz) through the whitening solve
+    to ~1.2e-5/2.3e-5 at the posterior and falsely tripped the 1e-5 gate (in
+    f64 — precision was not the issue; the MECHANISM leaked). Zero-coordinate
+    inertness is exact by construction. Diagnosis: diag_lap_probe.py."""
     b = next(batches(val_ds, 8))
     model.double().eval()
     ref.double().eval()
@@ -131,12 +136,12 @@ def lap_init_probe(model, ref, val_ds, device, tol=1.0e-5):
         g = b['g'].to(device).double() if ref.use_grad_feature else None
         lap = b['lap'].to(device).double()
         p_ref = ref.gp(ref.masked_gp_inputs(x, zeta, mask, zeta_dot=zd, g=g))
-        ls = model.gp.covar_module.base_kernel.raw_lengthscale
-        saved = ls.data[..., -1].clone()
-        ls.data[..., -1] = 1.0e6
+        ip = model.gp.variational_strategy.inducing_points
+        saved = ip.data[..., -1].clone()
+        ip.data[..., -1] = 0.0
         p_new = model.gp(model.masked_gp_inputs(x, zeta, mask, zeta_dot=zd,
-                                                g=g, lap=lap))
-        ls.data[..., -1] = saved
+                                                g=g, lap=torch.zeros_like(lap)))
+        ip.data[..., -1] = saved
         dmu = float((p_new.mean - p_ref.mean).abs().max()
                     / p_ref.mean.abs().max().clamp_min(1e-30))
         dvar = float((p_new.variance - p_ref.variance).abs().max()
