@@ -2,6 +2,21 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-16 (later) — SANAA GO ON FLAG; SURGERY LANDED; RETRAINS FIRED (Fable, day mode)
+- Sanaa ruling on the FLAG (relayed in-session): GO for option b + warm start + priority.
+- 53d26ed [red-approved]: lap warm-start surgery in train_piff.py — expands ylp75 ckpt
+  GP tensors 19->20 (lap inducing column = seeded train quantiles; fresh lengthscale =
+  mean of loaded raws; lap_scale fresh; all else 1:1) + in-job I8-spirit init probe
+  (lap dim inert at 1e6, latent posterior must match ckpt to rel 1e-5 f64, else the job
+  dies before training). G4 PASS (4 LOW; LOW-1 flag-alignment guard implemented).
+- SUBMITTED (I21c, fire_ylp75 unit pattern): fpc 1836094 (+mon 1836095/1836096),
+  cape 1836097 (+mon 1836098/1836099); qw behind the running swf sweeps. Probe result
+  lands in logs/lap_*.log + reports/piff_*_gjs_lap/ digests when GPUs free.
+- qdel of swf_11/swf_10 (GPU priority) NOT executed: local permission system blocked it
+  (relayed order != direct consent for killing running jobs). Sanaa can qdel 1836014
+  1836015 herself; trainers start automatically either way. ACTED mail:
+  pending_mail/20260716_125240_lap_acted.mail.
+
 ## 2026-07-16 — LAP FEATURE LANDED; RETRAINS FLAGGED-HELD (Fable, local station, day mode)
 - 62825c6 [red-approved]: use_lap_feature |lap(omega_bar)|* GP-ARD channel, exact mirror of
   use_grad_feature (5-pt periodic stencil in RunData, crop-time D^3/U, lap_scale buffer,

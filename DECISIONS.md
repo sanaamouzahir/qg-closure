@@ -4,6 +4,9 @@ One line per decision: date | tier | what | gate result | commit.
 (Charter §2 / invariant I17. BRANCH_LOG.md is the global supervisor's; this
 ledger is the branch's.)
 
+2026-07-16 | RED-approved | Sanaa GO on FLAG ("GO and permissions for all"): option-b lap warm-start surgery (expand inducing_points/raw_lengthscale +1 dim from ylp75 best.pt; in-job I8-spirit init probe, hard-fail) | G4 PASS (4 LOW; LOW-1 guard implemented); ast OK | 53d26ed
+2026-07-16 | YELLOW | Both lap retrains SUBMITTED as full I18 units: fpc trainer 1836094 + mon 1836095/1836096, cape trainer 1836097 + mon 1836098/1836099; qw behind sweeps; probe result pending job start | ACTED mail pending_mail/20260716_125240_lap_acted.mail | n/a (cluster)
+2026-07-16 | BLOCKED | Ordered qdel of swf_11 (1836014, p=1.1) / swf_10 (1836015, p=1.0) NOT executed: local permission system hard-blocked (relayed order != direct user consent for killing running jobs); Sanaa can run `qdel 1836014 1836015` herself — stated in ACTED mail | n/a | n/a
 2026-07-16 | RED-approved | use_lap_feature: |lap(omega_bar)|* GP-ARD channel (Sanaa GO 2026-07-16; mirror of use_grad_feature; D^3/U norm, lap_scale buffer, GP-side only) + conf_piff_{fpc,cape}_gjs_lap.yaml; off-flag bit-identical | G4 closure-reviewer PASS (0 blocking); ast.parse 10/10 qg-env-piff; yaml float check OK | 62825c6
 2026-07-16 | FLAG | lap retrains HALTED pre-submission: warm-start amendment (from ylp75 best.pt) needs a dim-expanding ckpt load (inducing_points/raw_lengthscale 19->20) with NO codebase pattern; stated fallback discards trained GP head (violates I8 spirit); companion qdel-of-running-sweeps-for-priority outside I14 and unverifiable relayed authority — [QG][FLAG] mailed (pending_mail/20260716_121743_lap_flag.mail), WAITING; safe default = no submission | n/a | this commit
 2026-07-08 | GREEN | Bootstrap DECISIONS.md (was absent; I17) | n/a | pending
