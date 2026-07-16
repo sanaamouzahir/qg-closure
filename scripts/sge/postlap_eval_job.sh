@@ -23,6 +23,7 @@ CKPT="$RD/best.pt"
 CONF="conf_piff_${G}_gjs_lap.yaml"
 [ -f "$CKPT" ] || { echo "no best.pt -- trainer died before a checkpoint"; exit 1; }
 TAG=""
+MAXF=""
 if [ -n "$SNAP" ]; then
     # mid-training snapshot (Sanaa 2026-07-16): copy best.pt so the live
     # trainer cannot race the read; outputs suffixed to keep the final
@@ -31,18 +32,37 @@ if [ -n "$SNAP" ]; then
     cp "$CKPT" "$RD/best${TAG}.pt"
     CKPT="$RD/best${TAG}.pt"
 fi
+if [ "$SNAP" = "quick" ]; then
+    # QUICK LOOK (Sanaa 2026-07-16 evening): 2 members, 8 frames each --
+    # minutes not hours; the full-resolution pass runs separately.
+    TAG="${TAG}q"
+    MAXF="--max-frames 8"
+    QCONF="conf_piff_${G}_gjs_lap_quick.yaml"
+    python - "$CONF" "$QCONF" "$G" <<'PY'
+import sys, yaml
+conf, out, g = sys.argv[1:4]
+c = yaml.safe_load(open(conf))
+keep = {'fpc': ('FPC-const', 'FPC-sine'),
+        'cape': ('FPCape-tel', 'FPCape-sine')}[g]
+c['data']['runs'] = [r for r in c['data']['runs']
+                     if any(r.rstrip('/').endswith(k) for k in keep)]
+yaml.safe_dump(c, open(out, 'w'), sort_keys=False)
+print('[quick] members:', [r.split('/')[-1] for r in c['data']['runs']])
+PY
+    CONF="$QCONF"
+fi
 
 echo "== eval_piff (a-priori eval package, S4)"
 python -u eval_piff.py --ckpt "$CKPT" --config "$CONF" --device cpu \
     --outdir "$RD/eval${TAG}" || echo "EVAL_PIFF_FAIL"
 echo "== mean-prediction suite"
 python -u diagnose_mean_prediction.py --ckpt "$CKPT" --config "$CONF" \
-    --device cpu --outdir "$RD/mean_prediction_diag${TAG}" \
+    --device cpu $MAXF --outdir "$RD/mean_prediction_diag${TAG}" \
     --fig-dir "pngs/mean_prediction_diag/piff_${G}_gjs_lap${TAG}" \
     --report-run "lap_eval_${G}${TAG}" || echo "MPD_FAIL"
 echo "== error-tails suite"
 python -u diagnose_error_tails.py --ckpt "$CKPT" --config "$CONF" \
-    --device cpu --outdir "$RD/error_tails_diag${TAG}" \
+    --device cpu $MAXF --outdir "$RD/error_tails_diag${TAG}" \
     --fig-dir "pngs/error_tails_diag/piff_${G}_gjs_lap${TAG}" \
     --report-run "lap_tails_${G}${TAG}" || echo "ETD_FAIL"
 
