@@ -70,6 +70,59 @@ SCEN_cape="flow_past_cape"          # the cape scenario has no _sponge suffix
 # there; explicit-sink stability degrades below that (NaN-guard covers).
 PENALTIES="1.25 1.1 1.0 0.9 0.8 0.7"   # 0.6,0.5 REMOVED: proven NaN-unstable (Sanaa order 2026-07-16)
 
+submit_sweep() {  # $1 geometry  $2 penalty -- one sweep short (used by S1 + refill)
+    local g=$1 p=$2
+    local cm tbl dtc rd scen_v scen
+    scen_v="SCEN_$g"; scen=${!scen_v}
+    cm=$(eval echo \"\$MEMBERS_$g\" | awk '{print $1}')
+    tbl=$ENS/$cm/U_of_t.npz
+    dtc=$(grep -E '^\s+dt:' "$ENS/$cm/config.yaml" | head -1 | awk '{print $2}')
+    [ -f "$tbl" ] && [ -n "$dtc" ] || return 1
+    rd="outputs/sponge_sweep/$g/p${p/./p}"
+    rm -rf "$QG_DIR/$rd"          # stale partial from a yielded run
+    ( cd "$BRANCH" && qsub -terse -N "sw${g:0:1}_${p/./}" \
+        -o "$LOGDIR/" -j y -cwd -V -q ibgpu.q -l gpu=1 \
+        -m a -M "$EMAIL" \
+        "$BRANCH/scripts/sge/phaseB_A_job.sh" \
+        scenario="$scen" qg.grid.Nx=2048 qg.grid.Ny=2048 \
+        qg.time.T=35 qg.time.dt="$dtc" qg.time.save_rate=3600 \
+        qg.pde.penalty="$p" +qg.bc.inlet_table="$tbl" \
+        +qg.diag.scalar_rate=10 +qg.diag.flush_every=500 \
+        +qg.diag.out="$QG_DIR/$rd/scalars.npz" \
+        hydra.run.dir="$rd" >/dev/null 2>&1 )
+}
+
+# ------------------------------------------- SWEEP-FILL (Sanaa 2026-07-16):
+# TRAININGS NEVER QUEUE BEHIND SWEEPS; sweeps refill freed GPUs and resume
+# after yielding -- perpetually, per geometry, until its pick exists.
+TRAIN_PAT="lap2_|w31p|piff_"
+QS=$(qstat -u sanaamz 2>/dev/null)
+n_qw_train=$(echo "$QS" | awk -v P="$TRAIN_PAT" '$3 ~ P && $5 == "qw" {c++} END {print c+0}')
+if [ "$n_qw_train" -gt 0 ]; then
+    echo "$QS" | awk '$3 ~ /^sw[cf]_/ && $5 == "r" {print $1, $3}' \
+        | sort -k2,2r | head -n "$n_qw_train" | while read -r jid name; do
+        qdel "$jid" >/dev/null 2>&1
+        echo "$(date +%FT%T) $name jid=$jid yielded to queued training" \
+            >> "$STATE/sweep_restart_owed.txt"
+    done
+    mail_once "yield_$(date +%Y%m%d%H)" \
+        "[QG][MONITOR][sgs-closure] sweeps yielded to $n_qw_train queued training(s)" \
+        "Weakest-penalty running sweeps killed (restart-owed recorded); they refill automatically when GPUs free."
+else
+    for g in $(cat "$STATE/supported_geoms" 2>/dev/null); do
+        [ -f "$STATE/penalty_$g.txt" ] && continue   # pick exists: sweeps done
+        [ -e "$STATE/s1_fired_$g" ] || continue
+        avail=$(qstat -g c 2>/dev/null | awk '/^ibgpu\.q/ {print $5}' | head -1)
+        case $avail in ''|*[!0-9]*) avail=0;; esac
+        for p in $PENALTIES; do
+            [ "$avail" -gt 0 ] || break
+            [ -f "$QG_DIR/outputs/sponge_sweep/$g/p${p/./p}/DNS_FR.npz" ] && continue
+            echo "$QS" | grep -q "sw${g:0:1}_${p/./}" && continue
+            submit_sweep "$g" "$p" && avail=$((avail - 1))
+        done
+    done
+fi
+
 # ---------------------------------------------------------------- S0
 [ -e "$STATE/terminal" ] && exit 0
 if [ ! -e "$STATE/s0_done" ]; then
