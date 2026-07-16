@@ -53,7 +53,11 @@ def run_metrics(run_dir, t_lo=None, t_hi=None):
     if om_all.ndim == 4:
         om_all = om_all[0]
     times = z['times']
-    cfg = yaml.safe_load((run_dir / 'config.yaml').read_text())
+    cfg_p = run_dir / 'config.yaml'
+    if not cfg_p.exists():
+        cfg_p = run_dir / '.hydra' / 'config.yaml'
+    cfg = yaml.safe_load(cfg_p.read_text())
+    cfg = cfg.get('qg', cfg)          # hydra run dirs nest under qg:
     Lx = float(cfg['grid']['Lx']); Ly = float(cfg['grid']['Ly'])
     D = float(cfg.get('bc', {}).get('D', 1.0) or 1.0)
     tab_path = str(cfg.get('bc', {}).get('inlet_table') or '')
