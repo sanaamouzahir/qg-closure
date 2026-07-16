@@ -97,6 +97,7 @@ def lap_expand_state_dict(model, sd, lap_scale, train_ds, seed):
         if have >= 20000:
             break
     vals = np.concatenate(vals)
+    vals = np.log1p(vals)      # must match features(): log1p(lap/lap_scale)
     M = int(sd[ip_key].shape[0])
     q = np.quantile(vals, (np.arange(M) + 0.5) / M)
     lap_col = torch.from_numpy(q).to(sd[ip_key].dtype).reshape(M, 1)

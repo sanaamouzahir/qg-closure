@@ -384,7 +384,12 @@ class PiffModel(nn.Module):
         if self.use_lap_feature:
             if lap is None:
                 raise ValueError("use_lap_feature=true but lap not supplied")
-            cols.append((lap / self.lap_scale).unsqueeze(-1))   # (B,H,W,1)
+            # log1p tail compression (Sanaa ruling 2026-07-16, run 1836219
+            # postmortem): standardized |lap| is heavy-tailed (observed range
+            # 0..332); raw it makes quantile inducing columns kernel-orthogonal
+            # to typical data and defeats the near-inert warm init. log1p maps
+            # the range to ~[0, 5.9] so lengthscale-20 is inert for ALL pixels.
+            cols.append(torch.log1p(lap / self.lap_scale).unsqueeze(-1))
         return torch.cat(cols, dim=-1)
 
     def masked_gp_inputs(self, x, zeta, mask, zeta_dot=None, g=None, lap=None):
