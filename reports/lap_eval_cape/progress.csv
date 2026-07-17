@@ -1,0 +1,2 @@
+timestamp,event,job_id,host,note
+2026-07-16T20:30:02,done,1836604,ibfdr-compute-0-0.local,mean-prediction diag piff_cape_gjs_lap (5 members)
