@@ -53,6 +53,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--config', required=True)
     ap.add_argument('--every', type=int, default=4)
+    ap.add_argument('--outdir', default=None,
+                    help='also write summary.md here (STANDARD tree '
+                         'passthrough); default: reports/ + mail only')
     ap.add_argument('--report-run', default=None)
     args = ap.parse_args()
     conf = load_conf(HERE / args.config)
@@ -90,6 +93,11 @@ def main():
             + '\n'.join(lines)
             + '\n\nREAD: high near + low far = the missing wall feature. '
             'Design doc next session.')
+    if args.outdir:                    # STANDARD tree passthrough
+        od = Path(args.outdir)
+        od.mkdir(parents=True, exist_ok=True)
+        (od / 'summary.md').write_text('# feature candidates\n\n```\n'
+                                       + body + '\n```\n')
     if args.report_run:
         rep = BRANCH_ROOT / 'reports' / args.report_run
         rep.mkdir(parents=True, exist_ok=True)

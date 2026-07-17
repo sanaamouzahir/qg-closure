@@ -33,6 +33,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from dataset_piff import load_conf, build_runs
+from member_naming import member_stamp
 
 HERE = Path(__file__).resolve().parent
 BRANCH_ROOT = HERE.parent
@@ -57,20 +58,32 @@ def main():
     ap.add_argument('--events', required=True)
     ap.add_argument('--n-events', type=int, default=3)
     ap.add_argument('--half', type=int, default=24)
+    ap.add_argument('--fig-dir', default=None,
+                    help='figure directory (STANDARD tree passthrough); '
+                         'default: pngs/nearwall_variants/<member>/')
+    ap.add_argument('--outdir', default=None,
+                    help='yaml directory; default: same as --fig-dir')
     ap.add_argument('--report-run', default=None)
     args = ap.parse_args()
 
     with open(args.events) as f:
         evs = list(csv.DictReader(f))[:args.n_events]
-    fig_dir = HERE / 'pngs' / 'nearwall_variants' / args.member
+    fig_dir = Path(args.fig_dir) if args.fig_dir else (
+        HERE / 'pngs' / 'nearwall_variants' / args.member)
     fig_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = Path(args.outdir) if args.outdir else fig_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     stats = {}
+    re_lo = re_hi = None            # member Re range over the event frames
     fig, axs = plt.subplots(len(evs), len(VARIANTS),
                             figsize=(3.7 * len(VARIANTS), 3.6 * len(evs)),
                             squeeze=False)
     for vi, (vname, vkey) in enumerate(VARIANTS):
         run = load_member(args.config, args.member, vkey)
+        if re_lo is None:
+            ev_re = [float(run.Re_snap[int(ev['frame'])]) for ev in evs]
+            re_lo, re_hi = min(ev_re), max(ev_re)
         band = np.abs(run.sdf) < 1.0 * run.D          # near-wall rows/cols
         rc_list, hk_list = [], []
         for ev in evs:
@@ -90,7 +103,8 @@ def main():
                       aspect='equal', interpolation='nearest')
             ax.contour(run.sdf[np.ix_(ys, xs)], levels=[0.0], colors='k',
                        linewidths=0.8)
-            ax.set_title(f"{vname} f{fi} max|Pi|={v:.0f}", fontsize=8)
+            ax.set_title(f"{vname} f{fi} Re(t)={float(run.Re_snap[fi]):.0f} "
+                         f"max|Pi|={v:.0f}", fontsize=8)
             ax.set_xticks([]); ax.set_yticks([])
             # near-wall band stats on the window columns that touch the band
             bwin = band[np.ix_(ys, xs)]
@@ -109,8 +123,9 @@ def main():
             'high_ky_power_frac_median':
                 float(np.median(hk_list)) if hk_list else None}
         del run
-    fig.suptitle(f'{args.member}: truth Pi* near the top extreme events, '
-                 'per filter variant', fontsize=11)
+    # STANDARD rule 2 (2026-07-17): modulation + Re range in the title
+    fig.suptitle(f'{member_stamp(args.member, re_lo, re_hi)}: truth Pi* near '
+                 'the top extreme events, per filter variant', fontsize=11)
     fig.savefig(fig_dir / 'nearwall_truth_windows_by_variant.png', dpi=150,
                 bbox_inches='tight')
     plt.close(fig)
@@ -130,7 +145,7 @@ def main():
         verdict = 'MIXED: see per-variant numbers; needs a ruling.'
     out = {'member': args.member, 'stats': stats, 'verdict': verdict,
            'events_used': [int(e['frame']) for e in evs]}
-    out_p = fig_dir / 'nearwall_variants.yaml'
+    out_p = out_dir / 'nearwall_variants.yaml'
     with open(out_p, 'w') as f:
         yaml.safe_dump(out, f, sort_keys=False)
     print(f'[nearwall] {args.member} VERDICT: {verdict}')

@@ -2,6 +2,25 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-17 — RESULTS-TREE STANDARD LANDED (Sanaa direct order; Fable, day mode)
+- STANDARD: ml_closure/results/<geometry>/<model>/<suite>/<member_modulation>/ —
+  plain English everywhere (flow_past_cylinder|flow_past_cape; evaluation,
+  mean_prediction, error_tails, sigma_at_events, reflection_probe,
+  nearwall_variants, feature_screen; constant_inflow ... telegraph_modulation).
+- Landed: member_naming.py (codename->modulation map + title stamps);
+  modulation+Re now in EVERY figure title of eval_piff / mean_prediction /
+  error_tails / nearwall_variants; --outdir/--fig-dir/--plain-member-names
+  passthroughs added where missing (defaults byte-compatible);
+  run_all_diagnostics.sh <model> = NEW-MODEL=>FULL-RE-EVAL entrypoint (all.q
+  CPU jobs via piff_tool_job.sh, hold_jid-chained, landing mail);
+  scripts/sge/migrate_results_tree.sh = qsub'd migration (mv + RELATIVE
+  symlinks at every old path, member dirs renamed, manifest to
+  reports/results_migration/summary.md + digest push).
+- Gates: G4 closure-reviewer (initial FAIL -> blocker fixed -> re-reviewed),
+  G5 sge-checker PASS x2, bash -n + remote ast.parse 9/9.
+- Migration job id + verification: see reports/results_migration/ and the
+  [QG][ACTED] mail of this date.
+
 ## 2026-07-16 (later) — SANAA GO ON FLAG; SURGERY LANDED; RETRAINS FIRED (Fable, day mode)
 - Sanaa ruling on the FLAG (relayed in-session): GO for option b + warm start + priority.
 - 53d26ed [red-approved]: lap warm-start surgery in train_piff.py — expands ylp75 ckpt

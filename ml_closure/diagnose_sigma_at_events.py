@@ -14,6 +14,7 @@ import argparse, csv, subprocess, sys
 from pathlib import Path
 import numpy as np, torch, yaml
 from dataset_piff import load_conf, build_runs
+from member_naming import modulation_name
 from model_piff import PiffModel
 from eval_piff import predict_frame
 
@@ -29,6 +30,16 @@ def main():
     ap.add_argument('--events', required=True)
     ap.add_argument('--top-k', type=int, default=50)
     ap.add_argument('--gp-chunk', type=int, default=200_000)
+    ap.add_argument('--outdir', default=None,
+                    help='output directory (STANDARD tree passthrough); '
+                         'default: <ckpt dir>/sigma_at_events/')
+    ap.add_argument('--plain-member-names', action='store_true',
+                    help='write into <outdir>/<modulation>/{metrics.yaml,'
+                         'per_event_rows.csv} per the STANDARD tree; default '
+                         'keeps <outdir>/<member>.yaml + <member>_rows.csv')
+    ap.add_argument('--pool-members', default='',
+                    help='space-separated member codenames of the pool '
+                         '(telS-A vs tel disambiguation, G4 finding 3)')
     ap.add_argument('--report-run', default=None)
     args = ap.parse_args()
 
@@ -81,11 +92,18 @@ def main():
            'z_true_median': med_z,
            'z_true_p90': float(np.percentile(z_all, 90)),
            'verdict': verdict}
-    od = ckpt.parent / 'sigma_at_events'
+    od = Path(args.outdir) if args.outdir else ckpt.parent / 'sigma_at_events'
+    if args.plain_member_names:      # STANDARD tree: modulation-named subdir
+        out['member_modulation'] = modulation_name(args.member,
+                                                   args.pool_members.split())
+        od = od / out['member_modulation']
+        y_p, c_p = od / 'metrics.yaml', od / 'per_event_rows.csv'
+    else:
+        y_p, c_p = od / f'{args.member}.yaml', od / f'{args.member}_rows.csv'
     od.mkdir(parents=True, exist_ok=True)
-    with open(od / f'{args.member}.yaml', 'w') as f:
+    with open(y_p, 'w') as f:
         yaml.safe_dump(out, f, sort_keys=False)
-    with open(od / f'{args.member}_rows.csv', 'w', newline='') as f:
+    with open(c_p, 'w', newline='') as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         w.writeheader(); w.writerows(rows)
     print(f'[sigma] VERDICT: {verdict}')

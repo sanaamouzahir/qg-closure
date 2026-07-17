@@ -63,6 +63,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from dataset_piff import load_conf, build_runs, split_frames
+from member_naming import member_dirname, member_stamp, modulation_name
 from model_piff import PiffModel
 from eval_piff import predict_frame, full_frame_slice
 
@@ -174,10 +175,14 @@ def field_map(ax, arr2d, extent, title, vmax=None):
 # ------------------------------------------------------------------- driver
 
 @torch.no_grad()
-def diagnose_member(model, run, frames, device, args, fig_root, out_root):
+def diagnose_member(model, run, frames, device, args, fig_root, out_root,
+                    siblings=()):
     name = run.name
-    fig_dir = fig_root / name
-    out_dir = out_root / name
+    # --plain-member-names (STANDARD 2026-07-17): per-member subdirs carry the
+    # plain-English modulation name; default stays the codename (back-compat).
+    sub = member_dirname(name, args.plain_member_names, siblings)
+    fig_dir = fig_root / sub
+    out_dir = out_root / sub
     out_dir.mkdir(parents=True, exist_ok=True)
 
     sl = full_frame_slice(run)
@@ -294,14 +299,17 @@ def diagnose_member(model, run, frames, device, args, fig_root, out_root):
                      if vy > 0 and vm > 0 else float('nan'))
 
     # ---- figures ----
+    # STANDARD rule 2 (2026-07-17): every title states the modulation
+    # function + the member's Re range (per-frame Re where frame-specific).
+    stamp = member_stamp(name, re_err['Re_min'], re_err['Re_max'], siblings)
     ext = [0.0, run.Nx * run.dx, 0.0, run.Ny * run.dy]
     with np.errstate(invalid='ignore'):
         me2d = np.where(cnt > 0, sum_e / np.maximum(cnt, 1), np.nan)
         mae2d = np.where(cnt > 0, sum_ae / np.maximum(cnt, 1), np.nan)
     fig, axs = plt.subplots(1, 2, figsize=(13, 4.6))
-    im0 = field_map(axs[0], me2d, ext, f'{name}: time-mean SIGNED error (mu - truth)')
+    im0 = field_map(axs[0], me2d, ext, f'{stamp}: time-mean SIGNED error (mu - truth)')
     plt.colorbar(im0, ax=axs[0], shrink=0.85)
-    im1 = field_map(axs[1], mae2d, ext, f'{name}: time-mean |error|')
+    im1 = field_map(axs[1], mae2d, ext, f'{stamp}: time-mean |error|')
     plt.colorbar(im1, ax=axs[1], shrink=0.85)
     savefig(fig, fig_dir / 'time_mean_error_maps_signed_and_absolute.png')
 
@@ -313,7 +321,7 @@ def diagnose_member(model, run, frames, device, args, fig_root, out_root):
     axs[1].axhline(0, lw=0.6, color='k')
     axs[1].set_xlabel('Re(t)'); axs[1].set_ylabel('per-frame bias')
     axs[1].set_title(f"bias vs Re  (pearson {re_err['pearson_Re_bias']:.3f})")
-    fig.suptitle(name, fontsize=10)
+    fig.suptitle(stamp, fontsize=10)
     savefig(fig, fig_dir / 'error_vs_reynolds_number.png')
 
     fig, ax = plt.subplots(figsize=(6.4, 4.6))
@@ -326,7 +334,7 @@ def diagnose_member(model, run, frames, device, args, fig_root, out_root):
     ax.axhline(0, lw=0.6, color='k'); ax.axhline(1 / np.e, lw=0.6, ls=':',
                                                  color='gray')
     ax.set_xlabel('r (physical units)'); ax.set_ylabel('rho(r)')
-    ax.set_title(f'{name}: radial spatial (auto/cross)correlation')
+    ax.set_title(f'{stamp}: radial spatial (auto/cross)correlation', fontsize=9)
     ax.legend(fontsize=8)
     savefig(fig, fig_dir / 'spatial_autocorrelation_radial_profiles.png')
 
@@ -336,8 +344,8 @@ def diagnose_member(model, run, frames, device, args, fig_root, out_root):
     ax.plot([-lim, lim], [-lim, lim], 'k-', lw=0.8)
     ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim); ax.set_aspect('equal')
     ax.set_xlabel('true Pi* (filtered)'); ax.set_ylabel('predicted Pi*')
-    ax.set_title(f"{name}: pred vs truth (R2 {glob['r2']:.3f}, "
-                 f"corr {zero_lag_corr:.3f})")
+    ax.set_title(f"{stamp}:\npred vs truth (R2 {glob['r2']:.3f}, "
+                 f"corr {zero_lag_corr:.3f})", fontsize=9)
     plt.colorbar(hb, ax=ax, shrink=0.85, label='log10 count')
     savefig(fig, fig_dir / 'predicted_vs_true_closure_hexbin.png')
 
@@ -349,7 +357,7 @@ def diagnose_member(model, run, frames, device, args, fig_root, out_root):
         axs[1].plot(np.nansum(sum_ae, axis=1) / np.maximum(h, 1), Y[:, 0])
     axs[0].set_xlabel('x'); axs[0].set_ylabel('mean |error|')
     axs[1].set_ylabel('y'); axs[1].set_xlabel('mean |error|')
-    fig.suptitle(f'{name}: mean |error| profiles along x and y '
+    fig.suptitle(f'{stamp}: mean |error| profiles along x and y '
                  '(reflection/boundary signature check)', fontsize=10)
     savefig(fig, fig_dir / 'error_profiles_along_x_and_y.png')
 
@@ -359,7 +367,8 @@ def diagnose_member(model, run, frames, device, args, fig_root, out_root):
         ax.plot(np.arange(len(ac)), ac, marker='.', label=lab)
     ax.axhline(0, lw=0.6, color='k')
     ax.set_xlabel('lag (frames)'); ax.set_ylabel('temporal ACF')
-    ax.set_title(f'{name}: temporal autocorrelation of per-frame error stats')
+    ax.set_title(f'{stamp}: temporal autocorrelation of per-frame error stats',
+                 fontsize=9)
     ax.legend(fontsize=8)
     savefig(fig, fig_dir / 'temporal_autocorrelation_of_frame_error.png')
 
@@ -367,7 +376,9 @@ def diagnose_member(model, run, frames, device, args, fig_root, out_root):
     with open(out_dir / 'per_frame_metrics.csv', 'w', newline='') as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         w.writeheader(); w.writerows(rows)
-    metrics = {'member': name, 'split': args.split,
+    metrics = {'member': name, 'results_subdir': sub,
+               'member_modulation': modulation_name(name, siblings),
+               'split': args.split,
                'variant': run.variant or 'sharp',
                'global': glob, 'location_correlation': loc_corr,
                'reynolds_vs_error': re_err,
@@ -396,6 +407,10 @@ def main():
                     help='per-member frame cap, 0 = all (smoke: 6)')
     ap.add_argument('--outdir', default=None)
     ap.add_argument('--fig-dir', default=None)
+    ap.add_argument('--plain-member-names', action='store_true',
+                    help='name per-member subdirs by modulation '
+                         '(constant_inflow, sine_modulation, ...) per the '
+                         'STANDARD results tree; default keeps codenames')
     ap.add_argument('--report-run', default=None,
                     help='also copy summary into <branch>/reports/<name>/ and '
                          'push via digest_writer (I23b)')
@@ -433,6 +448,7 @@ def main():
     runs = build_runs(conf)
 
     split = split_frames(runs, args.split, conf)
+    siblings = [r.name for r in runs]
     all_metrics, summary_rows = [], []
     for ri, run in enumerate(runs):
         frames = [fi for (rj, fi) in split if rj == ri]
@@ -442,11 +458,13 @@ def main():
             print(f"[{run.name}] no {args.split} frames -- skipped", flush=True)
             continue
         met, _rows = diagnose_member(model, run, frames, args.device, args,
-                                     fig_root, out_root)
+                                     fig_root, out_root, siblings=siblings)
         all_metrics.append(met)
         g, s = met['global'], met['spatial_correlation_scales']
         summary_rows.append({
-            'member': run.name, 'n_frames': g['n_frames'],
+            'member': run.name,
+            'modulation': met['member_modulation'],
+            'n_frames': g['n_frames'],
             'r2': round(g['r2'], 4), 'rmse': round(g['rmse'], 5),
             'bias': f"{g['bias']:+.3e}",
             'max_err': round(g['max_err'], 4), 'min_err': round(g['min_err'], 4),
@@ -469,16 +487,20 @@ def main():
 
     # pooled Re--error, member-colored
     fig, ax = plt.subplots(figsize=(7.2, 4.6))
+    re_lo, re_hi = np.inf, -np.inf
     for met in all_metrics:
         member = met['member']
-        pf = out_root / member / 'per_frame_metrics.csv'
+        pf = out_root / met['results_subdir'] / 'per_frame_metrics.csv'
         with open(pf) as f:
             rr = list(csv.DictReader(f))
-        ax.scatter([float(r['Re']) for r in rr], [float(r['rmse']) for r in rr],
-                   s=10, label=member, alpha=0.7)
+        re_vals = [float(r['Re']) for r in rr]
+        re_lo, re_hi = min(re_lo, min(re_vals)), max(re_hi, max(re_vals))
+        mod = modulation_name(member, siblings).replace('_', ' ')
+        ax.scatter(re_vals, [float(r['rmse']) for r in rr],
+                   s=10, label=f'{member} [{mod}]', alpha=0.7)
     ax.set_xlabel('Re(t)'); ax.set_ylabel('per-frame RMSE')
     ax.set_title(f'error vs Reynolds number, all members ({args.split}, '
-                 f'{ckpt.parent.name})')
+                 f'{ckpt.parent.name}) | Re {re_lo:.0f}-{re_hi:.0f}', fontsize=10)
     ax.legend(fontsize=7)
     savefig(fig, fig_root / 'error_vs_reynolds_all_members.png')
 

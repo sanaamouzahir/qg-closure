@@ -60,6 +60,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
 from dataset_piff import load_conf, build_runs, split_frames
+from member_naming import member_dirname, member_stamp, modulation_name
 from model_piff import PiffModel
 from eval_piff import predict_frame, full_frame_slice
 
@@ -93,11 +94,14 @@ def set_block(y, e, sel, name):
 
 
 @torch.no_grad()
-def diagnose_member(model, run, frames, device, args, fig_root, out_root):
+def diagnose_member(model, run, frames, device, args, fig_root, out_root,
+                    siblings=()):
     name = run.name
-    out_dir = out_root / name
+    # --plain-member-names (STANDARD 2026-07-17): modulation-named subdirs
+    sub = member_dirname(name, args.plain_member_names, siblings)
+    out_dir = out_root / sub
     out_dir.mkdir(parents=True, exist_ok=True)
-    fig_dir = fig_root / name
+    fig_dir = fig_root / sub
     sl = full_frame_slice(run)
     X = (np.arange(run.Nx) * run.dx)[None, :].repeat(run.Ny, axis=0)[sl]
     Y = (np.arange(run.Ny) * run.dy)[:, None].repeat(run.Nx, axis=1)[sl]
@@ -198,6 +202,8 @@ def diagnose_member(model, run, frames, device, args, fig_root, out_root):
                                      'window (0/0, not zero correlation)')
 
     # ---- figures ----
+    # STANDARD rule 2 (2026-07-17): titles state modulation + Re range
+    stamp = member_stamp(name, re_blk['Re_min'], re_blk['Re_max'], siblings)
     ext = [X.min(), X.max(), Y.min(), Y.max()]
     fig, ax = plt.subplots(figsize=(8.5, 4.6))
     if exceed.max() > 0:
@@ -211,7 +217,7 @@ def diagnose_member(model, run, frames, device, args, fig_root, out_root):
         ax.text(0.5, 0.5, 'no |e| > 10*RMSE pixel-samples in the val window',
                 transform=ax.transAxes, ha='center')
     ax.contour(X, Y, SDF, levels=[0.0], colors='k', linewidths=1.0)
-    ax.set_title(f'{name}: frames with |e| > 10*RMSE per pixel '
+    ax.set_title(f'{stamp}:\nframes with |e| > 10*RMSE per pixel '
                  f'(RMSE {rmse:.3g}, {counts["gt_10x_rmse"]["count"]} px-samples '
                  f'= {counts["gt_10x_rmse"]["fraction"]:.2e})', fontsize=9)
     savefig(fig, fig_dir / 'huge_error_exceedance_count_map.png')
@@ -227,7 +233,7 @@ def diagnose_member(model, run, frames, device, args, fig_root, out_root):
                        interpolation='nearest')
         plt.colorbar(im, ax=ax, shrink=0.85, label='|e| / RMS(truth Pi*)')
     ax.contour(X, Y, SDF, levels=[0.0], colors='k', linewidths=1.0)
-    ax.set_title(f'{name}: time-mean |error| / RMS(true filtered closure) '
+    ax.set_title(f'{stamp}:\ntime-mean |error| / RMS(true filtered closure) '
                  f'(rel-RMSE {rel_rmse:.3f})', fontsize=9)
     savefig(fig, fig_dir / 'relative_error_map_abs_error_over_rms_truth.png')
 
@@ -240,7 +246,7 @@ def diagnose_member(model, run, frames, device, args, fig_root, out_root):
     ax.contour(X, Y, SDF, levels=[0.0], colors='k', linewidths=1.0)
     ax.set_xlim(ext[0], ext[1]); ax.set_ylim(ext[2], ext[3])
     ax.set_aspect('equal')
-    ax.set_title(f'{name}: top-{args.top_k} extreme errors '
+    ax.set_title(f'{stamp}:\ntop-{args.top_k} extreme errors '
                  f'(red +, blue -; {ev_wake:.0%} within 2 units of the body)',
                  fontsize=9)
     savefig(fig, fig_dir / 'top_extreme_errors_domain_scatter.png')
@@ -254,11 +260,13 @@ def diagnose_member(model, run, frames, device, args, fig_root, out_root):
                    bins='log', mincnt=1)
     ax.axhline(thr10, color='k', ls=':', lw=0.8)
     ax.set_xlabel('|truth Pi*|'); ax.set_ylabel('|error|')
-    ax.set_title(f'{name}: error magnitude vs closure magnitude', fontsize=9)
+    ax.set_title(f'{stamp}:\nerror magnitude vs closure magnitude', fontsize=9)
     plt.colorbar(hb, ax=ax, shrink=0.85, label='log10 count')
     savefig(fig, fig_dir / 'error_magnitude_vs_closure_magnitude.png')
 
-    metrics = {'member': name, 'split': args.split, 'n_pixel_samples': int(n),
+    metrics = {'member': name, 'results_subdir': sub,
+               'member_modulation': modulation_name(name, siblings),
+               'split': args.split, 'n_pixel_samples': int(n),
                'rmse': rmse, 'rms_truth': rms_t, 'rel_rmse': rel_rmse,
                'exceedance_counts': counts,
                'activity_split': sets,
@@ -287,6 +295,9 @@ def main():
     ap.add_argument('--max-frames', type=int, default=0)
     ap.add_argument('--outdir', default=None)
     ap.add_argument('--fig-dir', default=None)
+    ap.add_argument('--plain-member-names', action='store_true',
+                    help='name per-member subdirs by modulation per the '
+                         'STANDARD results tree; default keeps codenames')
     ap.add_argument('--report-run', default=None)
     ap.add_argument('--device', default='cuda' if torch.cuda.is_available()
                     else 'cpu')
@@ -311,6 +322,7 @@ def main():
     runs = build_runs(conf)
 
     split = split_frames(runs, args.split, conf)
+    siblings = [r.name for r in runs]
     rows = []
     for ri, run in enumerate(runs):
         frames = [fi for (rj, fi) in split if rj == ri]
@@ -320,7 +332,7 @@ def main():
             print(f"[{run.name}] no {args.split} frames -- skipped", flush=True)
             continue
         met = diagnose_member(model, run, frames, args.device, args,
-                              fig_root, out_root)
+                              fig_root, out_root, siblings=siblings)
         c10 = met['exceedance_counts']['gt_10x_rmse']
         p999 = met['exceedance_counts'][f'gt_p{TAIL_QS[0]:g}']
         act = next(s for s in met['activity_split']
@@ -331,7 +343,9 @@ def main():
                   if s['set'].startswith('near_zero'))
         re_c = met['reynolds']['pearson_Re_rmse']
         rows.append({
-            'member': met['member'], 'rmse': round(met['rmse'], 5),
+            'member': met['member'],
+            'modulation': met['member_modulation'],
+            'rmse': round(met['rmse'], 5),
             'rel_rmse': round(met['rel_rmse'], 3),
             'n_px': met['n_pixel_samples'],
             'n_gt_10x': c10['count'],

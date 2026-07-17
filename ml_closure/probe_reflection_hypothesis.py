@@ -193,6 +193,15 @@ def main():
     ap.add_argument('--ratios', default='0.7,0.8,0.859,0.9,1.0')
     ap.add_argument('--gp-chunk', type=int, default=200_000)
     ap.add_argument('--top-k', type=int, default=50)
+    ap.add_argument('--events', default=None,
+                    help='extreme_events.csv path (STANDARD tree passthrough); '
+                         'default: <ckpt dir>/error_tails_diag/<member>/')
+    ap.add_argument('--outdir', default=None,
+                    help='metrics/csv directory; default: '
+                         '<ckpt dir>/reflection_probe/<member>/')
+    ap.add_argument('--fig-dir', default=None,
+                    help='figure directory; default: '
+                         'pngs/reflection_probe/<model>/<member>/')
     ap.add_argument('--report-run', default=None)
     ap.add_argument('--device', default='cpu')
     args = ap.parse_args()
@@ -217,7 +226,8 @@ def main():
     if run is None:
         raise SystemExit(f'member {args.member} not in {args.config}')
 
-    ev_csv = (ckpt.parent / 'error_tails_diag' / args.member
+    ev_csv = (Path(args.events) if args.events else
+              ckpt.parent / 'error_tails_diag' / args.member
               / 'extreme_events.csv')
     if not ev_csv.exists():
         raise SystemExit(f'{ev_csv} missing -- run diagnose_error_tails first')
@@ -229,9 +239,11 @@ def main():
     print(f'[probe] {args.member}: {len(events)} events on {len(frames)} '
           f'frames', flush=True)
 
-    out_dir = ckpt.parent / 'reflection_probe' / args.member
+    out_dir = (Path(args.outdir) if args.outdir else
+               ckpt.parent / 'reflection_probe' / args.member)
     out_dir.mkdir(parents=True, exist_ok=True)
-    fig_dir = HERE / 'pngs' / 'reflection_probe' / ckpt.parent.name / args.member
+    fig_dir = (Path(args.fig_dir) if args.fig_dir else
+               HERE / 'pngs' / 'reflection_probe' / ckpt.parent.name / args.member)
 
     # A. measured contamination -- NON-FATAL: a failure here degrades the
     # probe to sweep-only (the constant-ratio sweep still yields a verdict)

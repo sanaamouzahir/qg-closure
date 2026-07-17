@@ -31,6 +31,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from dataset_piff import load_conf, build_runs, split_frames, _f
+from member_naming import modulation_name, member_stamp
 from model_piff import PiffModel
 from train_piff import gaussian_nll, student_t_nll, t_central_halfwidth
 
@@ -145,6 +146,9 @@ def main():
     ap.add_argument('--ckpt', required=True)
     ap.add_argument('--config', default=str(HERE / 'conf_piff.yaml'))
     ap.add_argument('--outdir', default=None)
+    ap.add_argument('--fig-dir', default=None,
+                    help='figure directory (STANDARD tree passthrough); '
+                         'default: same as --outdir')
     ap.add_argument('--device', default=None)
     args = ap.parse_args()
 
@@ -155,6 +159,8 @@ def main():
     gp_chunk = int(conf['train']['gp_chunk'])
     outdir = Path(args.outdir or (Path(args.ckpt).parent / 'eval'))
     outdir.mkdir(parents=True, exist_ok=True)
+    figdir = Path(args.fig_dir) if args.fig_dir else outdir
+    figdir.mkdir(parents=True, exist_ok=True)
 
     model = PiffModel(ckpt['conf']).to(device)   # conf as trained (film flag etc.)
     model.load_state_dict(ckpt['model'])
@@ -182,6 +188,15 @@ def main():
     print(f"[eval] {len(frames)} val frames from {[r.name for r in runs]}")
 
     preds = [predict_frame(model, runs[ri], fi, device, gp_chunk) for ri, fi in frames]
+    # STANDARD rule 2 (Sanaa 2026-07-17): every figure title states the
+    # member modulation function + the Reynolds number (per-frame Re(t) on
+    # the field panels, pooled Re range on the pooled figures).
+    member_names = [r.name for r in runs]
+    pool_stamp = ('members: '
+                  + ', '.join(f"{n} [{modulation_name(n, member_names).replace('_', ' ')}]"
+                              for n in member_names)
+                  + f" | Re {min(p['Re'] for p in preds):.0f}-"
+                    f"{max(p['Re'] for p in preds):.0f}")
     y = np.concatenate([p['y'] for p in preds])
     mu = np.concatenate([p['mu'] for p in preds])
     sg = np.concatenate([p['sigma'] for p in preds])
@@ -262,7 +277,8 @@ def main():
     ax2.plot(lim, lim, 'k:', lw=1)
     ax2.set_xlabel('binned predictive sigma'); ax2.set_ylabel('empirical RMSE in bin')
     ax2.set_title('spread-skill'); ax2.grid(alpha=0.3)
-    fig.tight_layout(); fig.savefig(outdir / 'calibration.png', dpi=130); plt.close(fig)
+    fig.suptitle(pool_stamp, fontsize=8)
+    fig.tight_layout(); fig.savefig(figdir / 'calibration.png', dpi=130); plt.close(fig)
 
     # ---- 3. field figures: 6 snapshots spanning the Re range -------------- #
     n_show = min(int(ec['n_field_snapshots']), len(preds))
@@ -282,8 +298,10 @@ def main():
         if not np.isfinite(vmax):
             vmax = np.nanmax(np.abs(tr))
         # Sanaa convention 2026-07-16: ALL panels on ONE color scale -- the
-        # TRUTH's (ring-excluded max) -- and every title carries t + Re(t).
-        stamp = f"t={p['t']:.2f} Re(t)={p['Re']:.0f}"
+        # TRUTH's (ring-excluded max) -- and every title carries t + Re(t);
+        # STANDARD 2026-07-17: plus the member modulation function.
+        mod = modulation_name(run.name, member_names).replace('_', ' ')
+        stamp = f"{run.name} [{mod}]  t={p['t']:.2f} Re(t)={p['Re']:.0f}"
         for ax, f2d, ttl in zip(
                 axs, [tr, p['mu2d'], p['sigma2d'], err],
                 [f"truth Pi*  {stamp}", f"predictive mean  {stamp}",
@@ -291,18 +309,22 @@ def main():
             im = imshow_field(ax, f2d, run, ttl, vmax=vmax)
         fig.colorbar(im, ax=list(axs), fraction=0.02, pad=0.02,
                      label='truth color scale (shared)')
-        fig.savefig(outdir / f'field_{j}_t{p["t"]:.2f}.png', dpi=130)
+        fig.savefig(figdir / f'field_{j}_t{p["t"]:.2f}.png', dpi=130)
         plt.close(fig)
 
     # Re_inlet(t) trace with snapshot markers
     fig, ax = plt.subplots(figsize=(9, 3))
     for r in runs:
         tab = np.load(r.run_dir / r.man['files']['u_table'])
-        ax.plot(tab['t'], tab['Re'], lw=0.8, label=r.name)
+        mod = modulation_name(r.name, member_names).replace('_', ' ')
+        ax.plot(tab['t'], tab['Re'], lw=0.8, label=f"{r.name} [{mod}]")
     for p in show:
         ax.axvline(p['t'], color='k', ls='--', lw=0.7)
+    ax.set_title(f'inlet Reynolds number trace per member (evaluated '
+                 f'snapshots marked) | Re {min(p["Re"] for p in preds):.0f}-'
+                 f'{max(p["Re"] for p in preds):.0f}', fontsize=9)
     ax.set_xlabel('t'); ax.set_ylabel('Re_inlet'); ax.legend(fontsize=7); ax.grid(alpha=0.3)
-    fig.tight_layout(); fig.savefig(outdir / 'Re_trace.png', dpi=130); plt.close(fig)
+    fig.tight_layout(); fig.savefig(figdir / 'Re_trace.png', dpi=130); plt.close(fig)
 
     # stage-1 conformal (Sanaa approval 2026-07-14): every eval summary
     # surfaces the deployable conformal calibration and its held-out
