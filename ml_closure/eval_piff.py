@@ -309,7 +309,10 @@ def main():
             im = imshow_field(ax, f2d, run, ttl, vmax=vmax)
         fig.colorbar(im, ax=list(axs), fraction=0.02, pad=0.02,
                      label='truth color scale (shared)')
-        fig.savefig(figdir / f'field_{j}_t{p["t"]:.2f}.png', dpi=130)
+        # STANDARD 2026-07-17: every plot in a per-member modulation subdir
+        mdir = figdir / modulation_name(run.name, member_names)
+        mdir.mkdir(parents=True, exist_ok=True)
+        fig.savefig(mdir / f'field_{j}_t{p["t"]:.2f}.png', dpi=130)
         plt.close(fig)
 
     # Re_inlet(t) trace with snapshot markers
