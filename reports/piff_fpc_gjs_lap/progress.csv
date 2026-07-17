@@ -5,3 +5,4 @@ timestamp,event,job_id,host,note
 2026-07-16T15:40:10,start,1836219,ibgpu-compute-0-0.local,piff grid point launched: --config conf_piff_fpc_gjs_lap.yaml --run-name piff_fpc_gjs_lap --init-ckpt runs_piff/piff_fpc_gjs_ylp75/best.pt --lr 1.0e-3 --weight-decay 1.0e-5 --epochs 100
 2026-07-16T15:52:56,start,1836225,ibgpu-compute-0-0.local,piff grid point launched: --config conf_piff_fpc_gjs_lap.yaml --run-name piff_fpc_gjs_lap --init-ckpt runs_piff/piff_fpc_gjs_ylp75/best.pt --lr 1.0e-3 --weight-decay 1.0e-5 --epochs 100
 2026-07-16T16:07:14,start,1836244,ibgpu-compute-0-0.local,piff grid point launched: --config conf_piff_fpc_gjs_lap.yaml --run-name piff_fpc_gjs_lap --lr 1.0e-3 --weight-decay 1.0e-5 --epochs 150
+2026-07-16T20:01:37,done,1836269,ibgpu-compute-0-0.local,piff train complete
