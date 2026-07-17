@@ -1,0 +1,12 @@
+# error-tails diagnostics -- piff_fpc_gjs_lap (val, filtered gaussian_jonly_ylp75)
+
+| member | rmse | rel_rmse | n_px | n_gt_10x | frac_gt_10x | worst0.1pct_SS_share | r2_active_q90 | r2_quiet_q50 | rmse_active | rmse_quiet | near_zero_px_share | extremes_near_body | Re_corr |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| FPC-const | 0.1771 | 0.276 | 9990888 | 4031 | 4.03e-04 | 94.7% | 0.924 | -4116.37 | 0.5599 | 0.0013 | 94.9% | 100% | undef(const) |
+| FPC-sine | 0.22202 | 0.322 | 5940528 | 2715 | 4.57e-04 | 93.1% | 0.896 | -3269.173 | 0.702 | 0.0012 | 94.8% | 100% | -0.276 |
+| FPC-ramp | 0.27434 | 0.367 | 5940528 | 2454 | 4.13e-04 | 96.0% | 0.866 | -1544.431 | 0.8675 | 0.0012 | 94.6% | 100% | undef(const) |
+| FPC-ou | 0.21451 | 0.306 | 5940528 | 2868 | 4.83e-04 | 94.2% | 0.906 | -3016.962 | 0.6783 | 0.0012 | 95.1% | 100% | 0.116 |
+| FPC-telS-A | 0.30391 | 0.37 | 5940528 | 2461 | 4.14e-04 | 96.2% | 0.863 | -1612.962 | 0.961 | 0.0012 | 95.4% | 100% | undef(const) |
+
+figures: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/pngs/error_tails_diag/piff_fpc_gjs_lap
+per-member yaml/csv: runs_piff/piff_fpc_gjs_lap/error_tails_diag
