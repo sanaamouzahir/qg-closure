@@ -2,6 +2,22 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-17 (later) — RAMP-WIDTH SWEEP AUTHORED, PROPOSE-GATED (Sanaa ruling; Fable, day mode)
+- Ruling: penalty axis exhausted (0.5/0.6 NaN, 1.0+ weak: inlet v_rms ~7.5e-2,
+  38-71% St leak at T=35); campaign moves to sponge RAMP WIDTH.
+- KNOB: qg.bc.width (fraction; linear ramps in outlet_mask_rtd 'single' — right
+  strip [1-w,1] + top double strip [1-2w,1]; F = -ramp*omega/(bc.sponge*dt)).
+  Hydra-overridable, zero solver change. Current: fpc 0.025, cape 0.1.
+- DISCOVERY: the penalty sweep overrode qg.pde.penalty ONLY — bc.sponge stayed
+  1.25/1.025 in every run (fpc/p0p7 .hydra config verified). Boundary-eta axis
+  never actually swept; flagged in the PROPOSE.
+- Landed: scripts/sge/submit_ramp_sweep.sh (v3 submit_sweep mirror; member
+  physics + penalty AND bc.sponge pinned; fpc x{1,1.5,2,3,4}, cape x{1,1.5,2,2.5}
+  — 3x+ cape rejected, top strips >= 60% height); analyze_sponge_sweep.py
+  --param-prefix/--sense width/--n-expected (penalty-mode default unchanged).
+- Gates: bash -n PASS, remote ast PASS, sge-checker G5 PASS, closure-reviewer G4
+  (verdict in DECISIONS.md). NOT FIRED — [QG][PROPOSE] spooled, waiting for GO.
+
 ## 2026-07-17 — RESULTS-TREE STANDARD LANDED (Sanaa direct order; Fable, day mode)
 - STANDARD: ml_closure/results/<geometry>/<model>/<suite>/<member_modulation>/ —
   plain English everywhere (flow_past_cylinder|flow_past_cape; evaluation,
