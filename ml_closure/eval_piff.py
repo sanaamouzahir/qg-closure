@@ -307,15 +307,17 @@ def main():
         if not np.isfinite(vmax):
             vmax = np.nanmax(np.abs(tr))
         # Sanaa convention 2026-07-16: ALL panels on ONE color scale -- the
-        # TRUTH's (ring-excluded max) -- and every title carries t + Re(t);
-        # STANDARD 2026-07-17: plus the member modulation function.
+        # TRUTH's (ring-excluded max). Titles per her 2026-07-17 correction:
+        # ONE global suptitle carries member + modulation + t + Re(t); each
+        # panel titles only its quantity (the long per-panel stamps overlapped).
         mod = modulation_name(run.name, member_names).replace('_', ' ')
-        stamp = f"{run.name} [{mod}]  t={p['t']:.2f} Re(t)={p['Re']:.0f}"
         for ax, f2d, ttl in zip(
                 axs, [tr, p['mu2d'], p['sigma2d'], err],
-                [f"truth Pi*  {stamp}", f"predictive mean  {stamp}",
-                 f"predictive sigma  {stamp}", f"|error|  {stamp}"]):
+                ['truth Pi*', 'predictive mean', 'predictive sigma',
+                 '|error|']):
             im = imshow_field(ax, f2d, run, ttl, vmax=vmax)
+        fig.suptitle(f"{run.name} [{mod}]   t={p['t']:.2f}   "
+                     f"Re(t)={p['Re']:.0f}", fontsize=13)
         fig.colorbar(im, ax=list(axs), fraction=0.02, pad=0.02,
                      label='truth color scale (shared)')
         # STANDARD 2026-07-17: every plot in a per-member modulation subdir
