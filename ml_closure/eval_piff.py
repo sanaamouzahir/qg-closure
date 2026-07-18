@@ -332,8 +332,8 @@ def main():
         tab = np.load(r.run_dir / r.man['files']['u_table'])
         mod = modulation_name(r.name, member_names).replace('_', ' ')
         ax.plot(tab['t'], tab['Re'], lw=0.8, label=f"{r.name} [{mod}]")
-    for p in show:
-        ax.axvline(p['t'], color='k', ls='--', lw=0.7)
+    for idx, _ in sel:
+        ax.axvline(preds[idx]['t'], color='k', ls='--', lw=0.7)
     ax.set_title(f'inlet Reynolds number trace per member (evaluated '
                  f'snapshots marked) | Re {min(p["Re"] for p in preds):.0f}-'
                  f'{max(p["Re"] for p in preds):.0f}', fontsize=9)
