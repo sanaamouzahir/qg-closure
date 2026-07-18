@@ -280,12 +280,21 @@ def main():
     fig.suptitle(pool_stamp, fontsize=8)
     fig.tight_layout(); fig.savefig(figdir / 'calibration.png', dpi=130); plt.close(fig)
 
-    # ---- 3. field figures: 6 snapshots spanning the Re range -------------- #
-    n_show = min(int(ec['n_field_snapshots']), len(preds))
-    order = np.argsort([p['Re'] for p in preds])
-    sel = order[np.linspace(0, len(order) - 1, n_show).astype(int)]
-    show = [preds[i] for i in sel]
-    for j, (idx, p) in enumerate(zip(sel, show)):
+    # ---- 3. field figures: per MEMBER, spanning that member's Re range ---- #
+    # (Sanaa 2026-07-17: more fields per member; the old pooled-Re pick gave
+    # uneven 1-2 panels per member)
+    n_per = int(ec.get('n_field_snapshots_per_member', 5))
+    by_run: dict = {}
+    for i in range(len(preds)):
+        by_run.setdefault(frames[i][0], []).append(i)
+    sel = []
+    for ri in sorted(by_run):
+        o = sorted(by_run[ri], key=lambda i: preds[i]['Re'])
+        picks = np.linspace(0, len(o) - 1,
+                            min(n_per, len(o))).astype(int)
+        sel.extend((o[q], j) for j, q in enumerate(dict.fromkeys(picks)))
+    for idx, j in sel:
+        p = preds[idx]
         run = runs[frames[idx][0]]
         err = np.where(p['mask'], np.abs(p['truth'] - np.nan_to_num(p['mu2d'])), np.nan)
         tr = np.where(p['mask'], p['truth'], np.nan)
