@@ -22,6 +22,14 @@ Modes:
       spool is shared FS). No qualifying penalty -> no out file + FLAG mail.
   --check-run <member-dir> --member NAME --append <file>
       same metrics on the last 10 time units; append 'NAME PASS|FAIL ...'.
+
+Ramp-width mode (Sanaa ruling 2026-07-17: penalty axis exhausted, sweep the
+ramp WIDTH): --param-prefix w --sense width. Subdirs are w<width> (e.g.
+w0p05), value parsed the same way. Strength direction FLIPS vs penalty:
+sponge strength grows WITH width (penalty strength = 1/penalty). Pick =
+next-WIDER neighbor of the narrowest passing width, and that neighbor must
+pass too (same weakest-passing + stronger-margin philosophy). --n-expected
+gates the no-pick FLAG mail on the full sweep having reported.
 """
 from __future__ import annotations
 
@@ -141,6 +149,12 @@ def main():
     ap.add_argument('--sweep-root')
     ap.add_argument('--geometry', default='?')
     ap.add_argument('--t-window', nargs=2, type=float, default=[25.0, 35.0])
+    ap.add_argument('--param-prefix', default='p',
+                    help="subdir prefix: 'p' penalty sweep, 'w' ramp-width")
+    ap.add_argument('--sense', choices=('penalty', 'width'), default='penalty',
+                    help='strength direction: penalty=1/value, width=value')
+    ap.add_argument('--n-expected', type=int, default=11,
+                    help='full-sweep size gating the no-pick FLAG mail')
     ap.add_argument('--out')
     ap.add_argument('--check-run')
     ap.add_argument('--member')
@@ -162,9 +176,11 @@ def main():
         return
 
     root = Path(args.sweep_root)
+    pfx = args.param_prefix
+    label = 'width' if args.sense == 'width' else 'penalty'
     rows, passing = [], []
-    for d in sorted(root.glob('p*')):
-        p = float(d.name[1:].replace('p', '.'))
+    for d in sorted(root.glob(f'{pfx}*')):
+        p = float(d.name[len(pfx):].replace('p', '.'))
         try:
             m = run_metrics(d, *args.t_window)
         except Exception as e:
@@ -172,51 +188,60 @@ def main():
         rows.append((p, m))
         if m['pass']:
             passing.append(p)
-    # STRENGTH = 1/penalty (2026-07-16 direction fix): the WEAKEST passing
-    # sponge is the LARGEST passing penalty; deploy its next-STRONGER (next
-    # smaller penalty) neighbor as margin, requiring it to pass too.
+    # STRENGTH direction (2026-07-16 fix + 2026-07-17 width mode):
+    #   penalty: strength = 1/penalty -> weakest passing = LARGEST penalty,
+    #            stronger neighbor = next SMALLER.
+    #   width:   strength = width     -> weakest passing = SMALLEST width,
+    #            stronger neighbor = next LARGER.
+    # Deploy the stronger neighbor of the weakest passing value; the
+    # neighbor must itself pass (margin).
     pick = None
-    all_ps = sorted({p for p, r in rows if not isinstance(r, str)}, reverse=True)
-    for p in sorted(passing, reverse=True):        # weakest passing first
-        stronger = [q for q in all_ps if q < p]
+    weakest_first = args.sense == 'penalty'          # descending for penalty
+    all_ps = sorted({p for p, r in rows if not isinstance(r, str)},
+                    reverse=weakest_first)
+    for p in sorted(passing, reverse=weakest_first):  # weakest passing first
+        if args.sense == 'penalty':
+            stronger = [q for q in all_ps if q < p]
+        else:
+            stronger = [q for q in all_ps if q > p]
         if stronger and stronger[0] in passing:
             pick = stronger[0]
             break
     body = '\n'.join(
-        f'p={p}: ' + (r if isinstance(r, str) else
-                      ' '.join(f'{k}={r[k]:.2e}' for k in TOL)
-                      + (' PASS' if r['pass'] else ' fail'))
+        f'{label}={p}: ' + (r if isinstance(r, str) else
+                            ' '.join(f'{k}={r[k]:.2e}' for k in TOL)
+                            + (' PASS' if r['pass'] else ' fail'))
         for p, r in rows)
     if pick is not None:
         Path(args.out).write_text(f'{pick}\n')
         # triple-sure snapshots (tight colorbar) -> reports/, pushed by the
         # relay cron; email carries the paths
+        sweep_tag = 'ramp_sweep' if args.sense == 'width' else 'sponge_sweep'
         rep = Path('/gdata/projects/ml_scope/Closure_modeling/QG-closure/'
-                   f'qg-sgs-closure/reports/sponge_sweep_{args.geometry}')
+                   f'qg-sgs-closure/reports/{sweep_tag}_{args.geometry}')
         for p, r in rows:
             if isinstance(r, str) or abs(p - pick) > 0.051:
                 continue
-            d = root / f"p{str(p).replace('.', 'p')}"
+            d = root / f"{pfx}{str(p).replace('.', 'p')}"
             try:
-                snapshot_plot(d, rep / f'last_snapshot_p{p}.png',
-                              f'{args.geometry} penalty {p}')
+                snapshot_plot(d, rep / f'last_snapshot_{pfx}{p}.png',
+                              f'{args.geometry} {label} {p}')
             except Exception as e:
                 print(f'[snapshot] {p}: {e!r}', flush=True)
-        mail(f'sweep_{args.geometry}',
-             f'[QG][MONITOR][sgs-closure] sponge sweep {args.geometry}: '
-             f'PICKED penalty {pick}',
-             body + f'\n\nPICK: {pick} (smallest passing with passing '
-             'successor; deployed value = successor for margin).\n'
-             'S2 member reruns fire on the next pipeline tick.')
-    elif len([r for _, r in rows if not isinstance(r, str)]) >= 11:
+        mail(f'{sweep_tag}_{args.geometry}',
+             f'[QG][MONITOR][sgs-closure] {label} sweep {args.geometry}: '
+             f'PICKED {label} {pick}',
+             body + f'\n\nPICK: {pick} (weakest passing with passing '
+             'stronger neighbor; deployed value = that neighbor for margin).'
+             '\nNext stage fires per its pipeline/ruling.')
+    elif len([r for _, r in rows if not isinstance(r, str)]) >= args.n_expected:
         # no-pick mail only when the FULL sweep has reported (partial early
         # runs stay silent -- Sanaa 21:35 early-exit mode reruns this often)
-        mail(f'sweep_{args.geometry}',
-             f'[QG][FLAG][sgs-closure] sponge sweep {args.geometry}: '
-             'NO penalty in 1.25-2.25 passes',
-             body + '\n\nNo out file written -- pipeline holds at S2. '
-             'Likely needs a wider sponge RAMP, not more penalty (impedance '
-             'mismatch); your ruling.')
+        sweep_tag = 'ramp_sweep' if args.sense == 'width' else 'sponge_sweep'
+        mail(f'{sweep_tag}_{args.geometry}',
+             f'[QG][FLAG][sgs-closure] {label} sweep {args.geometry}: '
+             f'NO {label} value passes',
+             body + '\n\nNo out file written -- holds for your ruling.')
     print(body, flush=True)
 
 
