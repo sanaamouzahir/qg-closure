@@ -328,6 +328,20 @@ def main():
         # from the UNmutated dict first (init-probe target). lap_scale is
         # fresh (the ckpt predates the feature) and must be set BEFORE
         # sampling normalized lap values for the new inducing column.
+        # wallv2 ckpt-compat check (same contract as the lap-flag checks
+        # below): the wall gate changes the g/lap DATA distribution, hence
+        # the recorded g_scale/g2_scale/lap_scale buffers — warm-starting
+        # across gate settings silently misaligns them. Refuse loudly.
+        # Pre-wallv2 ckpts carry no key -> False -> load into default-off
+        # models exactly as before.
+        ck_wall = bool(wck.get('conf', {}).get('model', {})
+                       .get('use_wall_gate', False))
+        if ck_wall != model.use_wall_gate:
+            raise RuntimeError(
+                f"warm-start wall-gate mismatch: ckpt use_wall_gate={ck_wall} "
+                f"!= model {model.use_wall_gate} — the gated g/lap feature "
+                f"distributions (and recorded scale buffers) differ; train "
+                f"cold or match the flag")
         ck_lap = bool(wck.get('conf', {}).get('model', {})
                       .get('use_lap_feature', False))
         ref = None

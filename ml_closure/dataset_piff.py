@@ -179,6 +179,20 @@ class RunData:
         # with the frame's U (one extra D vs the grad feature's D^2/U: the
         # laplacian of omega* in x/D coordinates).
         self.need_lap = bool(conf.get('model', {}).get('use_lap_feature', False))
+        # wallv2 wall gate (Sanaa GO 2026-07-18): multiply the RAW g and lap
+        # planes by exp(-max(sdf,0)/D) — the diagnose_feature_candidates.py
+        # winner features grad_om_wall / lap_om_wall promoted into the model
+        # inputs. sdf here is the UNCLIPPED signed distance (not sdf_star), D
+        # the body diameter. Applied below, right after the SDF is available
+        # and BEFORE any consumer of gradmag/lapmag, so every downstream scale
+        # calibration (g_scale, g2_scale, lap_scale in conditioning_stats)
+        # sees gated data. Default OFF -> bit-identical arrays.
+        self.use_wall_gate = bool(conf.get('model', {}).get('use_wall_gate', False))
+        if self.use_wall_gate and not (self.need_grad and self.need_lap):
+            raise ValueError(
+                f"{self.name}: model.use_wall_gate=true requires "
+                f"use_grad_feature and use_lap_feature both true "
+                f"(got grad={self.need_grad}, lap={self.need_lap})")
         if self.need_lap:
             lm = np.empty_like(self.omega)
             for k in range(self.T):
@@ -202,6 +216,17 @@ class RunData:
         else:
             self.sdf = signed_distance(self.chi_obs, self.dx, self.dy)
             np.save(sdf_cache, self.sdf)
+
+        # wallv2 wall gate (see flag above): first point where the UNCLIPPED
+        # sdf exists — gate the raw g/lap planes here, before sdf_star and
+        # before ANY consumer (crop, conditioning_stats), float64 arithmetic.
+        if self.use_wall_gate:
+            wall = np.exp(-np.maximum(self.sdf, 0.0) / self.D)   # (Ny,Nx) f64
+            for k in range(self.T):
+                self.gradmag[k] = (self.gradmag[k].astype(np.float64)
+                                   * wall).astype(np.float32)
+                self.lapmag[k] = (self.lapmag[k].astype(np.float64)
+                                  * wall).astype(np.float32)
 
         clipD = _f(dc['sdf_clip_D']) * self.D
         self.sdf_star = (np.clip(self.sdf, -clipD, clipD) / clipD).astype(np.float32)
@@ -259,6 +284,21 @@ class RunData:
         self._sbw = w / np.maximum(s, 1e-300)
         self._sbw_block = b
         return self._sbw
+
+    def tail_candidates(self, frame, quantile):
+        """(iy, ix) index arrays of the top-(1-quantile) |Pi| VALID pixels of
+        one frame (wallv2 tail-biased crop sampling, Sanaa GO 2026-07-18).
+        Threshold = the `quantile` quantile of |Pi| over valid pixels only
+        (float64); cached per (frame, quantile) — tiny index tables."""
+        key = (int(frame), float(quantile))
+        cache = getattr(self, '_tailc', None)
+        if cache is None:
+            cache = self._tailc = {}
+        if key not in cache:
+            ap = np.abs(self.pi[frame].astype(np.float64))
+            thr = float(np.quantile(ap[self.valid], float(quantile)))
+            cache[key] = np.nonzero(self.valid & (ap >= thr))
+        return cache[key]
 
     def frames_in(self, t_lo, t_hi):
         """Frame indices with t in [t_lo, t_hi). Times read from the record —
@@ -426,6 +466,17 @@ class PiffCropDataset(Dataset):
         # split the wake share is wake_frac*(1-signal_frac); remainder uniform.
         self.signal_frac = _f(dc.get('signal_frac', 0.0)) if split == 'train' else 0.0
         self.signal_block = int(dc.get('signal_block', 8))
+        # tail-biased crop sampling (wallv2, Sanaa GO 2026-07-18):
+        # data.tail_bias {frac, quantile}. frac = 0.0 (default) => the sampler
+        # below is UNTOUCHED — bit-identical crop tables (same rng sequence).
+        # frac > 0 (TRAIN-ONLY, like signal_frac; val/eval keep the legacy
+        # distribution): that fraction of crops centers on a pixel drawn
+        # uniformly from the top-(1-quantile) |Pi| valid pixels of the sampled
+        # frame; the remaining (1-frac) follow the existing signal/wake/
+        # uniform split with their conf shares unchanged (conditionally).
+        tb = dc.get('tail_bias') or {}
+        self.tail_frac = _f(tb.get('frac', 0.0)) if split == 'train' else 0.0
+        self.tail_quantile = _f(tb.get('quantile', 0.999))
         self.set_epoch(0)
 
     def set_epoch(self, epoch):
@@ -433,7 +484,54 @@ class PiffCropDataset(Dataset):
         rng = np.random.default_rng([self.seed, {'train': 0, 'val': 1}[self.split], int(epoch)])
         tbl = np.empty((self.n_crops, 4), dtype=np.int64)
         pick = rng.integers(0, len(self.frames), size=self.n_crops)
-        if self.signal_frac <= 0.0:
+        if self.tail_frac > 0.0:
+            # wallv2 tail-biased split (TRAIN-ONLY; tail_frac 0.0 = the exact
+            # legacy paths below, bit-identical). Crop i is a TAIL crop when
+            # u[i] < tail_frac: center drawn uniformly from the frame's
+            # top-(1-quantile) |Pi| valid pixels (periodic wrap handles the
+            # crop boundary exactly as the legacy sampler). Otherwise u[i] is
+            # rescaled to u2 uniform on [0,1) given non-tail, and the EXISTING
+            # signal/wake/uniform thresholds apply unchanged — conf shares
+            # keep their meaning conditionally on the (1-frac) remainder.
+            wake_hi = self.signal_frac + self.wake_frac * (1.0 - self.signal_frac)
+            u = rng.random(self.n_crops)
+            for i in range(self.n_crops):
+                ri, fi = self.frames[pick[i]]
+                r = self.runs[ri]
+                if u[i] < self.tail_frac:
+                    iy_c, ix_c = r.tail_candidates(fi, self.tail_quantile)
+                    if iy_c.size == 0:          # cannot happen while n_valid>0; uniform fallback
+                        cy = int(rng.integers(0, r.Ny))
+                        cx = int(rng.integers(0, r.Nx))
+                    else:
+                        j = int(rng.integers(0, iy_c.size))
+                        cy = int(iy_c[j]); cx = int(ix_c[j])
+                    tbl[i] = (ri, fi, cy, cx)
+                    continue
+                u2 = (u[i] - self.tail_frac) / (1.0 - self.tail_frac)
+                if u2 < self.signal_frac:
+                    b = self.signal_block
+                    w = r.signal_block_weights(b)[fi]
+                    wsum = float(w.sum())
+                    if wsum <= 0.999:           # quiescent frame (G4 finding 1)
+                        cy = int(rng.integers(0, r.Ny))
+                        cx = int(rng.integers(0, r.Nx))
+                        tbl[i] = (ri, fi, cy, cx)
+                        continue
+                    flat = rng.choice(w.size, p=w.ravel())
+                    by, bx = divmod(int(flat), w.shape[1])
+                    cy = (by * b + int(rng.integers(0, b))) % r.Ny
+                    cx = (bx * b + int(rng.integers(0, b))) % r.Nx
+                elif u2 < wake_hi:
+                    x = r.x_c + rng.uniform(self.wxlo, self.wxhi) * r.D
+                    y = r.y_c + rng.uniform(-self.wyh, self.wyh) * r.D
+                    cy = int(round(y / r.dy)) % r.Ny
+                    cx = int(round(x / r.dx)) % r.Nx
+                else:
+                    cy = int(rng.integers(0, r.Ny))
+                    cx = int(rng.integers(0, r.Nx))
+                tbl[i] = (ri, fi, cy, cx)
+        elif self.signal_frac <= 0.0:
             # EXACT legacy path (signal_frac 0): same rng call sequence,
             # bit-identical crop tables to pre-2026-07-13 code
             wake = rng.random(self.n_crops) < self.wake_frac

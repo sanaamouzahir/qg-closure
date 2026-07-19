@@ -185,6 +185,18 @@ class PiffModel(nn.Module):
         self.use_zeta_dot = bool(mc.get('use_zeta_dot', False))
         self.use_grad_feature = bool(mc.get('use_grad_feature', False))
         self.use_lap_feature = bool(mc.get('use_lap_feature', False))
+        # use_wall_gate (wallv2, Sanaa GO 2026-07-18): the g and lap channels
+        # are multiplied by exp(-max(sdf,0)/D) IN THE DATASET
+        # (dataset_piff.RunData — upstream of every scale calibration, so
+        # g_scale/g2_scale/lap_scale are stats of the GATED features). The
+        # flag lives on the model so checkpoints round-trip it via the saved
+        # conf, exactly like use_lap_feature; the model math itself is
+        # unchanged. Default OFF -> bit-identical to the pre-wallv2 model.
+        self.use_wall_gate = bool(mc.get('use_wall_gate', False))
+        if self.use_wall_gate and not (self.use_grad_feature
+                                       and self.use_lap_feature):
+            raise ValueError("model.use_wall_gate=true requires "
+                             "use_grad_feature and use_lap_feature both true")
         # arm-F structural noise prior, PRODUCTION port (Sanaa 2026-07-13
         # night): sigma^2(x) = softplus(a) + softplus(b) * s_feat(x), s_feat =
         # train-mean-normalized g^2 (g = the grad feature; requires
