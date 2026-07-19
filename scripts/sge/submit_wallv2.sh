@@ -95,6 +95,21 @@ for g in "${GEOMS[@]}"; do
             scripts/sge/piff_train_job.sh --config "$CONF" --run-name "$RN")
     echo "trainer $RN: $TRAIN"
 
+    # I18 monitors wired HERE, not "by the supervisor at fire time" — the
+    # 2026-07-19 wallv2 NaN burn (100 ep x 2 GPUs, no monitor attached)
+    # is why. LIVE catches nan/inversion/stall while running (X-ladder);
+    # FINALIZE postmortems after exit. train_piff.py additionally hard-
+    # aborts in-process on 2 consecutive non-finite epochs (exit 9).
+    TLOG="$LOGS/pWv2_$g.$TRAIN.log"
+    MONL=$(qsub_go -terse -q all.q -N "pWv2monL_$g" -j y -cwd -V \
+           -o "$LOGS/pWv2monL_$g.\$JOB_ID.log" \
+           scripts/sge/piff_monitor_job.sh "$TLOG" "$RN" "$TRAIN")
+    MONF=$(qsub_go -terse -q all.q -N "pWv2monF_$g" -hold_jid "$TRAIN" \
+           -v QG_MONITOR_FINALIZE=1 -j y -cwd -V \
+           -o "$LOGS/pWv2monF_$g.\$JOB_ID.log" \
+           scripts/sge/piff_monitor_job.sh "$TLOG" "$RN" "$TRAIN")
+    echo "monitors $RN: live $MONL finalize $MONF"
+
     # ---- CPU diagnostics (all.q), held on the trainer --------------------- #
     MP=$(qsub_go -terse -q all.q -N "pWv2mp_$g" -hold_jid "$TRAIN" -j y -cwd -V \
          -v QG_DIGEST_RUN="mean_prediction_wallv2_$g" \

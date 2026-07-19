@@ -62,7 +62,12 @@ SCEN_cape="flow_past_cape"
 # the practical ceiling). Round-1 widths skip via the done-marker. Cape NOT
 # extended pending its round-1 analyzer (x3+ eats >=60% height -- decouple
 # right/top widths before going bigger there).
-MULTS_fpc="1 1.5 2 3 4 5 6 8"
+# 2026-07-19 Sanaa order round 3 ("very close" - v_rms 0.018 at 0.2, best
+# yet): extend fpc x{10,12} = 0.25/0.3. CAUTION flagged: at x12 the top
+# double strips cover 60% of the height (the level rejected for cape);
+# x10 = 50%. v_rms may keep falling; om_rms floor (~1.4e-2, width-flat
+# through x8) is the thing to watch in these two new rows.
+MULTS_fpc="1 1.5 2 3 4 5 6 8 10 12"
 MULTS_cape="1 1.5 2 2.5"
 
 cfgval() {  # $1 file  $2 key -- first '  key: value' hit

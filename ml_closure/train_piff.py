@@ -28,6 +28,7 @@ human decision, reported always.
 
 import argparse
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -501,6 +502,28 @@ def main():
         sched.step()
 
         vm = evaluate(model, val_ds, device, gp_chunk)
+        # HARD NaN GUARD (Sanaa mandate 2026-07-19 after the wallv2 100-ep
+        # NaN burn: "there should NEVER be any code that does not fire a
+        # STOP > CHECK > FIX > RESUBMIT reaction when there is a nan").
+        # In-process = cannot be forgotten the way monitor wiring can.
+        # Two consecutive non-finite epochs => save state, write a marker,
+        # exit 9 (distinct rc; the job wrapper's fail digest + -m mail fire).
+        ep_bad = (not np.isfinite(np.mean(elbos) if elbos else np.nan)
+                  or not np.isfinite(vm['nll']))
+        if ep_bad and getattr(main, '_nan_streak', 0) >= 1:
+            marker = outdir / 'NAN_ABORT.txt'
+            marker.write_text(
+                f"epoch {ep}: train_elbo={np.mean(elbos) if elbos else float('nan')} "
+                f"val_nll={vm['nll']}\nSTOP>CHECK>FIX>RESUBMIT: do not rerun "
+                f"this config unchanged; diagnose the first non-finite "
+                f"statistic (features/scales) before resubmission.\n")
+            torch.save({'model': model.state_dict(), 'conf': conf,
+                        'epoch': ep, 'nan_abort': True},
+                       outdir / 'last_nan_abort.pt')
+            print(f"[NAN-ABORT] two consecutive non-finite epochs (ep {ep}); "
+                  f"marker {marker}; exiting 9", flush=True)
+            sys.exit(9)
+        main._nan_streak = 1 if ep_bad else 0
         spread = probe_feature_spread(model, probe, device)
         if spread0 is None:
             spread0 = spread
