@@ -56,7 +56,13 @@ MEMBERS_fpc="FPC-const FPC-sine FPC-ramp FPC-ou FPC-telS-A"
 MEMBERS_cape="FPCape-const FPCape-sine FPCape-ramp FPCape-ou FPCape-tel"
 SCEN_fpc="flow_past_cylinder_sponge"
 SCEN_cape="flow_past_cape"
-MULTS_fpc="1 1.5 2 3 4"
+# 2026-07-18 Sanaa order (round-1 fpc verdict: all 5 widths FAIL, v_rms/om_rms
+# 10-50x over 1e-3; v_rms improves to w=0.075 then REVERSES at 0.1): extend
+# fpc x{5,6,8} = 0.125/0.15/0.2 (top double strips 25-40% of height; x8 is
+# the practical ceiling). Round-1 widths skip via the done-marker. Cape NOT
+# extended pending its round-1 analyzer (x3+ eats >=60% height -- decouple
+# right/top widths before going bigger there).
+MULTS_fpc="1 1.5 2 3 4 5 6 8"
 MULTS_cape="1 1.5 2 2.5"
 
 cfgval() {  # $1 file  $2 key -- first '  key: value' hit
