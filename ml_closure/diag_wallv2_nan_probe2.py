@@ -41,7 +41,7 @@ def main():
     seed = int(conf.get('seed', 0))
     torch.manual_seed(seed)
     runs = build_runs(conf)
-    train_ds = PiffCropDataset(runs, 'train', conf)
+    train_ds = PiffCropDataset(runs, 'train', conf, seed)
     device = 'cpu'
     model = PiffModel(conf).to(device)
 
