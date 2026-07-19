@@ -418,12 +418,29 @@ def conditioning_stats(runs, split, conf):
     frames = split_frames(runs, split, conf)
     zd = np.array([runs[ri].zeta_dot_snap[fi] for ri, fi in frames], dtype=np.float64)
     out = {'zdot_sd': float(zd.std()), 'zdot_n_frames': int(zd.size)}
+    # wallv2 NaN root cause (probe2, 2026-07-19): with use_wall_gate the
+    # stored gradmag/lapmag are exp(-sdf/D)-gated, so a mean over ALL valid
+    # pixels collapses (most of the domain gated to ~0) -> tiny scales ->
+    # normalized g spread ~533 -> K_zz NotPSD -> ep-0 NaN ELBO. Scales are
+    # therefore computed in the UNGATED convention (divide the gate back
+    # out, f64 exact) - identical numbers to the proven lap-run scaling -
+    # while the FEATURES stay gated: |gated/ungated_scale| <= the lap run's
+    # trained range by construction (gate <= 1).
+    wall_gate = bool(conf.get('model', {}).get('use_wall_gate', False))
+
+    def _ungate(r, vals_valid):
+        if not wall_gate:
+            return vals_valid
+        w = np.exp(-np.maximum(r.sdf, 0.0) / r.D)[r.valid]
+        return vals_valid / w
+
     if all(getattr(r, 'need_grad', False) for r in runs):
         n, s1, s2 = 0, 0.0, 0.0
         for ri, fi in frames:
             r = runs[ri]
             U = _f(r.U_snap[fi])
             gv = r.gradmag[fi][r.valid].astype(np.float64) * (r.D * r.D / U)
+            gv = _ungate(r, gv)
             n += gv.size
             s1 += float(gv.sum())
             s2 += float((gv * gv).sum())
@@ -436,6 +453,7 @@ def conditioning_stats(runs, split, conf):
             r = runs[ri]
             U = _f(r.U_snap[fi])
             lv = r.lapmag[fi][r.valid].astype(np.float64) * (r.D * r.D * r.D / U)
+            lv = _ungate(r, lv)
             n += lv.size
             s1 += float(lv.sum())
         out['lap_scale'] = s1 / n
