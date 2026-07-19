@@ -78,8 +78,8 @@ $\bO(\DT^6)$ and compare it, term by term, with those of AB4--CN2 and
 classical RK4. Each truncation operator splits into an analytical part (powers
 of the Fourier-diagonal linear operator, free at inference) and an expensive
 part built from time derivatives of the advective Jacobian; a compact
-($\approx$3{,}700-parameter) physics-initialized network estimates only the
-latter from a seven-level time stencil. The estimator's error is analyzed
+$\bO(10^3)$-parameter physics-initialized network estimates only the
+latter from a user-defined-depth time stencil. The estimator's error is analyzed
 exactly: the finite-difference-in-time error at every order is driven by the
 single field $\omega^{(S)}$, and a Wiener (least-squares) analysis shows the
 optimal learned stencil correction varies across step sizes and flow regimes as
@@ -92,7 +92,9 @@ analysis shows that a closure targeting the exact flow has zero linear
 stability margin on the advection axis, while targeting fine-step RK4 buys a
 provable $y^6/144$ margin; a differentiable frozen-coefficient von Neumann
 certificate of the \emph{closed} scheme is derived and used both as an a
-priori diagnostic and as a training penalty. The analytic (network-free) $R_3$
+priori diagnostic and as a training penalty. The closure assembles the
+$R_3$ \emph{and} $R_4$ operators (the network heads supply the derivative
+fields of both). The analytic (network-free) $R_3$
 closure is unconditionally stable in our experiments and improves coarse-step
 accuracy by one to two orders of magnitude; the learned closure attains a
 replicated median
@@ -140,9 +142,7 @@ fine-step RK4 at $\hf=\DT/K$.
 \end{quote}
 The scheme and its formal order are unchanged; a learned correction makes one
 coarse step behave as if the same trajectory had been advanced by $K$ fine RK4
-steps. Because a fine-step RK4 trajectory coincides with the exact flow to
-near machine precision, the $K\to\infty$ limit targets the exact flow;
-Section~\ref{sec:closure} shows why the RK4 target, not the exact flow, is the
+steps. Section~\ref{sec:closure} shows why the RK4 target, not the exact flow, is the
 right deployment choice: on the advection axis the exact flow has zero
 stability margin, while RK4's faint dissipation buys a provable $y^6/144$
 buffer against both the analytic truncation tail and the network error.
@@ -153,47 +153,59 @@ from each. Modified-equation analysis \citep{warming1974} supplies the
 truncation machinery but is normally used to characterize or add order, not to
 emulate a finer-step version of the \emph{same} scheme. Defect correction
 \citep{stetter1978} iteratively matches a higher-order scheme at the same
-step; we match the same scheme (or RK4) at a smaller step, a target with no
-defect-correction analogue---the gain is set by $K$ at training time, not
-bounded by a reference order. Parareal \citep{lions2001} attains
+step; we match a \emph{high-order Runge--Kutta integrator at a smaller step}
+$\hf=\DT/K$, a target with no defect-correction analogue---the gain is set by
+$K$ at training time, not bounded by a reference order. Parareal \citep{lions2001} attains
 fine-propagator accuracy at coarse cost by iterating over the horizon; our
 closure is an \emph{amortized} parareal in which the fine propagator is paid
 for once, during training, and reused at inference without iteration.
 High-order time integration that pays once for the curvature of a constrained
 problem was developed for dynamical low-rank systems in the same group
-\citep{charous2023}. On the learning side, the estimator belongs to the
+\citep{charous2023}. The relevant numerical-analysis literature is broader
+than these three anchors: systematic comparisons of linear multistep methods
+\TODO{cite: LMM comparison literature}, of linear multistep versus
+Runge--Kutta integrators \TODO{cite: LMM-vs-RK comparisons}, pseudo-spectral
+time integration for turbulence \TODO{cite: pseudo-spectral integration},
+parareal and its variants \TODO{cite: parareal follow-ups}, and spectral
+deferred correction \TODO{cite: SDC (Dutt--Greengard--Rokhlin) and successors}.
+On the learning side, the estimator belongs to the
 learned-discretization lineage \citep{barsinai2019,kochkov2021}: a small
 network constrained to the algebraic structure of the operator it replaces,
-not a generic operator learner.
+not a generic operator learner. Neural approaches to the time axis itself
+include neural time integrators with learned stage corrections \TODO{cite:
+neural integrators with stage correction}, NeurVec \TODO{cite: NeurVec},
+Deep Euler \TODO{cite: Deep Euler method}, learned RK4-step correctors
+\TODO{cite: RK4-step learners}, and work with stability estimates and
+generalization guarantees for learned integrators \TODO{cite: stability /
+generalization results for neural time steppers}; none targets the
+step-size-resolution problem of a fixed IMEX scheme addressed here.
 
 \paragraph{Contributions.}
-(i) Closed-form LTEs of AB2--CN2, AB4--CN2 and RK4 for the QG vorticity
-equation, in a shared elementary-differential language, verified symbolically
-and by convergence studies (Sec.~\ref{sec:error}).
-(ii) A quantitative validity theory for any such closure: the truncation
-series has a finite convergence radius $\DTs$, measured per regime and
-collapsed to a universal law $\DTs = C\,\taul$, $C=2.08\pm0.15$, with $\taul$
-the Taylor microscale of the nonlinear term; a finite-lag stencil adds an
-inner wall at span $\approx\DTs$; and error propagation through the closure is
-benign (1:1 in the $\Nddot$ error) across the whole trained envelope
-(Sec.~\ref{sec:error-magnitudes}).
-(iii) A cost and stability budget of the schemes and their closed variants,
-including exact amplification factors for the IMEX family and the margin
-asymmetry between the exact-flow and RK4 targets
-(Secs.~\ref{sec:cost}--\ref{sec:stability}, \ref{sec:closure}).
-(iv) A structure-matched estimator of the expensive LTE part
-($3{,}700$ parameters, exact-physics initialization) together with an
-\emph{exact} error analysis of the estimator itself, culminating in a Wiener
-floor decomposition that motivates---and quantifies the gain of---physics
-conditioning of the learned stencils on a per-sample measurable rate
-$\shat(\kappa)$ (Sec.~\ref{sec:method}).
-(v) A differentiable frozen-coefficient von Neumann certificate for the
-\emph{closed} scheme, used as a training penalty (Sec.~\ref{sec:nn-stability}).
-(vi) An honest experimental record: replicated $16\times$ coarse-step error
-reduction at $\DT=5\times10^{-3}$ over 16-step horizons, an analytic-closure
-ceiling of $19$--$130\times$, and the two failure modes that remain---the
-large-$\DT$ stability gap and the horizon wall---with their diagnosed
-mechanism (Sec.~\ref{sec:results}).
+(i) A cheap, generalizable $\bO(10^3)$-parameter physics-informed neural
+correction, regularized by a differentiable von Neumann certificate penalty,
+that adds negligible per-step overhead while delivering
+order-of-magnitude accuracy gains and a substantial stability gain: the
+closed scheme runs at coarse steps far beyond the bare scheme's usable
+range (Secs.~\ref{sec:method},
+\ref{sec:nn-stability}, \ref{sec:results}).
+(ii) A detailed, \emph{exact} error analysis of the estimator itself: the
+finite-difference-in-time error at every order is driven by a single field,
+and a Wiener decomposition of the pooled training floor derives---and
+prices---physics conditioning on a per-sample measurable rate
+$\shat(\kappa)$ (Secs.~\ref{sec:wiener}--\ref{sec:conditioning}).
+(iii) A detailed stability analysis of the neural-augmented AB2--CN2 scheme:
+closed-form LTEs and truncation symbols, the margin asymmetry between the
+exact-flow and RK4 targets, and a differentiable frozen-coefficient von
+Neumann certificate of the \emph{closed} scheme used as diagnostic and
+training penalty (Secs.~\ref{sec:stability}, \ref{sec:closure},
+\ref{sec:nn-stability}).
+(iv) A general framework for linear multistep methods: the construction uses
+only the scheme's $(r,s)$ pair and its explicit bracket, so matching any LMM
+to a fine-step high-order Runge--Kutta reference is mechanical from the same
+template, with the validity theory (finite convergence radius
+$\DTs=C\,\taul$, inner stencil wall, benign 1:1 error propagation)
+transferring unchanged (Secs.~\ref{sec:error}--\ref{sec:error-magnitudes},
+\ref{sec:conclusion}).
 
 \paragraph{Notation.}
 Table~\ref{tab:notation} collects recurring symbols.
@@ -212,13 +224,13 @@ $\Jop(a,b)$            & advective Jacobian $\partial_xa\,\partial_yb-\partial_y
 $B(a,b)$               & symmetric bilinear form with $B(\omega,\omega)=-\Jop(\Delta^{-1}\omega,\omega)$ \\
 $Q^{(k)},\ \dot Q$     & $k$-th total time derivative of $Q$ along the trajectory \\
 $\DT,\ \hf,\ K$        & coarse step, fine step, ratio $K=\DT/\hf$; $h$ a generic step \\
-$S$                    & time-stencil depth (number of stored levels; $S=7$ in production) \\
+$S$                    & time-stencil depth (number of stored levels; user-defined) \\
 $\tau$                 & per-step local truncation error; $R_p$, $D_p$ its order-$p$ operator and denominator \\
 $\DTs,\ \taul$         & convergence radius of the truncation series; Taylor microscale of $N$ \\
 $\sigma(\kappa)$       & per-shell decorrelation rate $\norm{\dot\omega_\kappa}/\norm{\omega_\kappa}$; $\shat$ its 2-mark estimate \\
 $\zL,\zN,z$            & per-mode eigenvalues $h\lambda_L$, $h\lambda_N$, $z=\zL+\zN$ \\
 $g(z)$                 & amplification factor; $R(z)$ the RK4 stability polynomial \\
-$f_{\rm NN}$           & learned (expensive) part of the closure \\
+$f_{\rm NN}$           & learned part of the closure \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -261,7 +273,7 @@ linear drag, and the $\beta$-plane term, Fourier symbol
 and $\Jop(a,b)=\partial_xa\,\partial_yb-\partial_ya\,\partial_xb$. Spatial
 discretization is pseudo-spectral with $2/3$ dealiasing of the quadratic
 products \citep{canuto2006,boyd2001}; the physical setting follows
-\citet{vallis2017}. For the one-step analysis it is convenient to write
+\citet{sureshbabu2025}. For the one-step analysis it is convenient to write
 \eqref{eq:qg} as an autonomous ODE,
 \begin{equation}
 \dot\omega = G(\omega) = \Lop\omega + B(\omega,\omega) + F,\qquad
@@ -347,8 +359,7 @@ k_4=G(\omega^n+hk_3),\qquad
 \omega^{n+1}=\omega^n+\tfrac h6(k_1+2k_2+2k_3+k_4).
 \label{eq:rk4}
 \end{equation}
-RK4 at a fine step $\hf$ serves two roles: the training-data generator (its
-trajectory is the exact flow to $\sim10^{-23}$ at $\hf=10^{-3}$ and below) and
+RK4 at a fine step $\hf$ serves two roles: the training-data generator and
 one of the two possible closure targets.
 
 % ===================================================================== %
@@ -459,24 +470,32 @@ removes, the nonlinear-derivative burden. Both schemes remain second order:
 the leading $\Lop$-monomials are set by the CN pair.
 \end{remark}
 
-\begin{remark}[Pad\'e consistency check]
-The $\Lop^p\omega$ coefficients of AB2--CN2,
-$\{-\tfrac1{12},-\tfrac1{12},-\tfrac{13}{240},-\tfrac{43}{1440}\}$, are exactly
-the error coefficients of the $(1,1)$-Pad\'e approximant $r(h)$ to
-$e^{h\Lop}$ (pure Crank--Nicolson truncation). All coefficients in
+\begin{remark}[Pad\'e structure of the linear sector, and a Pad\'e
+comparison of the full LTE]
+\label{rem:pade}
+On the linear sector ($N\equiv0$) the IMEX pair reduces to pure
+Crank--Nicolson, whose one-step map $r(h)$ is the diagonal
+$(1,1)$-Pad\'e approximant to $e^{h\Lop}$,
+$r=\frac{1+h\Lop/2}{1-h\Lop/2}$, with truncation series
+$e^{h\Lop}-r(h)=\tfrac{(h\Lop)^3}{12}+\tfrac{(h\Lop)^4}{12}
++\tfrac{13(h\Lop)^5}{240}+\tfrac{43(h\Lop)^6}{1440}+\dots$; the
+$\Lop^p\omega$ coefficients of Prop.~\ref{prop:lte-ab2},
+$\{-\tfrac1{12},-\tfrac1{12},-\tfrac{13}{240},-\tfrac{43}{1440}\}$, are
+exactly these Pad\'e error coefficients. This identifies \emph{which part}
+of the LTE a higher Pad\'e scheme could remove: replacing CN by the
+$(2,2)$-Pad\'e approximant
+$R_{22}(z)=\big(1+\tfrac z2+\tfrac{z^2}{12}\big)/
+\big(1-\tfrac z2+\tfrac{z^2}{12}\big)$, whose error is
+$e^{z}-R_{22}(z)=\tfrac{z^5}{720}+\bO(z^6)$, would push the entire
+$\Lop^p\omega$ \emph{column} of the truncation table to $\bO(h^5)$---but
+leaves every $N$-derivative column of
+Props.~\ref{prop:lte-ab2}--\ref{prop:lte-ab4} (in particular the dominant
+$-5\Nddot$ slot) untouched, since those originate in the explicit AB
+bracket, not in the linear propagator. A Pad\'e upgrade is therefore
+orthogonal to the closure constructed here: it buys the (cheap, already
+analytic) linear column, while the closure supplies the (expensive)
+nonlinear-derivative columns. All coefficients in
 Props.~\ref{prop:lte-ab2}--\ref{prop:lte-ab4} were verified symbolically.
-\end{remark}
-
-\begin{remark}[$K$-fine reference]
-\label{rem:kfine}
-Targeting $K$ fine steps of the same scheme at $\hf=\DT/K$ rather than the
-exact flow multiplies the order-$p$ term by $(1-1/K^{p-2})\cdot$(scheme
-factors); for the leading term the factor is $(1-1/K^2)$, and for
-$K\gtrsim100$ all such factors are $\approx1$. Targeting fine RK4 subtracts
-$\tau_{\mathrm{RK4}}$, which first differs from the exact flow at
-$\bO(\hf^5)=\bO(\DT^5/K^5)$---negligible. The exact-flow operators are
-therefore what one implements in all cases; the choice of target matters only
-through the stability margin (Sec.~\ref{sec:closure}).
 \end{remark}
 
 \subsubsection{Numerical verification}
@@ -506,31 +525,51 @@ assembled closure (amplification). All measurements below: float64,
 $2/3$-dealiased Jacobians matching the solver right-hand side, $512^2$
 forced-turbulence members at marks $\hf=5\times10^{-3}$; truth is the analytic
 spectral chain rule \eqref{eq:leibniz}; errors are relative $L_2$ in the
-resolved band. Members: FRC-Re25k ($\nu=4.0\times10^{-5}$, $\beta=1$),
-FRC-combo ($\nu=4.0\times10^{-5}$, $\beta=0.5$), FRC-kf4
-($\nu=1.02\times10^{-4}$, $\beta=1$).
-
-\subsubsection{Outer wall: finite convergence radius}
-The defect of one AB2--CN2 step is a power series
-$\delta(\DT)=\sum_{p\ge3}c_p\DT^p$, $c_p=R_p/D_p$,
-$D_p=\{12,24,240,1440\}$. By Cauchy--Hadamard,
-$1/\DTs=\limsup_p\norm{c_p}^{1/p}$; the successive-ratio test only brackets
-$\DTs$ (the $c_p$ are not geometric), so the headline number is the root-test
-median over $p=3,\dots,6$ (32 anchors per member).
-
+resolved band. Every member integrates \eqref{eq:qg} with the static
+deterministic forcing
+\begin{equation}
+F(x,y)=A\big[\cos(k_fx)+\cos(k_fy)\big],
+\label{eq:forcing}
+\end{equation}
+and differs only in $(F,\,k_f,\,\nu,\,\beta)$:
 \begin{center}\small
-\begin{tabular}{lcclcc}
+\begin{tabular}{lcccc}
 \toprule
-member & $\nu$ & $\beta$ &
-$\norm{N^{(m+1)}}/\norm{N^{(m)}}$, $m=0,\dots,4$ &
-$\DTs$ (root) & ratio bracket\\
+member & $F$ & $k_f$ & $\nu$ & $\beta$\\
 \midrule
-Re25k & $4.0\times10^{-5}$ & $1.0$ & $34,\ 58,\ 72,\ 84,\ 93$ & $\mathbf{0.066}$ & $[0.017,0.136]$\\
-combo & $4.0\times10^{-5}$ & $0.5$ & $15,\ 27,\ 37,\ 45,\ 51$ & $\mathbf{0.139}$ & $[0.033,0.270]$\\
-kf4   & $1.0\times10^{-4}$ & $1.0$ & $10,\ 19,\ 28,\ 33,\ 37$ & $\mathbf{0.199}$ & $[0.043,0.366]$\\
+FRC-Re25k & $A[\cos(k_fx)+\cos(k_fy)]$ & \TODO{$k_f$} & $4.0\times10^{-5}$ & $1.0$\\
+FRC-combo & $A[\cos(k_fx)+\cos(k_fy)]$ & \TODO{$k_f$} & $4.0\times10^{-5}$ & $0.5$\\
+FRC-kf4   & $A[\cos(k_fx)+\cos(k_fy)]$ & $4$          & $1.02\times10^{-4}$ & $1.0$\\
 \bottomrule
 \end{tabular}
 \end{center}
+
+\subsubsection{Outer wall: finite convergence radius}
+The defect of one AB2--CN2 step is a power series in the step,
+\begin{equation}
+\delta(\DT)=\sum_{p\ge3}c_p\,\DT^p,\qquad
+c_p=\frac{R_p}{D_p},\qquad D_p=\{12,\,24,\,240,\,1440\}\ \ (p=3,\dots,6).
+\label{eq:defect-series}
+\end{equation}
+Its radius of convergence is given by Cauchy--Hadamard,
+\begin{equation}
+\frac1{\DTs}=\limsup_{p\to\infty}\norm{c_p}^{1/p}.
+\label{eq:cauchy-hadamard}
+\end{equation}
+The classical root/ratio comparison (Rudin's formulation of the root test)
+supplies the analytic bounds used to bracket the measurement: for any
+positive sequence,
+\begin{equation}
+\liminf_{p}\frac{\norm{c_{p+1}}}{\norm{c_p}}
+\ \le\ \liminf_p\norm{c_p}^{1/p}
+\ \le\ \limsup_p\norm{c_p}^{1/p}
+\ \le\ \limsup_{p}\frac{\norm{c_{p+1}}}{\norm{c_p}},
+\label{eq:rudin}
+\end{equation}
+so the reciprocal successive-ratio interval \emph{brackets} $\DTs$ while the
+root test estimates it; the $c_p$ are not geometric, so the bracket is wide
+and the headline number is the root-test median over $p=3,\dots,6$ (32
+anchors per member).
 
 \begin{proposition}[Finite radius]
 \label{prop:radius}
@@ -539,7 +578,23 @@ $\DT>\DTs$ no finite-order analytic closure converges: past $\DTs$, adding
 correction orders makes the error \emph{worse}, regardless of how many orders
 are carried.
 \end{proposition}
-\noindent This overturns the naive expectation that higher-order corrections
+
+\noindent Measured radii and brackets per member (member parameters in the
+table of Sec.~\ref{sec:error-magnitudes}):
+\begin{center}\small
+\begin{tabular}{lclc}
+\toprule
+member &
+$\norm{N^{(m+1)}}/\norm{N^{(m)}}$, $m=0,\dots,4$ &
+$\DTs$ (root test, \eqref{eq:cauchy-hadamard}) & ratio bracket \eqref{eq:rudin}\\
+\midrule
+Re25k & $34,\ 58,\ 72,\ 84,\ 93$ & $\mathbf{0.066}$ & $[0.017,0.136]$\\
+combo & $15,\ 27,\ 37,\ 45,\ 51$ & $\mathbf{0.139}$ & $[0.033,0.270]$\\
+kf4   & $10,\ 19,\ 28,\ 33,\ 37$ & $\mathbf{0.199}$ & $[0.043,0.366]$\\
+\bottomrule
+\end{tabular}
+\end{center}
+This overturns the naive expectation that higher-order corrections
 extend the usable step. Note also that the per-order growth ratios
 \emph{increase} with $m$ ($34\to93$ for Re25k): higher derivatives grow faster
 than any single rate---derived next.
@@ -547,9 +602,21 @@ than any single rate---derived next.
 \subsubsection{The Taylor microscale of the nonlinear term}
 \label{sec:microscale}
 View $N(t)$ as a stationary process with the domain inner product and define
-$\rho(\tau)=\E\langle N(t),N(t+\tau)\rangle/\E\norm{N}^2$. Under stationarity,
-$\E\langle N,\Ndot\rangle=\tfrac12\tfrac{d}{dt}\E\norm{N}^2=0$, and
-differentiating once more gives
+the autocorrelation
+$\rho(\tau)=\E\langle N(t),N(t+\tau)\rangle/\E\norm{N}^2$. The full
+derivation is three lines. Expanding
+$N(t+\tau)=N+\tau\Ndot+\tfrac{\tau^2}2\Nddot+\bO(\tau^3)$ inside the inner
+product,
+\begin{equation}
+\E\langle N,N(t+\tau)\rangle
+=\E\norm N^2+\tau\,\E\langle N,\Ndot\rangle
++\tfrac{\tau^2}2\,\E\langle N,\Nddot\rangle+\bO(\tau^3).
+\end{equation}
+Stationarity kills the linear term,
+$\E\langle N,\Ndot\rangle=\tfrac12\tfrac{d}{dt}\E\norm{N}^2=0$; and
+differentiating that same identity once more in $t$,
+$0=\tfrac{d}{dt}\E\langle N,\Ndot\rangle
+=\E\norm{\Ndot}^2+\E\langle N,\Nddot\rangle$, i.e.\
 $\E\langle N,\Nddot\rangle=-\E\norm{\Ndot}^2$. Hence the exact identity (no
 Gaussianity, no spectral assumption):
 \begin{equation}
@@ -585,73 +652,109 @@ vs the identity parabolas $1-\tau^2\sigma^2/2$ (not fitted), Re25k and kf4.
 Source: \texttt{Theoretical\_guarantees/check\_decorrelation\_time.py}
 (\texttt{img/rho\_vs\_identity\_*.png}).}
 
+The relationship between the radius and the microscale follows from the
+same expansion. The truncation series \eqref{eq:defect-series} is the Taylor
+expansion of the one-step defect in the step size; its terms are controlled
+by the Taylor expansion of $N(t)$ itself, which \eqref{eq:microscale} shows
+is governed by the single time scale $\taul=1/\sigma$: the parabola
+$1-\tau^2\sigma^2/2$ reaches zero at $\tau=\sqrt2\,\taul$, i.e.\ the
+nonlinear term decorrelates from itself---and its Taylor polynomial ceases
+to represent it---once the lag is $\bO(\taul)$. With
+$\norm{N^{(m)}}\sim\sigma_m^{\,m}\norm N$ and the denominators $D_p$
+contributing $D_p^{1/p}=\bO(1)$ growth over the measured orders,
+Cauchy--Hadamard \eqref{eq:cauchy-hadamard} then gives
+$\DTs=\bO(1)\times\taul$, with the $\bO(1)$ constant set by the competition
+between the denominator growth and the ladder escalation
+\eqref{eq:ladder}. The constant is measured:
+
 \begin{proposition}[Universal radius law]
 \label{prop:two-micro}
 $\DTs=C\,\taul$ with $C=2.08\pm0.15$, constant to $7\%$ across $2.5\times$ in
-$\mathrm{Re}$ and $2\times$ in $\beta$ (Re25k $2.27$, combo $2.05$, kf4
-$1.92$): the analytic closure's convergence horizon is two Taylor microscales
-of the nonlinear term. All $(\mathrm{Re},\beta)$-dependence of $\DTs$ enters
-through the single measurable rate $\sigma$.
+$\mathrm{Re}$ and $2\times$ in $\beta$: the analytic closure's convergence
+horizon is two Taylor microscales of the nonlinear term. All
+$(\mathrm{Re},\beta)$-dependence of $\DTs$ enters through the single
+measurable rate $\sigma$.
 \end{proposition}
+\noindent Per-member empirical constants (member parameters in the table of
+Sec.~\ref{sec:error-magnitudes}):
+\begin{center}\small
+\begin{tabular}{lccc}
+\toprule
+ & Re25k & combo & kf4\\
+\midrule
+$C=\DTs/\taul$ & $2.27$ & $2.05$ & $1.92$\\
+\bottomrule
+\end{tabular}
+\end{center}
 
 \subsubsection{Inner wall: the finite-lag stencil}
 \label{sec:inner-wall}
 The closure estimates $N$-derivatives from $S$ stored marks at lags
 $\{0,\DT,\dots,(S-1)\DT\}$. Depth raises the approximation order
 ($\bO(\DT^{S-m})$ for the $m$-th derivative) but reaches further back in time;
-old marks are stale once the span approaches $\DTs$. Measured ($\Nddot$,
-depth 4 vs depth 7, exact spectral spatial operators): at
-$\DT=5\times10^{-3}$ depth 7 helps $7.6$--$25\times$ in every member; at
-$\DT=1.5\times10^{-2}$ it still helps $3$--$6\times$ for combo/kf4 but
-\emph{hurts} for Re25k ($0.99\to1.51$)---precisely where its span
-$6\DT=0.09$ exceeds Re25k's $\DTs=0.066$.
+old marks are stale once the span approaches $\DTs$. Measured effect of
+depth ($\Nddot$ error, depth 7 relative to depth 4, exact spectral spatial
+operators; member parameters in the table of
+Sec.~\ref{sec:error-magnitudes}):
+\begin{center}\small
+\begin{tabular}{lccc}
+\toprule
+$\DT$ & Re25k & combo & kf4\\
+\midrule
+$5\times10^{-3}$   & \multicolumn{3}{c}{helps, $7.6$--$25\times$ in every member}\\
+$1.5\times10^{-2}$ & hurts, $0.99\to1.51$ & helps, $3$--$6\times$ & helps, $3$--$6\times$\\
+\bottomrule
+\end{tabular}
+\end{center}
+The sign flip in the first column occurs precisely where the stencil span
+$(S{-}1)\DT$ exceeds that member's $\DTs$.
 
 \begin{proposition}[Inner wall]
 \label{prop:inner}
 Deeper stencils lower the $N$-derivative error while the stencil span stays
 well inside $\DTs$, and raise it once the span exceeds $\DTs$; the usable step
-of a depth-$S$ closure scales as $\DT_{\rm inner}\sim\DTs/(S-1)$. Measured at
-Re25k, $S=7$: predicted $0.011$, observed $0.013$.
+of a depth-$S$ closure scales as $\DT_{\rm inner}\sim\DTs/(S-1)$.
 \end{proposition}
 \noindent Consequence for pooled training: a $(\mathrm{Re},\beta)$-blind pool
-caps at the \emph{worst} member's inner wall; at $S=7$,
-$\DT=1.5\times10^{-2}$ the Re25k samples are unlearnable by any network (the
-field decorrelates inside the stencil) and are retained in the pool by design
-as past-wall stressors.
+caps at the \emph{worst} member's inner wall; past-wall tiers are retained in
+the pool by design as stressors, and their a posteriori consequences are
+reported with the results (Sec.~\ref{sec:results}).
 
 \subsubsection{Benign error propagation}
 \label{sec:benign}
-An error $\varepsilon$ on the learned field enters the closure as
-$(\DT^p/D_p)|a_{p,k}|\,\varepsilon\,\norm{\Lop^{p-k}\,\mathrm{field}_k}$;
-terms carrying powers of $\Lop$ are potentially amplified. Measured at the
-operating step $\DT=5\times10^{-3}$ (per-order errors
-$2.6/3.0/4.0\%$ on $\Ndot/\Nddot/\Ndddot$): the un-amplified $\Lop^0\Nddot$
-term equals $\norm\delta$ to three figures in every member, and the total
-error is $3.00\%$---exactly the $\Nddot$ error. At the envelope edge
-$\DT=1.5\times10^{-2}$ (unit per-term errors, pure amplification geometry,
-Re25k): $\Lop^0\Nddot$ carries $100.2\%$ of $\norm\delta$, $\Lop^0\Ndddot$
-$2.6\%$, $\Lop^1\Ndot$ $0.5\%$, $\Lop^2\Ndot$ $0.00\%$.
-
-\begin{proposition}[Benign amplification]
-\label{prop:benign}
+An error $\varepsilon$ on the learned field enters the assembled closure
+through the amplification expression
+\begin{equation}
+\Delta\delta_{p,k}
+=\frac{\DT^p}{D_p}\,|a_{p,k}|\;\varepsilon\;
+\norm{\Lop^{p-k}\,\mathrm{field}_k},
+\label{eq:amplification}
+\end{equation}
+so terms carrying powers of $\Lop$ are potentially amplified. Measured
+shares of the assembled correction error $\norm\delta$ carried by each slot
+of \eqref{eq:amplification} (member parameters in the table of
+Sec.~\ref{sec:error-magnitudes}; at $\DT=5\times10^{-3}$ the per-order
+errors are $2.6/3.0/4.0\%$ on $\Ndot/\Nddot/\Ndddot$ and the total error is
+$3.00\%$---exactly the $\Nddot$ error; the $1.5\times10^{-2}$ row uses unit
+per-term errors, i.e.\ pure amplification geometry):
+\begin{center}\small
+\begin{tabular}{llcccc}
+\toprule
+$\DT$ & member(s) & $\Lop^0\Nddot$ & $\Lop^0\Ndddot$ & $\Lop^1\Ndot$ & $\Lop^2\Ndot$\\
+\midrule
+$5\times10^{-3}$ & all three & $\approx100\%$ &
+\multicolumn{3}{c}{residual, $<1\%$ combined}\\
+$1.5\times10^{-2}$ & Re25k & $100.2\%$ & $2.6\%$ & $0.5\%$ & $0.00\%$\\
+\bottomrule
+\end{tabular}
+\end{center}
 Across the entire trained envelope $\DT\le1.5\times10^{-2}$ the closure error
-equals the relative $\Nddot$ error, one-to-one and un-amplified. Any
-improvement in $\Nddot$ accuracy converts to closure-error reduction 1:1, and
-$\Nddot$ accuracy is the single quantity that sets the rollout ceiling.
-\end{proposition}
-\noindent Two design consequences: the equal-weight per-order relative-$L_2$
-loss is the right objective across the envelope (no amplification weighting
-needed), and $\Nddot$ validation error is the number to watch.
-
-\begin{corollary}[Operating envelope]
-For a depth-$S$ stencil, operate with $(S-1)\DT$ comfortably below
-$\DTs(\mathrm{Re},\beta)=2\taul$. Then the series converges
-(Prop.~\ref{prop:radius}), the stencil resolves the derivatives
-(Prop.~\ref{prop:inner}), and derivative accuracy converts 1:1
-(Prop.~\ref{prop:benign}). At $S=7$, Re25k caps the pooled envelope near
-$\DT\approx10^{-2}$; combo and kf4 remain inside through
-$1.5\times10^{-2}$.
-\end{corollary}
+therefore equals the relative $\Nddot$ error, one-to-one and un-amplified:
+any improvement in $\Nddot$ accuracy converts to closure-error reduction 1:1,
+and $\Nddot$ accuracy is the single quantity that sets the rollout ceiling.
+Two design consequences: the equal-weight per-order relative-$L_2$ loss is
+the right objective across the envelope (no amplification weighting needed),
+and $\Nddot$ validation error is the number to watch.
 
 % ------------------------------------------------------------------- %
 \subsection{Cost analysis}
@@ -659,35 +762,26 @@ $1.5\times10^{-2}$.
 Per-step cost is measured in Jacobian evaluations (five FFTs each: two
 inverse transforms of $\nabla\psi$, two of $\nabla\omega$, one forward of the
 dealiased product; all other operations are Fourier-diagonal multiplies).
-\begin{itemize}[leftmargin=1.4em,nosep,topsep=2pt]
-\item \textbf{AB2--CN2 / AB4--CN2:} one \emph{new} Jacobian per step; the AB
-history reuses cached $N^{n-j}$. Implicit solve: elementwise division. Cost
-$\approx5$ FFTs/step.
-\item \textbf{RK4:} four Jacobian evaluations per step ($\approx20$
-FFTs/step), and no reuse across steps.
-\item \textbf{Closed AB2--CN2 (Sec.~\ref{sec:closure}):} the bare step, the
-analytical $R_3$ scaffolding (Fourier-diagonal multiplies on the already
-available $\hat\omega$, $\hat N$; the $\Lop^3\omega$ piece folds into the
-implicit solve at zero cost), and one network forward. Measured in the
-production stepper: bare 5 FFTs/step $\to$ closed 8 FFTs/step, plus the
-network ($\approx170$ multiply--accumulates per grid point---negligible next
-to an FFT). The conditioned variant adds zero further FFTs at rollout: its
-spectral context reuses the stepper's own spectral states.
-\end{itemize}
-To integrate to horizon $T$ at matched accuracy, the bare scheme needs
-$T/\hf$ steps at the fine step and the closed scheme $T/\DT$ steps at the
-coarse step: the ideal speedup is
-\begin{equation}
-\text{speedup}\;\approx\;K\times\frac{\text{bare FFTs/step}}
-{\text{closed FFTs/step}}
-\;=\;K\times\tfrac58
-\qquad(\text{vs fine AB2--CN2}),\qquad
-K\times\tfrac{20}{8}\quad(\text{vs fine RK4}),
-\label{eq:speedup}
-\end{equation}
-with $K=\DT/\hf$ set at training time. The honest accounting of what fraction
-of \eqref{eq:speedup} is realized---given the measured accuracy at each
-$\DT$---is in Sec.~\ref{sec:results-cost}.
+The AB schemes compute one \emph{new} Jacobian per step and reuse the cached
+$N^{n-j}$ history (the implicit CN solve is an elementwise division); RK4
+computes four Jacobians per step with no reuse. Storage counts persistent
+per-step state (fields of size $N_x\times N_y$).
+\begin{center}\small
+\begin{tabular}{lcc}
+\toprule
+scheme & run time (per coarse interval $\DT$) & storage\\
+\midrule
+AB2--CN2 & $\approx5$ FFTs & $\omega^n$ + 2 cached $N$ levels\\
+AB4--CN2 & $\approx5$ FFTs & $\omega^n$ + 4 cached $N$ levels\\
+RK4 (at $\DT$)      & $\approx20$ FFTs & $\omega^n$ + 4 transient stage buffers\\
+RK4 at $\hf=\DT/K$  & $\approx20K$ FFTs & $\omega^n$ + 4 transient stage buffers\\
+\bottomrule
+\end{tabular}
+\end{center}
+The last row is the reference cost that the closure of
+Sec.~\ref{sec:closure} amortizes; the measured cost of the \emph{closed}
+scheme and the realized speedup at matched accuracy are reported with the
+results (Sec.~\ref{sec:results-cost}).
 
 % ------------------------------------------------------------------- %
 \subsection{Stability analysis}
@@ -756,8 +850,10 @@ Prop.~\ref{prop:lte-ab2}, so that
 \label{sec:closure}
 
 \subsection{Definition and targets}
-Since $\omega^{n+1}_{\rm AB2CN2}+\tau=\omega(t_n+h)$ exactly, the correction
-to add to each bare step is $\delta=\tau$, with two natural targets:
+Carrying the truncation series to order $p$,
+$\omega^{n+1}_{\rm AB2CN2}+\tau_{\le p}=\omega(t_n+h)+\bO(h^{p+1})$, where
+$p$ is the highest truncation order retained; the correction to add to each
+bare step is $\delta=\tau_{\le p}$, with two natural targets:
 \begin{align}
 \delta_1 &= \tau_{\mathrm{AB2}}
 =-\tfrac{h^3}{12}R_3^{(2)}-\tfrac{h^4}{24}R_4^{(2)}-\tfrac{h^5}{240}R_5^{(2)}
@@ -779,7 +875,8 @@ $\bO(h^6)$ leaves $\bO(h^7)$:
 
 \subsection{Why target RK4: the stability margin}
 \label{sec:margin}
-Closing exactly gives $g=g_{\mathrm{AB2}}+\hat\delta_1=e^z+\bO(z^6)$ or
+In the \emph{full-matching limit}, closing exactly gives
+$g=g_{\mathrm{AB2}}+\hat\delta_1=e^z+\bO(z^6)$ or
 $g=g_{\mathrm{AB2}}+\hat\delta_2=R(z)+\bO(z^6)$. On the advection axis
 $z=iy$,
 \begin{equation}
@@ -789,13 +886,38 @@ $z=iy$,
 \end{equation}
 RK4 agrees with $e^z$ through $z^4$ and the $z^5/120$ difference is purely
 imaginary on the axis (a phase error), so the modulus deficit first appears at
-$y^6$---RK4 is faintly dissipative. The exact flow, being neutral, buys no
-buffer: any perturbation of an exact-flow-matching closure (analytic tail or
-network error) can be destabilizing. This asymmetry, made precise in
-Sec.~\ref{sec:nn-stability}, is the deployment rationale for
-$\delta_2$/fine-RK4 as the reference: the goal of the whole construction is
-AB2--CN2 cost at coarse $\DT$ with the accuracy \emph{and stability} of
-fine-$\hf$ RK4.
+$y^6$---RK4 is faintly dissipative, while the exact flow, being neutral, buys
+no buffer in that limit.
+
+The dichotomy above, however, is a statement about \emph{full} matching. The
+deployed closure matches its target only up to a finite order---order $4$
+globally, order $5$ locally---so the closed scheme is not the neutral exact
+flow: above the assembled order it retains its \emph{own} composite
+truncation tail, including its higher-order dissipation. Assembling
+$R_3,\dots,R_p$ on top of AB2--CN2 effectively manufactures a higher-order
+linear multistep pair---informally, ``a sort of AB5--CN5''---and the
+absolute-stability regions of these finite-order closed schemes are nearly
+indistinguishable from one another across the a priori closure family.
+\figph{4.0cm}{Figure placeholder: absolute-stability regions of the closed
+schemes with the a priori (analytic) closures $R_3$, $R_3{+}R_4$,
+$R_3{+}\dots{+}R_5$ overlaid on bare AB2--CN2 and RK4; the regions are
+almost the same. Source: \texttt{analysis/ab\_stability\_regions.py},
+\texttt{analysis/vn\_stability.py}.}
+One further point deserves justification, because our split matches the
+truth-expansion operators while the deployment target is fine-step RK4: for
+$h>0$ the first neglected term $h^5(\,\cdot\,)$ is strictly positive, so
+\begin{equation}
+\mathrm{LTE}\big(\text{AB2--CN2 vs RK4 at fine }\hf\big)
+\;\approx\;
+\mathrm{LTE}\big(\text{AB2--CN2 vs exact flow}\big),
+\end{equation}
+the two references differing only at $\bO(\hf^5)=\bO(\DT^5/K^5)$: using the
+exact-flow LTE operators to match fine-step RK4 is consistent to the order
+carried. The margin asymmetry of \eqref{eq:margins}, made precise in
+Sec.~\ref{sec:nn-stability} as the full-matching limit, remains the
+deployment rationale for $\delta_2$/fine-RK4 as the reference: the goal of
+the whole construction is AB2--CN2 cost at coarse $\DT$ with the accuracy
+\emph{and stability} of fine-$\hf$ RK4.
 
 \subsection{Analytical/learned split}
 \label{sec:split}
@@ -804,38 +926,62 @@ would require nested Jacobians:
 \begin{equation}
 R_p=\underbrace{R_p^{\rm anal}}_{\text{powers of }\Lop\text{ on }\omega,\,N}
    +\underbrace{R_p^{\rm NN}}_{\text{time derivatives of }N},
-\qquad\text{e.g.}\quad
-R_3^{\rm anal}=\Lop^3\omega+\Lop^2N,\quad
-R_3^{\rm NN}=\Lop\Ndot-5\Nddot.
 \end{equation}
-The analytical parts are Fourier-diagonal (or reuse the Jacobian already
-computed for $N$). The learned parts contain
+\begin{equation}
+\begin{aligned}
+R_3^{\rm anal}&=\Lop^3\omega+\Lop^2N, &
+R_3^{\rm NN}&=\Lop\Ndot-5\Nddot,\\
+R_4^{\rm anal}&=2\Lop^4\omega+2\Lop^3N, &
+R_4^{\rm NN}&=2\Lop^2\Ndot-4\Lop\Nddot+\Ndddot.
+\end{aligned}
+\end{equation}
+In a pseudo-spectral code the analytical parts are \emph{diagonal}: in
+Fourier space $\Lop$ acts as pointwise multiplication by the symbol
+$\hat\Lop(\mathbf k)$, so $\Lop^k$ is multiplication by $\hat\Lop(\mathbf
+k)^k$---precomputed once, applied elementwise to the already available
+$\hat\omega$, $\hat N$ (the Jacobian computed for $N$ is reused). In the
+spatial domain the same operators are nonlocal: $\nu\Delta$ a stencil,
+$\Delta^{-1}$ (hence the $\beta$ term) a dense inverse, and each $\Lop^k$ a
+dense matrix multiplication; a non-spectral discretization would pay
+matrix--vector products where we pay elementwise multiplies. The learned
+parts contain
 $\Ndot,\Nddot,\Ndddot,\dots$---each another layer of nested Jacobians
 \eqref{eq:leibniz}---and are the only expensive pieces. The network therefore
 predicts the \emph{local fields} $[\Ndot,\Nddot,\Ndddot]$; every
 $\Lop^k$-weighting (including the nonlocal $\beta$ term) is applied
-analytically at assembly, never learned. By Prop.~\ref{prop:benign} the
+analytically at assembly, never learned. By the benign-propagation result of Sec.~\ref{sec:benign} the
 $\Nddot$ channel dominates the assembled correction 1:1 across the envelope.
 
 \subsection{Inference decomposition}
-At inference the linear $\Lop^3\omega$ piece is folded \emph{into} the
-implicit solve (it shifts the CN denominator), the $\Lop^2N$ piece is applied
-explicitly on the cached Jacobian, and the network supplies the rest:
+The deployed closure matches \emph{fine-step RK4 at $\hf=\DT/K$}, with $K$
+fixed at training time. Relative to the exact-flow operators, the finite-$K$
+reference rescales the order-$p$ coefficients by factors of the form
+$(1-1/K^{p-2})$; with $K\gg1$ throughout this work these factors are
+indistinguishable from $1$ and are dropped. At inference the linear
+$\Lop^3\omega$ piece is folded \emph{into} the implicit solve (it shifts the
+CN denominator), the $\Lop^2N$ piece is applied explicitly on the cached
+Jacobian, and the network supplies the rest:
 \begin{equation}
 \omega^{n+1}_{\rm closed}
 =\underbrace{\text{IMEX}\big[r,s\,;\ \Lop+\tfrac{\DT^2}{12}\Lop^3\big]}
  _{\text{implicit, folded}}
-+\underbrace{\DT^3\big(1-\tfrac1{K^2}\big)\tfrac1{12}\,\Lop^2N^n}
++\underbrace{\tfrac{\DT^3}{12}\,\Lop^2N}
  _{\text{explicit, analytical}}
-+\underbrace{\DT^3\big(1-\tfrac1{K^2}\big)\,f_{\rm NN}(\text{history})}
- _{\text{explicit, learned}},
++\underbrace{\DT^3 f_{\rm NN}(\text{history})
+ -\tfrac{\DT^4}{24}\big[2\Lop^2\Ndot-4\Lop\Nddot+\Ndddot\big]}
+ _{\text{explicit, learned ($R_3$ and $R_4$ derivative channels)}},
 \label{eq:inference}
 \end{equation}
 with $f_{\rm NN}\approx\tfrac1{12}[\Lop\Ndot-5\Nddot]$ the $\DT$-independent
-learning target (plus the $R_4$ channel via $\Ndddot$ where warranted). The
-network is applied \emph{online}: it is evaluated on the closure trajectory's
-own evolving history and its correction feeds the next step, so errors
-compound autoregressively and the network never sees truth at deployment.
+learning target and the $R_4$ derivative bracket assembled from the same
+predicted heads $[\Ndot,\Nddot,\Ndddot]$. The analytic part of $R_4$
+requires no explicit term at all: evaluating the folded $\Lop^3$
+correction at the \emph{implicit} level $n{+}1$ supplies exactly
+$-\tfrac{\DT^4}{24}\big[2\Lop^4\omega+2\Lop^3N\big]$, the analytic $R_4$
+content, so only the derivative bracket appears explicitly. The network is
+applied \emph{online}: it is evaluated on the closure trajectory's own
+evolving history and its correction feeds the next step, so errors compound
+autoregressively and the network never sees truth at deployment.
 
 % ===================================================================== %
 \section{Method: the learned estimator}
@@ -843,51 +989,56 @@ compound autoregressively and the network never sees truth at deployment.
 
 \subsection{Network architecture}
 \label{sec:arch}
-The estimator (\emph{CheapDerivClosureNet}) maps the stored step history to
-the local derivative fields,
+The estimator maps the stored step history to the local derivative fields,
 \begin{equation}
 X=\big[\omega_0,\dots,\omega_{-(S-1)},\ \psi_0,\dots,\psi_{-(S-1)}\big]
-\ \longmapsto\ [\Ndot,\Nddot,\Ndddot],\qquad S=7,
+\ \longmapsto\ [\Ndot,\Nddot,\Ndddot],
 \end{equation}
-in four stages that mirror the operator being estimated:
+in three stages that mirror the operator being estimated. Throughout, $S$
+denotes the (user-defined) time-stencil depth, $W$ the (user-defined,
+odd) spatial-stencil width, and $p$ the highest assembled derivative order
+($p=3$ for the $R_3{+}R_4$ closure); all production values are given with
+the results (Sec.~\ref{sec:results}).
 \begin{enumerate}[leftmargin=1.6em,nosep,topsep=2pt]
 \item \textbf{Time finite differences (frozen, exact).} Backward-FD rows
-$W_{ki}$ from the Vandermonde system
-$\sum_iW_{ki}\tfrac{(-i)^p}{p!}=\delta_{kp}$ produce
-$\omega^{(k)}_{\rm FD},\psi^{(k)}_{\rm FD}$, $k=0,\dots,3$, via the
-per-sample path $W_{ki}/\DT^k$. Nothing is learned here: rescaling the unit
-stencil per sample is exact. Accuracy at $S=7$: $\Ndot$ $\bO(\DT^6)$,
-$\Nddot$ $\bO(\DT^5)$, $\Ndddot$ $\bO(\DT^4)$.
-\item \textbf{Order clip.} Only time-orders $0,\dots,3$ are emitted; the
-unused rows (scaled $1/\DT^{4\dots6}\approx10^{10}$--$10^{13}$) are dropped
-\emph{before any parameterized layer}. All $S$ snapshots still feed each
-emitted row (the order-3 row of a 7-node stencil is 4th-order accurate).
-\item \textbf{Learnable spatial gradients.} Depthwise width-15 stencils
-(14th-order central-difference initialization) apply $\partial_x,\partial_y$
-to the 8 differentiated fields, circular padding. The stencil parameter is the
+$V_{ki}$ from the Vandermonde system
+$\sum_iV_{ki}\tfrac{(-i)^p}{p!}=\delta_{kp}$ produce
+$\omega^{(k)}_{\rm FD},\psi^{(k)}_{\rm FD}$, $k=0,\dots,p$, via the
+per-sample path $V_{ki}/\DT^k$. Nothing is learned here: rescaling the unit
+stencil per sample is exact; each emitted row is fed by all $S$ snapshots,
+and the order-$k$ row of a depth-$S$ stencil carries accuracy
+$\bO(\DT^{S-k})$.
+\item \textbf{Learnable spatial gradients.} Depthwise width-$W$ stencils
+(central-difference initialization of order $W{-}1$) apply
+$\partial_x,\partial_y$
+to the $2(p{+}1)$ differentiated fields, circular padding. The stencil
+parameter is the
 \emph{dimensionless} unit-spacing operator; the physical $1/dx,1/dy$ scaling
 is applied per sample at forward---exact by linearity, and the optimizer never
 sees the $1/dx$ amplification. One stencil pair serves all grids.
 \item \textbf{Jacobian features and physics-initialized mix.} The
-$(4)^2=16$ pointwise products
+$(p{+}1)^2$ pointwise products
 $\Jop(\psi^{(i)},\omega^{(j)})$ feed a $1\times1$ mix initialized to the exact
 chain-rule binomials of \eqref{eq:leibniz} ($w[m-1,(m-j,j)]=-\binom mj$): at
 initialization the network \emph{is} the analytic estimator up to the two FD
 truncations.
 \end{enumerate}
-Totals: $3{,}700$ parameters, of which the 49 time-FD weights are an inert
-frozen buffer (the trained capacity is the stencils and the mix);
-$\approx170$ multiply--accumulates per
-grid point; no FFTs inside the model---the pointwise product is the sole
-irreducible nonlinearity, and carrying $\psi$ in the history makes even the
-$\beta$ term local ($\beta\partial_x\Delta^{-1}\omega=-\beta v$). The
-architecture is exactly quadratic in the input field, matching the quadratic
-nonlinearity of \eqref{eq:ode}.
+The parameter count is a closed function of the structural sizes: the
+depthwise gradient stencils carry $2(p{+}1)\cdot2\cdot W^2$ weights (two
+fields at $p{+}1$ orders, two directions, $W\times W$ kernels), the
+$1\times1$ mix $(p{+}1)^2\cdot p$, and the frozen time-FD buffer
+$S(p{+}1)$ inert weights (not trained capacity); the trained capacity is the
+stencils and the mix. There are no FFTs inside the model---the pointwise
+product is the sole irreducible nonlinearity, and carrying $\psi$ in the
+history makes even the $\beta$ term local
+($\beta\partial_x\Delta^{-1}\omega=-\beta v$). The architecture is exactly
+quadratic in the input field, matching the quadratic nonlinearity of
+\eqref{eq:ode}.
 
 \begin{remark}[Why the spatial stencils are learnable at all]
 Their job is double: approximate $\partial_x,\partial_y$ \emph{and} absorb the
 differentiated time-FD error. The second job is the Wiener mechanism analyzed
-next, and is why the width was set to 15 and why the stencils are conditioned
+next, and is why the width $W$ matters and why the stencils are conditioned
 in Sec.~\ref{sec:conditioning}.
 \end{remark}
 
@@ -897,7 +1048,7 @@ Two error operators separate cleanly. The time-FD estimate carries
 \begin{equation}
 \varepsilon_k\equiv\omega^{(k)}_{\rm FD}-\omega^{(k)}
 =C_k\,\DT^{S-k}\,\omega^{(S)}+\bO(\DT^{S-k+1}),\qquad
-C_k=\frac1{S!}\sum_{i=0}^{S-1}W_{ki}(-i)^S,
+C_k=\frac1{S!}\sum_{i=0}^{S-1}V_{ki}(-i)^S,
 \label{eq:eps-k}
 \end{equation}
 with $\varepsilon_0=0$ and $\varepsilon^\psi_k=\Delta^{-1}\varepsilon_k$
@@ -934,12 +1085,15 @@ decomposition of the quadratic loss about the per-tier optima gives
 \label{eq:floor}
 \end{equation}
 where $\delta^\star_j$ is the best width-$W$ filter for tier $j$ and
-$\delta^{\star\star}_j$ the best shell-diagonal transfer. Measured at
-$S=7$, $m=2$, $W=15$ (valid band): diagonal-absorbable fraction
-$0.21$--$0.29$; full-slot absorbable $0.36$--$0.44$;
-$\text{(ii)}=0.72$; $\text{(iii)}=0.31$. A single unconditioned stencil can
-only fit the pooled mean; its net absorption is $\approx0.03$---the pooled
-variance (ii) dominates everything. Deleting (ii) is what conditioning is for.
+$\delta^{\star\star}_j$ the best shell-diagonal transfer. A single
+unconditioned stencil can only fit the pooled mean, and the measured
+decomposition (reported with the results, Sec.~\ref{sec:results-apriori})
+shows the pooled-variance term (ii) dominates everything: deleting (ii) is
+what conditioning is for. The complete derivations of
+\eqref{eq:floor}, including the diagonal- and full-slot-absorbable fractions
+and their measurement protocol, are collected in
+Appendix~\TODO{integrate \texttt{Theoretical\_guarantees/%
+error\_analysis\_shallow\_nn.tex} as an appendix and reference it here}.
 
 \subsubsection{Single-mode analysis of the driver}
 Under a sweeping split $\hat N=-i(\mathbf k\cdot\mathbf U)\hat\omega+\hat f$
@@ -996,10 +1150,8 @@ $\tfrac2\DT|\sin(\Omega\DT/2)|$),
 {\DT\,\norm{(\hat\omega_0)_\kappa}},\,1\big)\Big),
 \label{eq:sigmahat}
 \end{equation}
-recovers $\sigma(\kappa)$ with median relative error $0.000$--$0.001$:
-data-conditioning is lossless. The measured $\DT$-collapse of
-$r_j/\DT^{S-k}$ across the sweep is $1.6\times$ (vs $243\times$ raw),
-confirming \eqref{eq:factorization}.
+recovers $\sigma(\kappa)$ up to the FD-response bias that the arcsin
+removes: data-conditioning of the rate is structurally lossless.
 
 \paragraph{Conditioned architecture (production: local taps).}
 The deliverable keeps the zero-FFT locality of the estimator and conditions
@@ -1012,40 +1164,47 @@ the stencils by \emph{tap modulation}:
 \qquad k\ge1,
 \label{eq:condlocal}
 \end{equation}
-with $\DT_{\rm ref}=1.5\times10^{-2}$ anchoring the exact scaling law at
-$\bO(1)$ (raw $\DT^{S-k}\approx10^{-11}$--$10^{-16}$ renders the path
-numerically dead: raw $\DT^{S-k}\lesssim5\times10^{-8}$ down to
-$\sim10^{-14}$ across the sweep), amplitude exactly zero on the $k=0$ channels
-($\varepsilon_0=0$: the undifferenced mark has no time error to absorb), and
-$\Delta\mathrm{taps}_\theta$ a small shared MLP
-($10\to24\to24\to240$, $\tanh$, $\approx6.9$k parameters) reading
-$[x_i,\log(1{+}x_i)]$, $x_i=\DT\,\shat(\kappa_i)$, at five fixed relative
-shells $\kappa_i/\kappa_{\max}\in\{0.15,0.3,0.5,0.7,0.85\}$. The output head
-is zero-initialized: at initialization the conditioned model is bit-identical
+with the reference step $\DT_{\rm ref}$ anchoring the exact scaling law at
+$\bO(1)$ (the raw $\DT^{S-k}$ powers are far below unity across the sweep
+and would render the modulation path numerically dead), amplitude exactly
+zero on the $k=0$ channels ($\varepsilon_0=0$: the undifferenced mark has no
+time error to absorb), and $\Delta\mathrm{taps}_\theta$ a small shared MLP
+reading per-shell features of $x_i=\DT\,\shat(\kappa_i)$ at a fixed set of
+relative shells $\kappa_i/\kappa_{\max}$. The output head is
+zero-initialized: at initialization the conditioned model is bit-identical
 to the unconditioned control. A spectral variant
 $\hat D^{(k)}_d=ik_d[1+\DT^{S-k}g^A_\theta(x,\tilde\kappa)]
-+k_d\DT^{S-k}g^B_\theta(x,\tilde\kappa)$ has zero shape deficit and serves as
-the ceiling instrument, but costs $\approx24$ FFTs per forward and is not
-deployed.
++k_d\DT^{S-k}g^B_\theta(x,\tilde\kappa)$ has zero shape deficit and serves
+as the ceiling instrument, but costs $\bO(10)$ FFTs per forward and is not
+deployed. The production configuration:
+\begin{center}\small
+\begin{tabular}{ll}
+\toprule
+quantity & value\\
+\midrule
+reference step $\DT_{\rm ref}$ & $1.5\times10^{-2}$\\
+modulation MLP & $10\to24\to24\to240$, $\tanh$ ($\approx6.9$k parameters)\\
+per-shell features & $[x_i,\ \log(1{+}x_i)]$, $x_i=\DT\,\shat(\kappa_i)$\\
+relative shells $\kappa_i/\kappa_{\max}$ & $\{0.15,\ 0.3,\ 0.5,\ 0.7,\ 0.85\}$\\
+output head & zero-initialized\\
+spectral ceiling variant & $\approx24$ FFTs per forward (not deployed)\\
+\bottomrule
+\end{tabular}
+\end{center}
 
-\paragraph{Predicted ceilings.}
-The conditioned floor deletes term (ii) of \eqref{eq:floor}; per-tier,
-$\mathrm{floor}^{\rm cond}_j
-=\mathrm{raw}_j\sqrt{\mathrm{irr}_j+\mathrm{coh}_j(\mathrm{def}(\mathcal F)
-+\text{h.o.t.})}$. Predictions: kf4@$1.5\times10^{-2}$: $0.031\to0.023$;
-FRC-256@$1.5\times10^{-2}$: $0.047\to0.037$; FRC-256@$10^{-2}$:
-$0.0068\to0.0055$; pooled raw floor over 9 tiers $0.175$ (vs the observed
-unconditioned plateau $0.19$); conditioned-pooled excluding the past-wall tier
-$\approx0.05$. Section~\ref{sec:results-apriori} confronts these with the
-trained result.
+\paragraph{Empirical verification.}
+The two-mark estimator \eqref{eq:sigmahat} recovers $\sigma(\kappa)$ with
+median relative error $0.000$--$0.001$, and the measured $\DT$-collapse of
+$r_j/\DT^{S-k}$ across the sweep is $1.6\times$ (vs $243\times$ raw),
+confirming \eqref{eq:factorization}.
 
 \subsection{Loss}
 \label{sec:loss}
 
 \paragraph{Offline derivative loss.}
 Per-sample, per-order relative $L_2$ with equal weights over
-$[\Ndot,\Nddot,\Ndddot]$ (Prop.~\ref{prop:benign} makes equal weights
-correct), predictions $2/3$-dealiased before the loss, and a norm floor
+$[\Ndot,\Nddot,\Ndddot]$ (the benign-propagation result of Sec.~\ref{sec:benign} makes equal
+weights correct), predictions $2/3$-dealiased before the loss, and a norm floor
 $\max(\norm{t_c},\ 0.1\times\text{member-median}\norm{t_c})$ in the
 denominator to cap the leverage of near-zero-target samples without dropping
 them. Medians are logged alongside floored means: relative errors on
@@ -1054,20 +1213,16 @@ near-quiescent samples otherwise poison the optimizer (Sec.~\ref{sec:training}).
 \paragraph{Rollout fine-tune.}
 The offline objective does not see the closed loop, so the estimator is
 fine-tuned \emph{through the stepper}: the supervised head is
-$\frac1M\sum_{m=1}^M\mathrm{rel}L_2(\omega^{\rm closed}_m,\omega^{\rm truth}_m)$
-against fine-RK4 truth over $M$ coarse steps (truncated backpropagation,
-window 4; $M$ scheduled up to 21), followed by a truth-free tail. The model
-that produced every a posteriori result of Sec.~\ref{sec:results} used, on
-that tail, an \emph{annulus-enstrophy hinge}
-$\mathrm{relu}\big(\log Z_{\rm ann}^{(f)}/Z_{\rm ann}^{(f-1)}\big)$ over the
-aliased band $|\mathbf k|>\tfrac23 k_{\max}$, weight $10^{-3}$ (larger
-weights destabilize the supervised head---an objective-imbalance failure we
-observed directly).
+$\frac1m\sum_{j=1}^m\mathrm{rel}L_2(\omega^{\rm closed}_j,\omega^{\rm truth}_j)$
+against fine-RK4 truth over $m$ coarse steps (truncated backpropagation over
+a window of $w$ steps; $m$ on an increasing schedule), followed by a
+truth-free tail.
 
-\paragraph{Upgraded tail (current training campaign; results pending).}
-Two replacements for the hinge are in a running $\lambda$-sweep whose results
-had not landed at the time of writing and are \emph{not} claimed in
-Sec.~\ref{sec:results}:
+\paragraph{Truth-free tail regularization (current training campaign;
+results pending).}
+The truth-free tail is regularized by two mechanisms, in a running
+$\lambda$-sweep whose results had not landed at the time of writing and are
+\emph{not} claimed in Sec.~\ref{sec:results}:
 \begin{enumerate}[leftmargin=1.6em,nosep,topsep=2pt]
 \item \emph{Analytic free-tail supervision.} On truth-free rolled steps the
 model heads are supervised against the on-the-fly \emph{exact analytic}
@@ -1108,19 +1263,20 @@ g_{\mathrm{NN},i}
 =g_{\star,i}
 \underbrace{-\,\tau^{\rm base}_{p+1}z^{p+1}+\bO(z^{p+2})}
 _{\hat\epsilon_{\mathrm{an},i}}
-+\underbrace{\epsilon_{\rm rel}\,\bO(h^3)}_{\hat\epsilon_{\mathrm{NN},i}}.
++\underbrace{\sum_{q=3}^{p}\epsilon_{\rm rel}^{(q)}\,\bO(h^q)}
+_{\hat\epsilon_{\mathrm{NN},i}},
 \end{equation}
-The surviving tail is the \emph{base scheme's own} ($\tau^{\rm AB2}_k\neq
+where $\epsilon_{\rm rel}^{(q)}$ is the relative error of the learned
+derivative channels entering the order-$q$ operator: for the deployed
+$R_3{+}R_4$ closure, $\hat\epsilon_{\rm NN}
+=\epsilon_{\rm rel}^{(3)}\bO(h^3)+\epsilon_{\rm rel}^{(4)}\bO(h^4)$, the
+$R_4$ channel entering one order higher and correspondingly suppressed.
+The surviving analytic tail is the \emph{base scheme's own}
+($\tau^{\rm AB2}_k\neq
 \tau^{\rm AB4}_k$; e.g.\ $R_3$ carries $-5\Nddot$ for AB2 and $0$ for AB4),
 never the target's: above the assembled order the closure reverts to
 $g_{\rm base}$, even when matching RK4.
 \end{proposition}
-
-\begin{corollary}[Empirical closure, $K\to\infty$]
-The full-tail empirical correction $\delta=\Phi_{\rm ref}-\Phi_{\rm base}$ is
-a difference of maps, not a truncated series: $\hat\epsilon_{\rm an}=0$ and
-$g_{\mathrm{NN},i}=g_{\star,i}+\epsilon_{\rm rel}\bO(h^3)$, base-agnostic.
-\end{corollary}
 
 \subsection{Margin bound}
 By the triangle inequality, $|g_{\mathrm{NN},i}|\le1$ is guaranteed whenever
@@ -1184,6 +1340,9 @@ diagnostic (a per-step contraction certificate is \emph{horizon-free},
 removing the fixed-horizon asterisk of rollout training structurally) and
 penalty ($\mathcal L_{\rm stab}$ of Sec.~\ref{sec:loss}). Caveats: it is
 linearized (the $r_2,r_3$ remainders are neglected) and isotropic per shell.
+Appendix~\ref{app:vn} derives \eqref{eq:geff} from the exact degree-$S$
+frozen-coefficient recurrence of the closed scheme; the validity shell
+$|\DT\shat|\le\tfrac12$ is precisely the reduction's own error bound.
 On the current stable reference model the certificate reads
 $|G_{\rm eff}|$ valid-shell mean $0.9992$, max $0.9997$---marginal at large
 $\DT$, as it must be.
@@ -1193,10 +1352,13 @@ $\DT$, as it must be.
 \label{sec:training}
 
 \paragraph{Data.}
-Training data are deep 28-mark windows advanced by fine RK4 from developed
-snapshots of an ensemble of forced-turbulence members spanning the
-$(\mathrm{Re},\beta)$-range ($512^2$, FRC-256 at $256^2$; domains $4\pi$,
-isotropic), sliced into $S=7$ stencils at the sweep steps
+Training data span \emph{forced and decaying} turbulence, across
+$(\mathrm{Re},\,\beta,\,k_f)$, on grids $512^2$ and $256^2$, at different
+$\DT$. Deep 28-mark windows are advanced by fine RK4---whose trajectory at
+these fine steps coincides with the exact flow to $\sim10^{-23}$, the one
+place this fact is used---from developed snapshots of the ensemble
+($512^2$, FRC-256 at $256^2$; domains $4\pi$, isotropic), sliced into
+depth-$S$ stencils at the sweep steps
 $\DT\in\{5\times10^{-3},10^{-2},1.5\times10^{-2}\}$. The unconditioned
 control pool is 18 (member,\,$\DT$) roots
 (FRC-\{b2, b25, kf4, Re25k, combo, 256\}$\times$3 steps); the conditioned run
@@ -1210,39 +1372,27 @@ forcing-free since $m\ge1$). The $\DT$ sweep deliberately includes
 near-wall and past-wall tiers (Re25k at $1.5\times10^{-2}$ exceeds its
 $\DTs$).
 
-\paragraph{Pipeline safeguards (each one earned by a failure).}
-\begin{itemize}[leftmargin=1.4em,nosep,topsep=2pt]
-\item \emph{By-window splits.} Whole windows go to one split; anchored slices
-within a window are near-duplicates $\sim\hf$ apart, so per-sample random
-splits leak and chronological splits shift covariates.
-\item \emph{Quiescent-window filter.} Early quasi-zonal spin-up flow has
-$\Jop(\psi,\omega)\approx0$ and derivative targets $10^4$--$10^5\times$
-smaller than developed flow; per-sample relative losses explode on them and
-the optimizer's cheapest move is shrinking \emph{all} predictions toward
-zero. Windows are dropped when the target norm falls below $10^{-2}\times$
-the member median or the stack roughness freezes. Spin-up duration is
-$\beta$-dependent (9--33\% of windows across members), so per-member start
-times are set by a developed-flow criterion, and the filter is the safety
-net.
-\item \emph{Multigrid handling.} Batches are shape-homogeneous but the
-$dx$-rescale of the stencils is strictly per-sample (equal shape does not
-imply equal $dx$); dealias masks are per-shape; anisotropic members are
-refused.
-\item \emph{Precision.} All closure-pipeline compute is float64: the raw
-target is $\bO(\DT^3)\approx10^{-9}$, below float32 machine epsilon. (Disk
-storage of inputs is float32, upcast at load; this floors only the deepest
-channel $\Ndddot$, which carries 2.6\% of the closure.)
-\end{itemize}
-
 \paragraph{Optimization.}
-Offline: AdamW, lr $5\times10^{-5}$, weight decay $10^{-4}$, cosine schedule,
-200 epochs, batch 4, float64, physics init, seed 0. Rollout fine-tune
-(reference run, whose epoch-33 checkpoint produced all a posteriori results):
-warm start from the offline conditioned model; strides $1,2,3$
-($\DT=\mathrm{stride}\times5\times10^{-3}$); unroll schedule
-$4{:}6$, $8{:}8$, $12{:}8$, $16{:}8$, $21{:}10$ with per-stride clamps
-$21/7/3$; truncated BPTT window 4; lr $5\times10^{-5}$; grad-clip 1.0;
-batch 1 with member-pure accumulation; 40 epochs.
+The two optimization phases (all a posteriori results come from the
+epoch-33 checkpoint of the rollout fine-tune reference run):
+\begin{center}\small
+\begin{tabular}{lll}
+\toprule
+ & offline & rollout fine-tune (reference run)\\
+\midrule
+initialization & physics init & warm start from offline conditioned model\\
+optimizer / lr & AdamW, $5\times10^{-5}$ & AdamW, $5\times10^{-5}$\\
+weight decay / schedule & $10^{-4}$, cosine & ---\\
+epochs / batch & 200 / 4 & 40 / 1 (member-pure accumulation)\\
+precision / seed & float64 / 0 & float64 / 0\\
+strides & --- & $1,2,3$ ($\DT=\mathrm{stride}\times5\times10^{-3}$)\\
+unroll schedule ($m{:}$epochs) & --- & $4{:}6$, $8{:}8$, $12{:}8$, $16{:}8$, $21{:}10$\\
+per-stride clamps on $m$ & --- & $21/7/3$\\
+BPTT window $w$ & --- & 4\\
+gradient clip & --- & 1.0\\
+\bottomrule
+\end{tabular}
+\end{center}
 
 % ===================================================================== %
 \section{Results}
@@ -1267,13 +1417,20 @@ hygiene control (equal 17-root data, ep107)
 \end{tabular}
 \end{center}
 Three readings. (a) The unconditioned $\Nddot$ plateau $0.186$ matches the
-predicted pooled raw floor $0.175$ of \eqref{eq:floor}: the control is
-data-efficient but variance-limited, as derived. (b) Conditioning is real on
+pooled raw floor $0.175$ predicted by \eqref{eq:floor}: the control is
+data-efficient but variance-limited, as derived. (The measured floor
+decomposition at $S=7$, $m=2$, $W=15$, valid band: diagonal-absorbable
+fraction $0.21$--$0.29$; full-slot absorbable $0.36$--$0.44$;
+term (ii) $=0.72$; term (iii) $=0.31$; net absorption of a single
+unconditioned stencil $\approx0.03$.) (b) Conditioning is real on
 equal data: the conditioned model beats the hygiene control on $\Nddot$ on
 16/17 shared roots (e.g.\ kf4 across the three $\DT$:
 $0.058/0.065/0.057$ vs $0.085/0.088/0.086$), and the improvement concentrates
 at low $\kappa$ (the $\varepsilon(\kappa)$ profile is U-shaped, not a high-$k$
-cliff). (c) \emph{The predicted conditioned ceilings were not reached}: kf4@
+cliff). (c) \emph{The conditioned floors predicted by \eqref{eq:floor}---obtained by
+deleting term (ii) per tier (kf4@$1.5\times10^{-2}$: $0.023$;
+FRC-256@$1.5\times10^{-2}$: $0.037$; FRC-256@$10^{-2}$: $0.0055$; pooled
+excluding the past-wall tier $\approx0.05$)---were not reached}: kf4@
 $1.5\times10^{-2}$ plateaued at $0.065$ vs the predicted $0.023$, pooled
 $0.214$ vs $\approx0.05$; the run was stopped at plateau (epoch 78 of 300).
 The prediction is open, not falsified---the gap is the difference between the
@@ -1326,7 +1483,7 @@ two larger steps (steps 7 and 13) and was stable but \emph{below} parity
 $0.72\times$ into $16\times$ there and only partially cured the envelope
 edge. The gap between $16\times$ and the $71\times$ analytic ceiling
 is the direct cost of the remaining $\Nddot$ estimation error
-(Prop.~\ref{prop:benign}).
+(Sec.~\ref{sec:benign}).
 \figph{4.6cm}{Figure placeholder: rollout error growth, bare vs closed vs
 analytic-$R_3$, per $\DT$; vorticity fields and differences at $t=16\DT$;
 improvement-factor box plots over the 10 draws. Source:
@@ -1376,14 +1533,19 @@ histograms before/after the penalty. Source:
 \subsection{Cost}
 \label{sec:results-cost}
 Measured on the production stepper ($512^2$): the closed step costs 8 FFTs vs
-the bare 5, plus $\approx170$ MACs/point of network---a per-step overhead of
-$\approx60\%$, against the $K$-fold step-count reduction of
-\eqref{eq:speedup}. At the replicated operating point
+the bare 5 (the analytical scaffolding is Fourier-diagonal and the
+$\Lop^3\omega$ piece folds into the implicit solve at zero cost; the
+conditioned context reuses the stepper's own spectral states, adding zero
+further FFTs), plus $\approx170$ MACs/point of network---a per-step overhead
+of $\approx60\%$, against the $K$-fold step-count reduction: at matched
+accuracy the ideal speedup is
+$K\times\tfrac58$ vs fine AB2--CN2 and $K\times\tfrac{20}8$ vs fine RK4, with
+$K=\DT/\hf$ set at training time. At the replicated operating point
 ($\DT=5\times10^{-3}$, $16\times$ error reduction on-horizon), matching the
 closed accuracy with the bare scheme would require $\approx4\times$ smaller
 steps (second-order scheme), so the realized speedup at matched accuracy is
 $\approx(4\times5)/8=2.5\times$ against bare AB2--CN2 on the trained horizon;
-the ideal bound \eqref{eq:speedup} is approached only as the learned
+the ideal bound above is approached only as the learned
 $\Nddot$ error approaches the analytic ceiling.
 The conditioned context costs zero additional FFTs at rollout (spectral
 states reused); training-side costs are modest (rollout fine-tune
@@ -1402,7 +1564,7 @@ verified: LTEs of the scheme family to $\bO(h^6)$
 (Props.~\ref{prop:lte-rk4}--\ref{prop:lte-ab4}), a finite and universal
 convergence radius $\DTs=2.08\,\taul$ (Prop.~\ref{prop:two-micro}), an inner
 stencil wall (Prop.~\ref{prop:inner}), benign 1:1 error propagation
-(Prop.~\ref{prop:benign}), the margin asymmetry that makes fine-RK4 the right
+(Sec.~\ref{sec:benign}), the margin asymmetry that makes fine-RK4 the right
 target (Sec.~\ref{sec:margin}), and an exact Wiener analysis of the estimator
 that derives---and prices---physics conditioning
 (Sec.~\ref{sec:wiener}). The practice side is honest: the analytic $R_3$
@@ -1503,6 +1665,231 @@ $B(Jf,Jf)$    & $1/20$  & $1/16$ & $-1/80$\\
 \end{tabular}
 \end{center}
 
+\section{Derivation of the von Neumann certificate}
+\label{app:vn}
+
+This appendix derives the frozen-coefficient amplification factor of the
+\emph{closed} scheme quoted in Sec.~\ref{sec:certificate}, in full generality: lag depth $S$
+and spatial stencil width $W$ ($H=(W-1)/2$ taps per side) are kept as
+variables, the learned heads enter through their exact lag structure, and
+the $2\times2$ companion of Sec.~\ref{sec:certificate}, Eq.~\eqref{eq:geff}, is recovered as a
+controlled reduction of the exact degree-$S$ characteristic polynomial.
+
+\subsection{Frozen single-mode model}
+
+Per Fourier mode $\mathbf{k}$, $\kappa=|\mathbf{k}|$, with
+$\ell\equiv\hat L(\mathbf{k})$ and the sweeping split of Sec.~\ref{sec:conditioning}
+(assumptions A1--A2: $\hat N^{\,n}=c\,\hat\omega^{\,n}$, $c=i\Omega$
+frozen over the stencil span, $|\Omega|\to\hat\sigma(\kappa)$ per shell),
+the mode obeys $\hat\omega'=(\ell+c)\hat\omega$, $\mu\equiv\ell+c$. The
+normal-mode ansatz for the stored levels is
+\begin{equation}
+\hat\omega^{\,n-i}=G^{-i}\,\hat\omega^{\,n},\qquad
+\hat\psi^{\,n-i}=-\kappa^{-2}\,\hat\omega^{\,n-i},
+\qquad i=0,\dots,S-1 .
+\label{eq:vn-ansatz}
+\end{equation}
+
+\subsection{Lag polynomials and their identity with the truncation
+constants}
+
+Let $V_{ki}$ denote the depth-$S$ Vandermonde rows (Sec.~\ref{sec:arch}),
+satisfying the moment conditions
+\begin{equation*}
+\textstyle\sum_i V_{ki}\,(-i)^p/p!=\delta_{kp},\qquad p<S.
+\end{equation*} Under
+\eqref{eq:vn-ansatz} the time-FD estimate of channel $k$ is a
+multiplication by a \emph{lag polynomial}:
+\begin{equation}
+\widehat{\omega^{(k)}_{\mathrm{FD}}}
+=\frac{D_k(G)}{\DT^{\,k}}\,\hat\omega^{\,n},
+\qquad
+D_k(G)\equiv\sum_{i=0}^{S-1}V_{ki}\,G^{-i}.
+\label{eq:vn-Dk}
+\end{equation}
+At the exact mode $G=e^{\mu\DT}$, the moment conditions give
+\begin{equation}
+\frac{D_k\!\bigl(e^{\mu\DT}\bigr)}{\DT^{\,k}}
+=\mu^{k}+C_k\,\DT^{\,S-k}\mu^{S}
++O\bigl(\DT^{\,S-k+1}\bigr),
+\label{eq:vn-consistency}
+\end{equation}
+i.e.\ exactly the per-channel truncation law
+$\varepsilon_k=C_k\,\DT^{\,S-k}\omega^{(S)}$ of Sec.~\ref{sec:wiener}, mode by mode:
+the symbol calculus and the truncation analysis are the same object. Two
+exact facts used below: $V_{0i}=\delta_{i0}$ (row~0 reads the newest
+mark), and $\sum_i V_{ki}=\delta_{k0}$ (rows $k\ge1$ annihilate
+time-constant marks).
+
+\subsection{Spatial symbol at width $W$, conditioned}
+
+The antisymmetric $W$-tap correction to each gradient has the exact symbol
+\begin{equation}
+\widehat{D^{d,(k)}_\theta}=i\,s^{(k)}_d(\mathbf{k}),\qquad
+s^{(k)}_d=k_d+\sum_{j=1}^{H}t^{(k,d)}_{j}\sin\bigl(jk_d\Delta x\bigr),
+\qquad H=\tfrac{W-1}{2},
+\label{eq:vn-taps}
+\end{equation}
+purely imaginary, hence parity-consistent
+($D(-\mathbf{k})=\overline{D(\mathbf{k})}$) for every $W$. With the
+conditioned modulation of Sec.~\ref{sec:conditioning},
+$t^{(k,d)}_j=t^{(k,d)}_{\mathrm{base},j}
++\DT^{\,S-k}\Delta t^{(k,d)}_{\theta,j}(\hat\sigma)$, the symbol---and
+therefore everything built from it below---is an explicit sine series in
+the trainable parameters, with the per-channel $\DT^{\,S-k}$ power carried
+analytically.
+
+\subsection{Collapse of the Jacobian assembly under the frozen sweep}
+
+Write the total fields as sweep + mode, $\psi=\psi_U+\hat\psi$,
+$\omega=\omega_U+\hat\omega$. In each slot
+$J_\theta(\psi^{(m-j)}_{\mathrm{FD}},\omega^{(j)}_{\mathrm{FD}})$ of the
+head assembly, four conduits arise; three vanish or are dropped by a
+labeled assumption:
+(i)~mode$\times$mode is \emph{exactly} zero for a single Fourier mode
+(parallel gradients; the taps rescale both gradients by the same $is_d$
+and cannot break the parallelism);
+(ii)~sweep$\times$sweep is the background's own tendency, not
+proportional to $\hat\omega$;
+(iii)~mode-advects-sweep is $O\bigl((\kappa_U/\kappa)^2\bigr)$ relative
+to the survivor and is dropped (assumption A5, the same scale-separation
+neglect that defines $\hat f$ and the remainder $r_1$ in Sec.~\ref{sec:wiener});
+(iv)~sweep-advects-mode survives.
+
+Within (iv) the binomial collapses \emph{exactly}: the $\psi$-slot of
+order $m-j$ is the time-FD of frozen sweep marks, which vanishes for
+$m-j\ge1$ by the $p=0$ moment; only $j=m$ survives. With the sweep
+velocity taken exact at its large scale ($s(k_U)\approx k_U$,
+assumption A6, error $O((\kappa_U\Delta x)^2)$),
+\begin{equation}
+\widehat{N^{(m)}_{\mathrm{est}}}
+= i\,\Omega^{(m)}_{\theta}\,\frac{D_m(G)}{\DT^{\,m}}\,\hat\omega^{\,n},
+\qquad
+\Omega^{(m)}_{\theta}(\mathbf{k})
+\equiv -\,U_x\,s^{(m)}_x-U_y\,s^{(m)}_y .
+\label{eq:vn-heads}
+\end{equation}
+Exact taps give $\Omega^{(m)}_\theta\to\Omega$; the shell reduction
+replaces $|\Omega|$ by the sample's own $\hat\sigma(\kappa)$. Equation
+\eqref{eq:vn-heads} also makes the reachability constraint of Sec.~\ref{sec:wiener}
+visible inside the certificate: the trainable parameters move
+$\Omega^{(m)}_\theta$ only along
+$\mathrm{span}\{U_d\sin(jk_d\Delta x)\}_{j\le H}$.
+
+\subsection{The exact characteristic polynomial}
+
+The closed update (implicit $L^3$ fold in the denominator, explicit
+analytic $\tfrac{1}{12}\DT^3 L^2N$, learned heads
+$f_{\mathrm{NN}}=\tfrac{1}{12}(\hat L\,\widehat{\dot N}
+-5\,\widehat{\ddot N})$ with
+$\widehat{\dot N}=i\Omega^{(1)}_\theta D_1(G)/\DT$,
+$\widehat{\ddot N}=i\Omega^{(2)}_\theta D_2(G)/\DT^{2}$), inserted into
+\eqref{eq:vn-ansatz} and cleared by $G^{S-1}$, gives the exact
+frozen-coefficient recurrence polynomial
+\begin{equation}
+\begin{aligned}
+P(G)=\;&\Bigl(1-\tfrac{\DT\ell}{2}+\tfrac{\DT^{3}\ell^{3}}{12}\Bigr)G^{S}
+-\Bigl[\Bigl(1+\tfrac{\DT\ell}{2}\Bigr)+\tfrac{3}{2}\DT c
+-\tfrac{\DT^{3}}{12}\ell^{2}c\Bigr]G^{S-1}
++\tfrac{\DT c}{2}\,G^{S-2}\\
+&+\frac{i}{12}\sum_{i=0}^{S-1}
+\Bigl[\DT^{2}\ell\,\Omega^{(1)}_{\theta}\,V_{1i}
+-5\,\DT\,\Omega^{(2)}_{\theta}\,V_{2i}\Bigr]G^{\,S-1-i}\;=\;0,
+\end{aligned}
+\label{eq:vn-charpoly}
+\end{equation}
+of degree $S$ ($S{+}1$ coupled levels $\Rightarrow$ order-$S$
+recurrence $\Rightarrow$ an $S\times S$ companion matrix
+$C_S$). Sanity limits: with the heads off,
+$P=G^{S-2}\times$(the bare AB2--CN2 quadratic of Sec.~\ref{sec:imex-amp})---the unused
+lags contribute inert roots at the origin; with exact taps and
+$G=e^{\mu\DT}$, \eqref{eq:vn-consistency} reproduces the
+$\tau$-corrected modified equation of Sec.~\ref{sec:closure} to $O(\DT^{3})$. Under
+$\mathbf{k}\to-\mathbf{k}$ the coefficients conjugate
+($\ell\to\bar\ell$, $\Omega\to-\Omega$, $s_d\to-s_d$), so the roots of
+the $\pm\mathbf{k}$ pair are conjugate and the stepped field stays real.
+
+\subsection{Reduction to the $2\times2$ companion of Sec.~\ref{sec:certificate}}
+
+Equation~\eqref{eq:geff} of Sec.~\ref{sec:certificate} is the exact polynomial
+\eqref{eq:vn-charpoly} after one controlled step: evaluate the two lag
+polynomials at the principal root,
+\begin{equation}
+D_k(G)\ \longrightarrow\ D_k\bigl(G_{\mathrm{princ}}\bigr),
+\qquad G_{\mathrm{princ}}\approx e^{\mu\DT},
+\label{eq:vn-reduction}
+\end{equation}
+which freezes the heads' transfer to the scalars
+$T_k=\Omega^{(k)}_\theta D_k(e^{\mu\DT})/(\hat\sigma\DT)^{k}$ and
+collapses the $G^{-i}$ tail of \eqref{eq:vn-charpoly} into the
+$G^{S-1}$ coefficient. Dividing by $G^{S-2}$ then leaves the quadratic
+whose companion is Eq.~\eqref{eq:geff}, with the effective explicit symbol
+$E=i\hat\sigma\bigl(1+\tfrac{\DT^{2}}{12}\hat L^{2}
++\tfrac{\DT^{2}}{12}\hat L\,T_1-\tfrac{5\DT}{12}\,T_2\bigr)$
+exactly as quoted. The reduction error is governed by the spurious
+roots: writing $G=G_{\mathrm{spur}}$ in \eqref{eq:vn-Dk}, the neglected
+contributions are $O\bigl(|G_{\mathrm{spur}}|\bigr)$ relative, and for
+the bare scheme $|G_{\mathrm{spur}}|=\tfrac{\DT|c|}{2}+O(\DT^{2})
+=\tfrac{\DT\hat\sigma}{2}$. This is precisely the origin of the
+validity-shell restriction $|\DT\hat\sigma(\kappa)|\le\tfrac12$ used in
+the penalty of Sec.~\ref{sec:loss}: inside it the $2\times2$ reduction is accurate
+to better than a factor $\tfrac{1}{4}$ in the neglected terms and the
+certificate is cheap; outside it the exact degree-$S$ eigensolve of
+\eqref{eq:vn-charpoly} must be used or the shell excluded.
+
+\subsection{Amplification, contraction, and the penalty}
+
+\begin{equation}
+G_{\mathrm{eff}}(\kappa;\DT,\hat\sigma,\theta)
+\equiv\max_{r:\ P(r)=0}|r|
+=\rho\bigl(C_S(\kappa;\DT,\hat\sigma,\theta)\bigr).
+\label{eq:vn-geff}
+\end{equation}
+``Closed form'' means the \emph{coefficients} \eqref{eq:vn-charpoly} are
+closed-form; $G_{\mathrm{eff}}$ is one $S\times S$ (or, on the validity
+shells, $2\times2$) eigensolve, differentiable in every trainable tensor
+through the generically simple eigenvalues---no rollout, no reference
+trajectory. The lag stack evolves by $X^{n+1}=C_S X^{n}$, so
+$\rho(C_S)\le1-\epsilon$ implies
+$\|C_S^{\,T}\|\le M(1-\epsilon)^{T}\to0$ for every horizon $T$: a
+per-step contraction certificate, structurally free of the fixed-horizon
+limitation of rollout training. Because companion matrices are
+non-normal, $\rho\le1$ alone permits transient growth of size $M$ that
+the nonlinearity can amplify; the margin $\epsilon$ bounds this
+transient and is therefore load-bearing, not cosmetic. The training
+penalty of Sec.~\ref{sec:loss},
+$\mathcal{L}_{\mathrm{stab}}
+=\lambda\,\mathrm{mean}_\kappa\,
+\mathrm{relu}\bigl(|G_{\mathrm{eff}}(\kappa)|-(1-\epsilon)\bigr)^2$,
+is evaluated per sample on the sample's own $\hat\sigma$ (regime-aware)
+and hinged (no gradient where the scheme already contracts).
+
+\subsection{Assumption ledger}
+
+The certificate is exact \emph{given} the frozen single-mode model and
+blind beyond it; each modeling step maps onto a remainder of Sec.~\ref{sec:wiener}:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+modeling step & drops & remainder \\
+\midrule
+$\hat N=c\hat\omega$ (A1) & cascade input $\hat f$ & $r_1$ \\
+frozen $c$ (A2) & $\dot\Omega$ drift & $r_2$ \\
+$|\Omega|\to\hat\sigma(\kappa)$ per shell & intra-shell anisotropy & $r_3$ \\
+conduit (iii) drop (A5) & mode-advects-sweep & (in $r_1$) \\
+$s(k_U)\approx k_U$ (A6) & sweep-scale tap error & $O((\kappa_U\Delta x)^2)$ \\
+$2\times2$ reduction \eqref{eq:vn-reduction} & spurious-root coupling &
+$O(\DT\hat\sigma/2)$ (sets the validity shell) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent The inference-time dissipative projection (Sec.~\ref{sec:results-stability}), which
+removes the energy-injecting radial component of $f_{\mathrm{NN}}$ per
+shell with no linearization, remains the unconditional backstop
+underneath the linearized certificate.
+
 % ===================================================================== %
 \bibliographystyle{plainnat}
 \begin{thebibliography}{99}
@@ -1573,10 +1960,6 @@ H.~J. Stetter. The defect correction principle and discretization methods.
 \bibitem[Suresh Babu et~al.(2025)]{sureshbabu2025}
 A.~N. Suresh Babu, A.~Sadam, and P.~F.~J. Lermusiaux. \TODO{title}.
 arXiv:2508.06678, 2025.
-
-\bibitem[Vallis(2017)]{vallis2017}
-G.~K. Vallis. \emph{Atmospheric and Oceanic Fluid Dynamics}. 2nd ed.,
-Cambridge University Press, 2017.
 
 \bibitem[Warming \& Hyett(1974)]{warming1974}
 R.~F. Warming and B.~J. Hyett. The modified equation approach to the
