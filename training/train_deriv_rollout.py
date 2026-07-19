@@ -108,6 +108,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import math
 import time
 from datetime import datetime
@@ -1538,6 +1539,7 @@ def main():
 
     best = float('inf'); t0 = time.time()
     rng = np.random.default_rng(args.seed)
+    _nan_streak = 0
     for ep in range(args.epochs):
         te0 = time.time()
         M_epoch = schedule[ep]
@@ -1553,6 +1555,25 @@ def main():
                   f"(certificate: <= {1.0 - wc.EPS_MARGIN})")
         va, va_s, rf, n_blown_val, fb, ag, anc_val, anc_per, anc_med = \
             val_epoch()
+        # HARD NaN GUARD (Sanaa project-wide mandate 2026-07-19: EVERY code
+        # fires STOP > CHECK > FIX > RESUBMIT on NaN -- never dozens of
+        # GPU-h again). Non-finite val for 2 consecutive epochs (or an
+        # epoch where every chunk was skipped) => save state, marker,
+        # exit 9. NB: skipped-chunk survivor handling (per-sample) stays;
+        # this guards the MODEL going globally non-finite.
+        ep_bad = (not np.isfinite(va)) or (nb == 0)
+        if ep_bad and _nan_streak >= 1:
+            (run_dir / 'NAN_ABORT.txt').write_text(
+                f"epoch {ep}: val={va} chunks_ok={nb}\n"
+                f"STOP > CHECK > FIX > RESUBMIT: do not rerun unchanged; "
+                f"diagnose the first non-finite quantity first.\n")
+            torch.save({'model': model.state_dict(), 'epoch': ep,
+                        'nan_abort': True, 'config': vars(args)},
+                       run_dir / 'last_nan_abort.pt')
+            print(f"[NAN-ABORT] two consecutive bad epochs (ep {ep}, "
+                  f"val={va}, chunks_ok={nb}); exiting 9", flush=True)
+            sys.exit(9)
+        _nan_streak = 1 if ep_bad else 0
         sched.step()
         # best-ckpt score = the TRAINING objective's val analogue: rollout val
         # + lambda * anchor val when the anchor is on (a ckpt that trades all
