@@ -314,11 +314,17 @@ class _RecordWrap(torch.nn.Module):
             return getattr(self.inner, name)
 
 
-def geff_shell_ctx(rc: RootCtx, device):
-    """(kappa_sh, L_hat_sh) at the cond model's REL_SHELLS for this member;
-    ring-mean L_hat, physical |k|. Cached on rc (frozen geometry)."""
-    if getattr(rc, '_geff_ctx', None) is None:
-        from model_cond_local import REL_SHELLS
+def geff_shell_ctx(rc: RootCtx, device, rels=None):
+    """(kappa_sh, L_hat_sh) at the given relative shells (default: the cond
+    model's REL_SHELLS) for this member; ring-mean L_hat, physical |k|.
+    Cached on rc per rel-tuple (frozen geometry)."""
+    from model_cond_local import REL_SHELLS
+    rels = tuple(rels) if rels is not None else tuple(REL_SHELLS)
+    cache = getattr(rc, '_geff_ctx', None)
+    if cache is None or not isinstance(cache, dict):
+        cache = {}
+        rc._geff_ctx = cache
+    if rels not in cache:
         kxm = torch.arange(rc.Nx // 2 + 1, dtype=torch.float64)
         kym = torch.fft.fftfreq(rc.Ny, d=1.0 / rc.Ny).to(torch.float64)
         kmag = torch.sqrt(kxm[None, :] ** 2 + kym[:, None] ** 2)
@@ -326,7 +332,7 @@ def geff_shell_ctx(rc: RootCtx, device):
         # n_sh ~ 363 at 512^2) -- NOT Ny//2 (G4 finding C1: mismatched shells
         # fused sigma at |k|~308 with L_hat at |k|~217)
         n_sh = int(round(float(kmag.max()))) + 1
-        idx = [min(int(round(r * (n_sh - 1))), n_sh - 1) for r in REL_SHELLS]
+        idx = [min(int(round(r * (n_sh - 1))), n_sh - 1) for r in rels]
         # L_hat is stored with a leading batch dim (1, Ny, Nx//2+1) — flatten
         # to the grid for ring indexing (smoke 1832637 catch)
         Lh = rc.L_hat.detach().cpu().to(torch.complex128).reshape(
@@ -337,16 +343,25 @@ def geff_shell_ctx(rc: RootCtx, device):
             ring = (kmag.round() == i)
             Lsh.append(Lh[ring].mean() if ring.any() else torch.tensor(0j))
             ksh.append(i * two_pi_L)
-        rc._geff_ctx = (torch.tensor(ksh, dtype=torch.float64, device=device),
-                        torch.stack([l for l in Lsh]).to(device))
-    return rc._geff_ctx
+        cache[rels] = (torch.tensor(ksh, dtype=torch.float64, device=device),
+                       torch.stack([l for l in Lsh]).to(device))
+    return cache[rels]
 
 
 def geff_window_penalty(rc: RootCtx, model, omega_stack, stride, vn_lambda,
-                        device):
-    """P1(b): frozen-coefficient |G_eff| of the closed scheme at THIS window's
-    initial state (per-sample sigma-hat), differentiable through the cond
-    taps, base stencils and mix. Returns (loss, max_g float)."""
+                        device, single_slot=False, extra_shells=()):
+    """P1(b): frozen-coefficient |G_eff| of the closed scheme at the GIVEN
+    stack's state (per-sample sigma-hat), differentiable through the cond
+    taps, base stencils and mix. Returns (loss, max_g float).
+
+    v2 (2026-07-19, G4 review): single_slot fixes the closure's AB2-slot
+    mis-split (wiener_certificate.assemble_geff); extra_shells extends the
+    certificate to additional relative shells (e.g. the aliasing annulus
+    0.47-0.67 of the corner mode at 512^2) -- sigma there comes from the
+    full sigma_hat_spec ring reduction, NOT the model's 5-feature context
+    (which stays untouched for the cond head). Defaults reproduce v1
+    byte-identically. Pass a developed (rolled) stack for developed-state
+    coefficients -- the caller owns that choice."""
     from qg.solver.opt.basis import to_spectral
     from model_cond_local import REL_SHELLS
     inner = model.inner if isinstance(model, _RecordWrap) else model
@@ -358,22 +373,67 @@ def geff_window_penalty(rc: RootCtx, model, omega_stack, stride, vn_lambda,
                                               rc.Lx, rc.Ly, rc.Ny, rc.Nx)
     sig = feats[:, :len(REL_SHELLS)].to(torch.float64) / dtv.view(-1, 1)
     # (sign kept -- G4 LOW: the model's own feats keep it)
+    if extra_shells:
+        # full ring sigma once, then select the extended shell set
+        from model_cond_local import sigma_hat_spec
+        sig_full, _ = sigma_hat_spec(qh0, qh0 - qh1, dtv, rc.Lx, rc.Ly,
+                                     rc.Ny, rc.Nx)
+        n_full = sig_full.shape[1]
+        rels = tuple(REL_SHELLS) + tuple(extra_shells)
+        idx = torch.tensor([min(int(round(r * (n_full - 1))), n_full - 1)
+                            for r in rels], device=sig_full.device,
+                           dtype=torch.long)
+        sig = sig_full.index_select(1, idx).to(torch.float64)
+    else:
+        rels = None
     delta = inner.cond(feats.to(inner.cond.head.weight.dtype))
     kvec = inner.k_of_channel.to(delta.dtype)
     amp = ((dtv.to(delta.dtype) / inner.dt_ref_cond.to(delta.dtype))
            ** (inner.S - kvec).view(1, -1)) * (kvec > 0).to(delta.dtype).view(1, -1)
     delta = delta * amp.view(1, -1, 1, 1)
-    ksh, Lsh = geff_shell_ctx(rc, device)
-    # certificate math on CPU: 5 shells x B=1 is microscopic, and the older
+    ksh, Lsh = geff_shell_ctx(rc, device, rels=rels)
+    # certificate math on CPU: few shells x B=1 is microscopic, and the older
     # CUDA driver mishandles some complex128 kernels (smoke 1832657); autograd
     # carries gradients across the device move back to the GPU parameters
     g = wc.assemble_geff(inner, sig.cpu(), dtv.cpu(), Lsh.cpu(), ksh.cpu(),
                          torch.tensor([rc.dx], dtype=torch.float64),
-                         delta.cpu())
+                         delta.cpu(), single_slot=single_slot)
     # linearization validity: |dt*sigma| <= 0.5 per shell (see vn_penalty doc)
     valid = (dtv.cpu().view(-1, 1) * sig.cpu().abs()) <= 0.5
+    if extra_shells and not getattr(geff_window_penalty, '_vfrac_told', False):
+        # one-time reach report (G4 v2-review low note: the annulus shells
+        # may sit outside validity and be inert -- make that visible)
+        geff_window_penalty._vfrac_told = True
+        nb = len(REL_SHELLS)
+        vf = valid[:, nb:].to(torch.float64).mean()
+        print(f"[vn-cert] annulus shells {tuple(extra_shells)}: "
+              f"valid fraction {float(vf):.2f} on the first window "
+              f"(stride {stride}; |dt*sigma|<=0.5 mask)")
     loss, gmax = wc.vn_penalty(g, vn_lambda, valid=valid)
     return loss, float(gmax.max())
+
+
+def developed_stack(rc: RootCtx, one_step, omega_stack, n_steps, device):
+    """No-grad free roll of the CLOSED scheme n_steps past the window IC,
+    returning the rolled 7-deep physical stack (newest first) for
+    developed-state certificate coefficients. Returns None if the roll goes
+    non-finite before n_steps (the last finite stack would be mid-blowup
+    noise, and the IC-state penalty already covers the window). Cheap:
+    forward-only, no graph."""
+    from qg.solver.opt.basis import to_spectral  # noqa: F401 (parity w/ init)
+    set_globals(rc)
+    with torch.no_grad():
+        qc, qm, Nc, Nm, om, ps = init_state(rc, omega_stack, device)
+        for _ in range(n_steps):
+            qh_new, Nh_new, om_new, ps_new = one_step(qc, qm, Nc, Nm,
+                                                      list(om), list(ps))
+            if not torch.isfinite(om_new[0]).all():
+                return None
+            om = [om_new] + om[:-1]
+            ps = [ps_new] + ps[:-1]
+            qm, qc = qc, qh_new
+            Nm, Nc = Nc, Nh_new
+    return [o.detach() for o in om]
 
 
 # --------------------------------------------------------------------------- #
@@ -922,6 +982,22 @@ def main():
     p.add_argument('--vn-lambda', type=float, default=0.0,
                    help="P1(b) von Neumann certificate penalty weight "
                         "(0 = off; sweep {0.1, 1.0, 10.0})")
+    p.add_argument('--vn-single-slot', action='store_true',
+                   help='certificate v2 (2026-07-19 G4 finding #5): closure '
+                        'enters the companion once at the current slot; AB2 '
+                        '1.5/-0.5 slots extrapolate the advection only. Off '
+                        '= legacy (biased-benign) fold.')
+    p.add_argument('--vn-annulus-shells', default='',
+                   help='comma-separated EXTRA relative shells for the '
+                        'certificate (e.g. "0.52,0.58,0.64" = the aliasing '
+                        'annulus at 512^2). Empty = legacy 5-shell set. The '
+                        'cond-head context features are untouched.')
+    p.add_argument('--vn-developed-steps', type=int, default=0,
+                   help='ALSO evaluate the certificate on coefficients from '
+                        'a no-grad free roll this many steps past the window '
+                        'IC (developed-state refresh; 2026-07-19 G4 finding '
+                        '#4 -- the IC-frozen certificate never sees the '
+                        'state that actually diverges). 0 = IC only.')
     p.add_argument('--free-cap', type=float, default=10.0,
                    help='clamp on the per-step log-growth hinge (gradient '
                         'is zero above the cap; pre-blowup sub-cap steps '
@@ -1003,6 +1079,13 @@ def main():
         raise SystemExit(f"--free-weight has {len(fw)} values for "
                          f"{len(strides)} strides; give 1 or one per stride")
     args.free_weight_map = dict(zip(strides, fw))
+    vn_extra_shells = tuple(float(x) for x in
+                            str(args.vn_annulus_shells).split(',')
+                            if x.strip())
+    for r in vn_extra_shells:
+        if not (0.0 < r < 1.0):
+            raise SystemExit(f"--vn-annulus-shells: relative shell {r} "
+                             f"outside (0,1)")
     trunc_k = 0
     if args.grad_mode != 'full':
         if not args.grad_mode.startswith('trunc:'):
@@ -1291,11 +1374,22 @@ def main():
                 # coefficients at the window's initial sigma-hat); its tiny
                 # graph (cond MLP + taps + mix) backwards independently.
                 if args.vn_lambda > 0.0:
-                    l_vn, gmax_w = geff_window_penalty(
-                        rc, model_rec, omega_stack, s, args.vn_lambda, device)
-                    if torch.isfinite(l_vn):
-                        (l_vn / len(chunk)).backward()
-                        geff_maxes.append(gmax_w)
+                    vn_stacks = [omega_stack]
+                    if args.vn_developed_steps > 0:
+                        dstack = developed_stack(
+                            rc, steppers[(rc.member, s)], omega_stack,
+                            args.vn_developed_steps, device)
+                        if dstack is not None:
+                            vn_stacks.append(dstack)
+                    for vstk in vn_stacks:
+                        l_vn, gmax_w = geff_window_penalty(
+                            rc, model_rec, vstk, s,
+                            args.vn_lambda / len(vn_stacks), device,
+                            single_slot=args.vn_single_slot,
+                            extra_shells=vn_extra_shells)
+                        if torch.isfinite(l_vn):
+                            (l_vn / len(chunk)).backward()
+                            geff_maxes.append(gmax_w)
                 losses, stab, blown = unroll_losses(
                     rc, steppers[(rc.member, s)], omega_stack, truth, M,
                     is_closure=True, trunc_k=trunc_k, use_checkpoint=use_cp,

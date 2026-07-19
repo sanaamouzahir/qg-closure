@@ -62,7 +62,8 @@ def tap_symbol(taps: torch.Tensor, theta: torch.Tensor) -> torch.Tensor:
 
 def assemble_geff(model, sig: torch.Tensor, dt: torch.Tensor,
                   L_hat_sh: torch.Tensor, kappa_sh: torch.Tensor,
-                  dx: torch.Tensor, delta_taps: torch.Tensor = None):
+                  dx: torch.Tensor, delta_taps: torch.Tensor = None,
+                  single_slot: bool = False):
     """|G_eff| (B, n_sh), differentiable through model.grad taps and
     delta_taps (the per-sample TapModulator output, ALREADY amp-scaled).
 
@@ -71,6 +72,15 @@ def assemble_geff(model, sig: torch.Tensor, dt: torch.Tensor,
     L_hat_sh (n_sh,)    complex L_hat at shell-representative |k| (radial mean)
     kappa_sh (n_sh,)    physical |k| per shell
     dx       (B,)       per-sample grid spacing (square domains)
+    single_slot (bool)  certificate v2 (G4 2026-07-19 finding #5): the SCHEME
+        applies the closure (analytic L^2N fold + f_NN) ONCE at step n
+        (rollout_aposteriori :399/:496, coefficient DT^3), while AB2 only
+        extrapolates the ADVECTION N with the 1.5/-0.5 slots. The original
+        companion folded the closure into E and split it 1.5/-0.5 too --
+        biasing G benign for growing modes (a spurious -0.5 n-1 component
+        the real scheme does not have). True => advection keeps the AB2
+        slots, closure enters the current slot only. False => original
+        (biased) assembly, byte-identical for reproduction.
     """
     B, n_sh = sig.shape
     dtypec = torch.complex128
@@ -136,8 +146,6 @@ def assemble_geff(model, sig: torch.Tensor, dt: torch.Tensor,
     # ---- fold constants (rollout convention: coef = DT^3, no 1-1/K^2) ---- #
     dtv = dt.to(dev).to(torch.float64).view(-1, 1)
     cfold = (dtv ** 2) / 12.0                                   # DT^3/12 / DT
-    E_sym = (1j * sg.to(dtypec)) * (1 + cfold.to(dtypec) * Lh ** 2) \
-        + cfold.to(dtypec) * (Lh * T[0] - 5.0 * T[1])
 
     # ---- AB2CN2 companion spectral radius --------------------------------- #
     # Implicit side EXACTLY as the scheme folds it (G4 C3; rollout_
@@ -146,8 +154,20 @@ def assemble_geff(model, sig: torch.Tensor, dt: torch.Tensor,
     half = 0.5 * dtv.to(dtypec)
     r = 1.0 / (1.0 - half * Lh + (dtv.to(dtypec) ** 3 / 12.0) * Lh ** 3)
     a = r * (1.0 + half * Lh)
-    b = 1.5 * dtv.to(dtypec) * r * E_sym
-    c2 = -0.5 * dtv.to(dtypec) * r * E_sym
+    if single_slot:
+        # v2: AB2 slots for advection only; closure once at the current slot
+        E_adv = 1j * sg.to(dtypec)
+        E_clo = E_adv * cfold.to(dtypec) * Lh ** 2 \
+            + cfold.to(dtypec) * (Lh * T[0] - 5.0 * T[1])
+        b = dtv.to(dtypec) * r * (1.5 * E_adv + E_clo)
+        c2 = -0.5 * dtv.to(dtypec) * r * E_adv
+    else:
+        # legacy fold, ORIGINAL float grouping preserved bit-exactly
+        # (G4 v2-review finding 1: do not re-associate the products)
+        E_sym = (1j * sg.to(dtypec)) * (1 + cfold.to(dtypec) * Lh ** 2) \
+            + cfold.to(dtypec) * (Lh * T[0] - 5.0 * T[1])
+        b = 1.5 * dtv.to(dtypec) * r * E_sym
+        c2 = -0.5 * dtv.to(dtypec) * r * E_sym
     tr = a + b
     disc = torch.sqrt(tr * tr + 4.0 * c2)
     g = torch.maximum(((tr + disc) / 2).abs(), ((tr - disc) / 2).abs())
