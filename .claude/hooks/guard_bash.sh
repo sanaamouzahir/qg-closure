@@ -15,6 +15,14 @@ if grep -Eq 'git[[:space:]]+push' <<<"$input" && grep -Eq '(^|[^a-zA-Z])main([^a
   exit 2
 fi
 
+# HARD RULE (qlogin rule): no diagnostics/compute on the login node. This hook runs
+# where the session runs; if that is the head node (mseas), running python on a
+# diagnostics script is blocked — qlogin or submit an SGE job first, always.
+if [[ "$(hostname -s)" == mseas* ]] && grep -Eq 'python[0-9.]* .*diagnostics/' <<<"$input"; then
+  echo "BLOCKED: diagnostics compute on the login node. qlogin (or an SGE job, e.g. scripts/sge/monitor_training_job.sh) first, always." >&2
+  exit 2
+fi
+
 # HARD RULE: no float32 in the closure data/train path (advisory catch for obvious cases).
 if grep -Eq 'dtype[= ]+.?float32|--compute-dtype[= ]+float32' <<<"$input"; then
   echo "BLOCKED: float32 in a closure command. float64 is mandatory through data-build and training." >&2

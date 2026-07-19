@@ -564,6 +564,53 @@ error growth; enstrophy drift; spectra. Source:
 achievable horizon to $\DT_\star$ measured in Sec.~\ref{sec:analysis}.}
 \figph{4.6cm}{Figure placeholder: forced-turbulence rollout (same panels).}
 
+\subsection{Achieved recovery versus the true-closure ceiling}
+\label{sec:exp-ceiling}
+Because the exact correction $R_3$ is available analytically (via the
+chain-rule time derivatives of $N$, Sec.~\ref{sec:closure-derivation}), we can separate
+two questions that a rollout error alone conflates: \emph{how much error
+reduction is attainable} at a given step, and \emph{how much the learned network
+actually extracts}. We inject the analytic $R_3$ closure in place of the network
+on a fixed $16$-step rollout ladder, over the same six in-distribution
+(member, IC) pairs and the same fine-grid truth references used to score the
+network. Table~\ref{tab:ceiling} reports the median error reduction over bare
+AB2--CN2 for both arms, at three coarse steps.
+
+\begin{table}[h]
+\centering\small
+\caption{Median error reduction over bare AB2--CN2 on a $16$-step rollout,
+in distribution (six (member, IC) pairs; all rungs stable in both arms). The
+true-closure column is the attainable ceiling; the network column is the
+current learned closure.}
+\label{tab:ceiling}
+\begin{tabular}{lccc}
+\toprule
+$\DT$ & Network & True closure ($R_3$) & Fraction of ceiling \\
+\midrule
+$5\times10^{-3}$   & $3.25\times$ & $59.3\times$ & $5.5\%$ \\
+$1\times10^{-2}$   & $8.57\times$ & $29.5\times$ & $29\%$  \\
+$1.5\times10^{-2}$ & $4.20\times$ & $89.6\times$ & $4.7\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two features are diagnostic. First, the analytic closure is stable and
+strongly corrective at every step, confirming that the $\bO(\DT^4)$-floor
+argument (Cor.~\ref{cor:radius}) leaves a large, real signal for
+$\DT\le\DT_\star$; the shortfall is entirely in the learned extraction, not in
+the theory. Second, the fraction of that ceiling the network recovers is
+non-monotone in $\DT$---best near the middle of the sweep and worst at both
+ends. This is the signature expected of a \emph{single} step-independent stencil
+fitting the pooled mean of a target correction whose amplitude scales as
+$(\DT\,\sigma)^{S-m}$ (Sec.~\ref{sec:analysis}): one stencil is a compromise
+that is accurate near the pooled operating point and degrades toward the sweep
+extremes. A spectral decomposition localizes the residual at low wavenumber
+(regime-scale structures). Both observations motivate the conditioned stencil of
+Sec.~\ref{sec:conclusion}, in which the analytic $\DT^{S-m}$ prefactor is
+factored out and only a regime-dependent gain $g_\theta(k;\mathrm{Re},\beta,\mu)$
+is learned. \TODO{replace the ``Network'' column once the conditioned-stencil
+run lands; report the closed gap.}
+
 % ===================================================================== %
 \section{Conclusion}
 \label{sec:conclusion}
@@ -583,9 +630,18 @@ removing it eliminates the truncation error up to the $\bO(\DT^4)$ floor for
 $\DT\le\DT_\star$.
 
 \paragraph{Future directions.}
-\TODO{itemize briefly: out-of-distribution time-step / horizon tests; learning
-additional $N$-derivative orders only where the audit warrants; extension to
-$\beta$ as an explicit feature for cross-regime transfer; obstacle flows.}
+The headroom of Sec.~\ref{sec:exp-ceiling}---a large, stable, analytically
+available signal that the current single stencil extracts only in part, most
+severely at the sweep extremes---points directly to a \emph{physics-conditioned}
+stencil. The error analysis predicts an optimal correction of the form
+$\delta_\theta(k)=\DT^{S-m}\,[\text{analytic}]\times g_\theta(k;\mathrm{Re},
+\beta,\mu)$: the step-size dependence is factored out in closed form and only a
+regime-dependent spectral gain is learned, removing the pooled-mean compromise
+that a step-independent stencil is forced into. This makes $(\DT,\mathrm{Re},
+\beta,\mu)$ explicit features and is the natural route to cross-regime transfer.
+Further directions: out-of-distribution step/horizon tests; learning additional
+$N$-derivative orders only where the magnitude audit warrants; and obstacle
+flows. \TODO{fold in the conditioned-stencil results once landed.}
 
 \section*{Reproducibility}
 The spectral QG solver follows \citet{sureshbabu2025}. Truncation operators are

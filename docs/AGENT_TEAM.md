@@ -16,11 +16,43 @@
 | Agent | Model | You'd invoke it for |
 |---|---|---|
 | sge-runner | Sonnet | "submit the b25 ensemble and chain the post-pipeline + email" |
-| sge-checker | Sonnet | auto-runs before submitting a new/edited script |
+| sge-checker | Opus 4.7 | auto-runs before submitting a new/edited script |
 | pipeline-runner | Sonnet | "rerender the videos and rebuild the pareto figure" |
 | results-summarizer | Sonnet | "give me the verdict on last night's run" |
-| closure-reviewer | Opus | "review the diff I just made in training/" |
-| physics-sanity | Opus | "this val looks too low — is it real?" |
+| closure-reviewer | Opus 4.8 | "review the diff I just made in training/" |
+| physics-sanity | Opus 4.8 | "this val looks too low — is it real?" |
+
+## Governance (permanent — set by the global supervisor)
+**Model hierarchy (fixed, never improvised):** Global supervisor = Fable 5 (`claude-fable-5`), one,
+in main — portfolio + merges + convention enforcement + **code authorship**. Branch supervisors =
+Opus 4.8, one per worktree — run the idea, never write new code. sge-checker = Opus 4.7 (judgment).
+closure-reviewer, physics-sanity = Opus 4.8 (judgment). sge-runner, pipeline-runner,
+results-summarizer = Sonnet (mechanical). The agent `.md` `model:` fields encode this.
+
+**Code authorship rule:** all NEW code (models, trainers, slicer changes, any idea-implementation)
+is written by the GLOBAL supervisor (Fable 5), committed to the experiment branch with a
+`[fable-authored]` message prefix, then handed to the branch supervisor, who runs closure-reviewer,
+verifies correctness (init-reproduction), and runs/evaluates. Branch supervisors may fix trivial
+breakage (imports, paths, <5 lines) but never author new functionality; if a branch needs code it
+emails `[QG][BLOCKED][<branch>]` to request it from Fable.
+
+**Diagnostics carve-out (2026-07-06):** branch supervisors MAY author new diagnostic scripts —
+analysis-only (reads logs/ckpts/data; no model, trainer, or slicer changes) — in their branch's
+`diagnostics/`. Promotion to main's `diagnostics/`: branch proposes with justification → Fable
+reviews → Fable emails `[QG][FLAG][GLOBAL]` to Sanaa → merge only on her OK.
+
+**qlogin rule (hard, 2026-07-06):** diagnostics and any compute never run on the login node —
+qlogin or an SGE job first, always. The guard hook blocks `python .*diagnostics/` on the head node.
+
+**Training monitor (2026-07-06):** sge-runner ALWAYS chains `diagnostics/monitor_training.py`
+(via `scripts/sge/monitor_training_job.sh`, concurrent `all.q` job) after any training submission.
+It emails `[QG][FLAG][<branch>]` with offending log lines on EXPLODE / OSCILLATE / IMBALANCE /
+STALL / LR-sanity; healthy completion stays silent (`[QG][LANDED]` comes from the usual chain).
+Flag handling follows the decision tree in every branch brief.
+
+**Email convention enforcement:** malformed subjects (not `[QG][<CATEGORY>][<BRANCH>] …` with a
+verbatim category code) are flagged in the next weekly `DIGEST` under "Convention violations",
+branch + subject quoted.
 
 ## How to direct a supervisor
 Talk in goals, not commands. Examples:
@@ -34,7 +66,8 @@ The supervisor decomposes and delegates. You approve the yellow/red actions.
 2. **permissions (`.claude/settings.json`).** `ask` before `qsub`, `git push`, `rm -rf`; `deny`
    force-push and hard-reset. This is where you set "propose vs act."
 3. **hooks (`.claude/hooks/guard_bash.sh`) — HARDCODED, cannot be talked around.** Blocks the
-   forbidden SGE flags (`ibamd.q`, `h_vmem`), any push to `main`, and float32 in closure commands.
+   forbidden SGE flags (`ibamd.q`, `h_vmem`), any push to `main`, float32 in closure commands,
+   and `python .*diagnostics/` on the head node (qlogin rule).
 
 Rule of thumb: **mechanical invariants → hooks** (enforced), **judgment → CLAUDE.md + the brief's
 autonomy dial** (advisory). To loosen a branch you trust, relax its `ask` rules; to tighten, add

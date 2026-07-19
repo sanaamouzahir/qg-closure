@@ -1,0 +1,1232 @@
+% Full editable text transcription extracted from the supplied PDF.
+% This preserves the wording and page-by-page reading order. Mathematical
+% expressions remain in their extracted visual form rather than being rebuilt
+% as semantic amsmath equations. Compile with XeLaTeX.
+\documentclass[letterpaper]{article}
+\usepackage[margin=0.30in]{geometry}
+\usepackage{fontspec}
+\usepackage{fvextra}
+\setmonofont{FreeMono}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\begin{document}
+% ---- Original PDF page 1 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+ A Step-Size Resolution Closure for IMEX Integration
+                          of
+   Two-Dimensional Quasi-Geostrophic Turbulence:
+           Truncation-Error Analysis, Wiener-Conditioned Learned Stencils,
+                        and Von Neumann–Certified Stability
+
+                     Sanaa Mouzahir1 and [TODO: co-authors / advisor]1
+
+    1
+        Department of Mechanical Engineering and Center for Computational Science and Engineering„
+                       Massachusetts Institute of Technology, Cambridge, MA 02139
+
+
+                                                July 14, 2026
+
+
+                                                  Abstract
+        We treat the time-discretization error of a fixed numerical scheme as a closure problem. For the
+        spectral Adams–Bashforth-2 / Crank–Nicolson (AB2–CN2) IMEX integrator applied to two-
+        dimensional quasi-geostrophic (QG) turbulence, we derive the local truncation error in closed
+        form to O(∆T 6 ) and compare it, term by term, with those of AB4–CN2 and classical RK4.
+        Each truncation operator splits into an analytical part (powers of the Fourier-diagonal linear
+        operator, free at inference) and an expensive part built from time derivatives of the advective
+        Jacobian; a compact (≈3,700-parameter) physics-initialized network estimates only the latter
+        from a seven-level time stencil. The estimator’s error is analyzed exactly: the finite-difference-
+        in-time error at every order is driven by the single field ω (S) , and a Wiener (least-squares)
+        analysis shows the optimal learned stencil correction varies across step sizes and flow regimes
+        as (∆T σ(κ))S−k , where σ(κ) is a per-shell decorrelation rate measurable from the model’s
+        own inputs to O(10−3 ) relative accuracy. This yields a conditioned architecture whose pooled
+        training floor deletes the dominant (pooled-variance) term of the unconditioned floor. Stability
+        is handled symmetrically: the modified-equation analysis shows that a closure targeting the
+        exact flow has zero linear stability margin on the advection axis, while targeting fine-step RK4
+        buys a provable y 6 /144 margin; a differentiable frozen-coefficient von Neumann certificate of the
+        closed scheme is derived and used both as an a priori diagnostic and as a training penalty. The
+        analytic (network-free) R3 closure is unconditionally stable in our experiments and improves
+        coarse-step accuracy by one to two orders of magnitude; the learned closure attains a replicated
+        median 16× error reduction over ten initial conditions at ∆T = 5 × 10−3 on a 16-step horizon,
+        while a horizon study shows the gain is not yet unconditional — blow-ups reappear at ∼2×
+        the fine-tuned horizon — which we diagnose (a network-noise history-contamination loop) and
+        attack with the certificate penalty. We report the complete error, cost, and stability budget of
+        the method, including its failure modes.
+        Key words. time-integration error, modified equation, closure modeling, IMEX schemes,
+        Wiener filtering, von Neumann stability, pseudo-spectral methods, quasi-geostrophic turbulence,
+        scientific machine learning
+
+1. Introduction. Numerical simulations of geophysical turbulence are limited by the time step.
+In stiff pseudo-spectral solvers the per-step cost is dominated by the nonlinear (advective) term,
+
+                                                       1
+\end{Verbatim}
+\newpage
+% ---- Original PDF page 2 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+and the total cost scales as T /∆t to reach a horizon T . For an integrator whose accuracy—not
+linear stability—sets ∆t, halving the usable step doubles the cost. Reducing this time-discretization
+cost without changing the discretization itself is the problem addressed here.
+    Data-driven closures are by now standard for unresolved spatial scales on coarse grids, in engi-
+neering large-eddy simulation and geophysical modeling alike [8, 9, 13]. The analogous problem for
+unresolved temporal scales—the error incurred by taking a large time step with a fixed scheme—has
+received far less attention. We treat it as a closure problem: derive the scheme’s local truncation
+error (LTE) in closed form, identify the single piece that is expensive to evaluate, and learn only
+that piece.
+
+Goal.   The target of the construction is stated once and drives every design choice in the paper:
+
+      run at the per-step cost of AB2–CN2 with a coarse step ∆T , while recovering the
+      accuracy—and, deliberately, the stability margin—of fine-step RK4 at hf = ∆T /K.
+
+The scheme and its formal order are unchanged; a learned correction makes one coarse step behave
+as if the same trajectory had been advanced by K fine RK4 steps. Because a fine-step RK4
+trajectory coincides with the exact flow to near machine precision, the K → ∞ limit targets the
+exact flow; Section 5 shows why the RK4 target, not the exact flow, is the right deployment choice:
+on the advection axis the exact flow has zero stability margin, while RK4’s faint dissipation buys
+a provable y 6 /144 buffer against both the analytic truncation tail and the network error.
+
+Relation to classical ideas. The construction sits between three classical methods while re-
+maining distinct from each. Modified-equation analysis [17] supplies the truncation machinery but
+is normally used to characterize or add order, not to emulate a finer-step version of the same scheme.
+Defect correction [14] iteratively matches a higher-order scheme at the same step; we match the
+same scheme (or RK4) at a smaller step, a target with no defect-correction analogue—the gain is
+set by K at training time, not bounded by a reference order. Parareal [12] attains fine-propagator
+accuracy at coarse cost by iterating over the horizon; our closure is an amortized parareal in which
+the fine propagator is paid for once, during training, and reused at inference without iteration.
+High-order time integration that pays once for the curvature of a constrained problem was devel-
+oped for dynamical low-rank systems in the same group [6]. On the learning side, the estimator
+belongs to the learned-discretization lineage [2, 11]: a small network constrained to the algebraic
+structure of the operator it replaces, not a generic operator learner.
+
+Contributions. (i) Closed-form LTEs of AB2–CN2, AB4–CN2 and RK4 for the QG vorticity
+equation, in a shared elementary-differential language, verified symbolically and by convergence
+studies (Sec. 4.1). (ii) A quantitative validity theory for any such closure: the truncation series has
+a finite convergence radius ∆T ⋆ , measured per regime and collapsed to a universal law ∆T ⋆ = C τλ ,
+C = 2.08 ± 0.15, with τλ the Taylor microscale of the nonlinear term; a finite-lag stencil adds an
+inner wall at span ≈ ∆T ⋆ ; and error propagation through the closure is benign (1:1 in the N̈ error)
+across the whole trained envelope (Sec. 4.2). (iii) A cost and stability budget of the schemes and
+their closed variants, including exact amplification factors for the IMEX family and the margin
+asymmetry between the exact-flow and RK4 targets (Secs. 4.3–4.4, 5). (iv) A structure-matched
+estimator of the expensive LTE part (3,700 parameters, exact-physics initialization) together with
+an exact error analysis of the estimator itself, culminating in a Wiener floor decomposition that
+motivates—and quantifies the gain of—physics conditioning of the learned stencils on a per-sample
+measurable rate σ̂(κ) (Sec. 6). (v) A differentiable frozen-coefficient von Neumann certificate for the
+
+
+                                                  2
+\end{Verbatim}
+\newpage
+% ---- Original PDF page 3 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+closed scheme, used as a training penalty (Sec. 7). (vi) An honest experimental record: replicated
+16× coarse-step error reduction at ∆T = 5 × 10−3 over 16-step horizons, an analytic-closure ceiling
+of 19–130×, and the two failure modes that remain—the large-∆T stability gap and the horizon
+wall—with their diagnosed mechanism (Sec. 9).
+
+Notation.     Table 1 collects recurring symbols.
+
+                                          Table 1: Key notation.
+        symbol         meaning
+        ω, ψ           vorticity and streamfunction, ψ = ∆−1 ω
+        L              stiff linear operator ν∆ − μ − β∂x ∆−1 (Fourier-diagonal)
+        N (ω)          nonlinear term −J (ψ, ω) + F , F time-independent
+        J (a, b)       advective Jacobian ∂x a ∂y b − ∂y a ∂x b
+        B(a, b)        symmetric bilinear form with B(ω, ω) = −J (∆−1 ω, ω)
+        Q(k) , Q̇      k-th total time derivative of Q along the trajectory
+        ∆T, hf , K     coarse step, fine step, ratio K = ∆T /hf ; h a generic step
+        S              time-stencil depth (number of stored levels; S = 7 in production)
+        τ              per-step local truncation error; Rp , Dp its order-p operator and denominator
+        ∆T ⋆ , τλ      convergence radius of the truncation series; Taylor microscale of N
+        σ(κ)           per-shell decorrelation rate kω̇κ k / kωκ k; σ̂ its 2-mark estimate
+        zL , z N , z   per-mode eigenvalues hλL , hλN , z = zL + zN
+        g(z)           amplification factor; R(z) the RK4 stability polynomial
+        fNN            learned (expensive) part of the closure
+
+
+
+Outline. Section 2 states the governing equations and the exact derivative recursions every later
+formula is built from. Section 3 defines the three schemes. Section 4 analyzes them: error (4.1–
+4.2), cost (4.3), and stability (4.4). Section 5 assembles the step-size resolution closure and its two
+possible targets. Section 6 presents the learned estimator: architecture (6.1), exact error analysis
+and Wiener conditioning (6.2–6.3), and the loss including the von Neumann penalty (6.4). Section 7
+analyzes the stability of the closed scheme. Section 8 documents the ensemble training pipeline.
+Section 9 reports a priori and a posteriori results, cost, and failure modes; Section 10 concludes.
+
+2. Governing equations.
+
+2.1. The QG vorticity equation. We consider the two-dimensional quasi-geostrophic vorticity
+equation on a doubly-periodic domain,
+                 ∂t ω = L ω + N (ω),      N (ω) = −J (ψ, ω) + F,      ψ = ∆−1 ω,     Ḟ = 0,           (1)
+with L = ν∆ − μ − β∂x ∆−1 collecting viscosity, linear drag, and the β-plane term, Fourier symbol
+                                 L̂(k) = −νκ2 − μ + iβkx /κ2 ,      κ = |k|,                           (2)
+and J (a, b) = ∂x a ∂y b − ∂y a ∂x b. Spatial discretization is pseudo-spectral with 2/3 dealiasing of
+the quadratic products [3, 5]; the physical setting follows Vallis [16]. For the one-step analysis it is
+convenient to write (1) as an autonomous ODE,
+                                                                                           
+           ω̇ = G(ω) = Lω + B(ω, ω) + F,          B(a, b) = − 21 J (∆−1 a, b) + J (∆−1 b, a) ,      (3)
+with B symmetric bilinear and B(ω, ω) = −J (∆−1 ω, ω), so N = B(ω, ω) + F .
+
+                                                     3
+\end{Verbatim}
+\newpage
+% ---- Original PDF page 4 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+2.2. Exact derivative recursions. Repeated differentiation of (1) along the trajectory gives the
+mutually recursive relations used throughout:
+
+                            ω (k) = L ω (k−1) + N (k−1) ,              ψ (k) = ∆−1 ω (k) ,                           (4)
+                                          m  
+                                          X  m                        
+                           N   (m)
+                                     =−              J ψ (m−j) , ω (j) ,          m ≥ 1,                             (5)
+                                                 j
+                                          j=0
+
+where the static forcing drops out of every N (m) , m ≥ 1 (bilinearity of J and the Leibniz rule).
+Unrolled,
+                               X
+                               k−1
+                ω (k) = Lk ω +     Lk−1−j N (j) ,   e.g. Ṅ = −J (ψ̇, ω) − J (ψ, ω̇).         (6)
+                                 j=0
+
+Each additional time derivative of N costs another layer of nested Jacobians; this nested-Jacobian
+cost is what the closure will learn to avoid. Finally, since B is bilinear, the Fréchet expansion of G
+terminates exactly:
+
+       G(ω + p) = f + Jp + B(p, p),              f ≡ G(ω),           J ≡ G′ (ω) = L + 2B(ω, · ),         G′′′ ≡ 0.   (7)
+
+3. Time-integration schemes.
+
+3.1. AB2–CN2. Crank–Nicolson treats the stiff linear term implicitly and Adams–Bashforth-2
+the nonlinearity explicitly [1, 7]:
+                                                                            1 + h2 L               h
+              ω n+1 = r(h) ω n + s(h)         2N − 2N
+                                              3 n  1 n−1
+                                                                 ,       r=              ,   s=            .         (8)
+                                                                              1 − h2 L            1 − h2 L
+
+All linear operators are diagonal in Fourier space, so the implicit solve is an elementwise division;
+the only nonlinearity is the Jacobian, evaluated pseudo-spectrally at five FFTs per call with 2/3
+dealiasing. The scheme is second-order accurate in time.
+
+3.2. AB4–CN2. The four-level variant replaces the AB2 bracket:
+
+                                                 55N n − 59N n−1 + 37N n−2 − 9N n−3
+                    ω n+1 = r(h) ω n + s(h)                                         ,                                (9)
+                                                                 24
+with the same r, s. Because the CN pair limits the overall order, AB4–CN2 is still second order;
+what changes is the composition of the truncation operators (Sec. 4.1.3) and the explicit stability
+region (Sec. 4.4).
+
+3.3. RK4. The classical fourth-order Runge–Kutta scheme, fully explicit on G:
+
+k1 = G(ω n ), k2 = G(ω n + h2 k1 ), k3 = G(ω n + h2 k2 ), k4 = G(ω n +hk3 ),
+                                                                           ω n+1 = ω n + h6 (k1 +2k2 +2k3 +k4 ).
+                                                                                                  (10)
+RK4 at a fine step hf serves two roles: the training-data generator (its trajectory is the exact flow
+to ∼ 10−23 at hf = 10−3 and below) and one of the two possible closure targets.
+
+4. Analysis of the schemes.
+
+4.1. Error analysis.
+
+                                                         4
+\end{Verbatim}
+\newpage
+% ---- Original PDF page 5 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+4.1.1. Exact one-step map. Expanding the exact flow in total derivatives (equivalently, the Duhamel
+integral in φ-functions) and substituting (6),
+                                               2                       3
+         ω(tn + h) = ω + h(Lω + N ) + h2 (L2 ω + LN + Ṅ ) + h6 (L3 ω + L2 N + LṄ + N̈ )
+                         4                                ...
+                     + h24 (L4 ω + L3 N + L2 Ṅ + LN̈ + N )
+                        h5
+                                                              ...
+                     + 120  (L5 ω + L4 N + L3 Ṅ + L2 N̈ + L N + N (4) ) + O(h6 ).                       (11)
+
+4.1.2. RK4. Because the Fréchet expansion (7) terminates, every RK4 stage can be expanded
+exactly in the elementary differentials {J k f, B(·, ·)}; matching against the exact derivatives
+
+                ω (3) = J 2 f + 2B(f, f ),     ω (4) = J 3 f + 2JB(f, f ) + 6B(f, Jf ),   ...            (12)
+
+shows agreement through h4 and yields the first defect at h5 [4, 10].
+Proposition 1 (LTE of RK4). For (3),
+         h                                                                                                i
+τRK4 = h5 120
+           1
+              J 4 f − 240
+                       1
+                          J 2 B(f, f )+ 120
+                                         1               1
+                                            JB(f, Jf )− 60 B(f, J 2 f )+ 120
+                                                                          1                   1
+                                                                             B(f, B(f, f ))− 80 B(Jf, Jf ) +O(h6 ) ≡ h5 T5 +O
+                                                                                                          (13)
+The J 4 f coefficient is 1/120: no stage composition builds the depth-four chain, so RK4 misses the
+deepest elementary differential entirely. The full stage-by-stage derivation is in Appendix A.
+                                                                                                     2
+4.1.3. The IMEX pair. Taylor-expanding the AB brackets ( 23 N n − 21 N n−1 = N + h2 Ṅ − h4 N̈ +
+h3
+   ...
+12 N − . . . ), the geometric expansions of r, s, and subtracting from (11):
+
+Proposition 2 (LTE of AB2–CN2).
+                                      h3 (2) h4 (2) h5 (2)    h6 (2)
+                           τAB2 = −      R3 − R4 −      R5 −     R + O(h7 ),                             (14)
+                                      12     24     240      1440 6
+
+               (2)
+             R3 = L3 ω + L2 N + LṄ − 5N̈ ,                                                              (15)
+              (2)                                 ...
+             R4 = 2L4 ω + 2L3 N + 2L2 Ṅ − 4LN̈ + N ,                                                    (16)
+              (2)                                          ...
+             R5 = 13L5 ω + 13L4 N + 13L3 Ṅ − 17L2 N̈ + 8L N − 7N (4) ,                                  (17)
+              (2)                                              ...
+             R6 = 43L6 ω + 43L5 N + 43L4 Ṅ − 47L3 N̈ + 28L2 N − 17LN (4) + 4N (5) .                     (18)
+
+The orders h0 , h1 , h2 cancel identically (second-order accuracy).
+Proposition 3 (LTE of AB4–CN2).
+                                           h3 (4) h4 (4) h5 (4)
+                                τAB4 = −      R3 − R4 −     R + O(h6 ),                                  (19)
+                                           12     24     720 5
+                     (4)                              (4)
+                R3 = L3 ω + L2 N + LṄ ,       R4 = 2L4 ω + 2L3 N + 2L2 Ṅ + LN̈ ,                       (20)
+                       (4)                                          ...
+                      R5 = 39L5 ω + 39L4 N + 39L3 Ṅ + 24L2 N̈ + 9L N − 251 N (4) .                      (21)
+                                              (2)    (4)
+Remark 1 (Structural blind spots). R3 − R3 = −5N̈ : the AB2 stencil is structurally blind to
+N̈ , and the weight −5 makes N̈ the dominant, irreducible part of the AB2–CN2 closure (quantified
+in Sec. 4.2). AB4–CN2 zeroes the N̈ slot at orders 3–4 but pays at h5 with the enormous −251 N (4)
+coefficient—the deeper explicit stencil defers, rather than removes, the nonlinear-derivative burden.
+Both schemes remain second order: the leading L-monomials are set by the CN pair.
+
+                                                       5
+\end{Verbatim}
+\newpage
+% ---- Original PDF page 6 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+Remark 2 (Padé consistency check). The Lp ω coefficients of AB2–CN2, {− 12    1
+                                                                              , − 12
+                                                                                   1
+                                                                                     , − 240
+                                                                                          13
+                                                                                             , − 1440
+                                                                                                  43
+                                                                                                      },
+                                                                         hL
+are exactly the error coefficients of the (1, 1)-Padé approximant r(h) to e (pure Crank–Nicolson
+truncation). All coefficients in Props. 2–3 were verified symbolically.
+
+Remark 3 (K-fine reference). Targeting K fine steps of the same scheme at hf = ∆T /K rather
+than the exact flow multiplies the order-p term by (1 − 1/K p−2 )·(scheme factors); for the leading
+term the factor is (1 − 1/K 2 ), and for K ≳ 100 all such factors are ≈ 1. Targeting fine RK4
+subtracts τRK4 , which first differs from the exact flow at O(h5f ) = O(∆T 5 /K 5 )—negligible. The
+exact-flow operators are therefore what one implements in all cases; the choice of target matters
+only through the stability margin (Sec. 5).
+
+4.1.4. Numerical verification. For a developed-flow snapshot ω n we form the exact history and fu-
+ture by fine RK4, take one AB2–CN2 step of size h, and measure the empirical defect and the resid-
+uals after subtracting the analytical prediction kept through order P . Keeping R3 , . . . , RP leaves a
+residual O(hP +1 ); the measured log–log slopes are 4, 5, 6 for P = 3, 4, 5, confirming R3 , R4 , R5 (R6 ’s
+slope-7 line sits at the float64 roundoff floor and is confirmed symbolically instead). Chain-rule
+derivatives (5) are validated against RK4 finite differences to ≤ 0.7% (≤ 0.6% for N (5) ).
+
+
+
+
+           Figure placeholder: vs-exact-flow convergence. kτemp k (slope 3) and residuals
+              after subtracting R3 , R3 +R4 , R3 +R4 +R5 (slopes 4,5,6) vs h. Source:
+                            analysis/validate_ab2cn2_vs_truth.py.
+
+
+
+
+4.2. Magnitudes, the convergence radius, and error propagation. The truncation opera-
+tors are only useful if their magnitudes are known on real turbulence. Three questions decide the
+design: how fast do the N (m) grow (convergence radius); how deep may the time stencil reach
+(inner wall); and how do estimation errors propagate through the assembled closure (amplifica-
+tion). All measurements below: float64, 2/3-dealiased Jacobians matching the solver right-hand
+side, 5122 forced-turbulence members at marks hf = 5 × 10−3 ; truth is the analytic spectral chain
+rule (5); errors are relative L2 in the resolved band. Members: FRC-Re25k (ν = 4.0 × 10−5 , β = 1),
+FRC-combo (ν = 4.0 × 10−5 , β = 0.5), FRC-kf4 (ν = 1.02 × 10−4 , β = 1).
+4.2.1. Outer
+         P wall: finite convergence radius. The defect of one AB2–CN2 step is a power series
+δ(∆T ) = p≥3 cp ∆T p , cp = Rp /Dp , Dp = {12, 24, 240, 1440}. By Cauchy–Hadamard, 1/∆T ⋆ =
+lim supp kcp k1/p ; the successive-ratio test only brackets ∆T ⋆ (the cp are not geometric), so the
+headline number is the root-test median over p = 3, . . . , 6 (32 anchors per member).
+
+       member         ν        β      N (m+1) / N (m) , m = 0, . . . , 4   ∆T ⋆ (root)   ratio bracket
+                          −5
+       Re25k     4.0 × 10      1.0   34, 58, 72, 84, 93                      0.066       [0.017, 0.136]
+       combo     4.0 × 10−5    0.5   15, 27, 37, 45, 51                      0.139       [0.033, 0.270]
+       kf4       1.0 × 10−4    1.0   10, 19, 28, 33, 37                      0.199       [0.043, 0.366]
+
+
+
+
+                                                     6
+\end{Verbatim}
+\newpage
+% ---- Original PDF page 7 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+Proposition 4 (Finite radius). ∆T ⋆ is finite and set by the growth of the N -derivatives. For
+∆T > ∆T ⋆ no finite-order analytic closure converges: past ∆T ⋆ , adding correction orders makes
+the error worse, regardless of how many orders are carried.
+
+This overturns the naive expectation that higher-order corrections extend the usable step. Note
+also that the per-order growth ratios increase with m (34 → 93 for Re25k): higher derivatives grow
+faster than any single rate—derived next.
+4.2.2. The Taylor microscale of the nonlinear term. View N (t) as a stationary process with the
+domain inner product and define ρ(τ ) = EhN (t), N (t + τ )i/E kN k2 . Under stationarity, EhN, Ṅ i =
+                                                                                  2
+           2
+2 dt E kN k = 0, and differentiating once more gives EhN, N̈ i = −E
+1 d
+                                                                            Ṅ        . Hence the exact identity
+(no Gaussianity, no spectral assumption):
+
+                                                                       2
+                               τ2                             E Ṅ                       1
+                    ρ(τ ) = 1 − σ 2 + O(τ 4 ),         σ2 =            2,        τλ =      .               (22)
+                               2                              E kN k                     σ
+
+τλ is the Taylor microscale of the N -process; the same identity holds for ω and per wavenumber
+shell, with σ(κ) = kω̇κ k / kωκ k. Per-order growth ladders as the moment ratio
+                                           R
+                                              σ(κ)2(m+1) EN (κ) dκ
+                                     σm = R
+                                       2
+                                                                   ,                        (23)
+                                               σ(κ)2m EN (κ) dκ
+
+which increases with m because σ(κ) increases with κ: higher derivatives progressively sample the
+fast small-scale tail—exactly the escalation (34 → 93) in the table above. Verification: the identity
+holds to 15% on N and 3% on ω (curvature fit vs 1/σ; Re25k τλ σN = 1.15, kf4 1.09; on ω, 0.98
+and 0.97). Two further measured facts: the state decorrelates an order of magnitude more slowly
+than its nonlinear term (σN /σω ≈ 7.5–11; over 27 lags ρω ≥ 0.96 while ρN falls to 0.2–0.6), so a
+time stencil on the (ω, ψ)-history sees smooth data; and ρN plateaus at a positive value (≈ 0.2, the
+static forcing plus time-mean of −J ), which biases integral decorrelation times but not τλ .
+
+
+
+
+         Figure placeholder: measured ρN (τ ), ρω (τ ) vs the identity parabolas 1 − τ 2 σ 2 /2
+                              (not fitted), Re25k and kf4. Source:
+                   Theoretical_guarantees/check_decorrelation_time.py
+                               (img/rho_vs_identity_*.png).
+
+
+
+
+Proposition 5 (Universal radius law). ∆T ⋆ = C τλ with C = 2.08 ± 0.15, constant to 7% across
+2.5× in Re and 2× in β (Re25k 2.27, combo 2.05, kf4 1.92): the analytic closure’s convergence
+horizon is two Taylor microscales of the nonlinear term. All (Re, β)-dependence of ∆T ⋆ enters
+through the single measurable rate σ.
+
+4.2.3. Inner wall: the finite-lag stencil. The closure estimates N -derivatives from S stored marks
+at lags {0, ∆T, . . . , (S − 1)∆T }. Depth raises the approximation order (O(∆T S−m ) for the m-th
+derivative) but reaches further back in time; old marks are stale once the span approaches ∆T ⋆ .
+
+                                                   7
+\end{Verbatim}
+\newpage
+% ---- Original PDF page 8 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+Measured (N̈ , depth 4 vs depth 7, exact spectral spatial operators): at ∆T = 5 × 10−3 depth 7
+helps 7.6–25× in every member; at ∆T = 1.5 × 10−2 it still helps 3–6× for combo/kf4 but hurts
+for Re25k (0.99 → 1.51)—precisely where its span 6∆T = 0.09 exceeds Re25k’s ∆T ⋆ = 0.066.
+Proposition 6 (Inner wall). Deeper stencils lower the N -derivative error while the stencil span
+stays well inside ∆T ⋆ , and raise it once the span exceeds ∆T ⋆ ; the usable step of a depth-S closure
+scales as ∆Tinner ∼ ∆T ⋆ /(S − 1). Measured at Re25k, S = 7: predicted 0.011, observed 0.013.
+Consequence for pooled training: a (Re, β)-blind pool caps at the worst member’s inner wall; at
+S = 7, ∆T = 1.5 × 10−2 the Re25k samples are unlearnable by any network (the field decorrelates
+inside the stencil) and are retained in the pool by design as past-wall stressors.
+4.2.4. Benign error propagation. An error ε on the learned field enters the closure as (∆T p /Dp )|ap,k | ε Lp−k fieldk
+                                           amplified. Measured at the operating step ∆T = 5×10−3
+terms carrying powers of L are potentially ...
+(per-order errors 2.6/3.0/4.0% on Ṅ /N̈ / N ): the un-amplified L0 N̈ term equals kδk to three fig-
+ures in every member, and the total error is 3.00%—exactly the N̈ error. At the envelope edge
+∆T = 1.5 ×       −2     per-term errors, pure amplification geometry, Re25k): L0 N̈ carries 100.2%
+           ... 10 (unit
+of kδk, L N 2.6%, L Ṅ 0.5%, L2 Ṅ 0.00%.
+         0           1
+
+Proposition 7 (Benign amplification). Across the entire trained envelope ∆T ≤ 1.5 × 10−2 the
+closure error equals the relative N̈ error, one-to-one and un-amplified. Any improvement in N̈
+accuracy converts to closure-error reduction 1:1, and N̈ accuracy is the single quantity that sets the
+rollout ceiling.
+Two design consequences: the equal-weight per-order relative-L2 loss is the right objective across
+the envelope (no amplification weighting needed), and N̈ validation error is the number to watch.
+Corollary 1 (Operating envelope). For a depth-S stencil, operate with (S − 1)∆T comfortably
+below ∆T ⋆ (Re, β) = 2τλ . Then the series converges (Prop. 4), the stencil resolves the derivatives
+(Prop. 6), and derivative accuracy converts 1:1 (Prop. 7). At S = 7, Re25k caps the pooled envelope
+near ∆T ≈ 10−2 ; combo and kf4 remain inside through 1.5 × 10−2 .
+
+4.3. Cost analysis. Per-step cost is measured in Jacobian evaluations (five FFTs each: two inverse
+transforms of ∇ψ, two of ∇ω, one forward of the dealiased product; all other operations are Fourier-
+diagonal multiplies).
+• AB2–CN2 / AB4–CN2: one new Jacobian per step; the AB history reuses cached N n−j .
+   Implicit solve: elementwise division. Cost ≈ 5 FFTs/step.
+• RK4: four Jacobian evaluations per step (≈ 20 FFTs/step), and no reuse across steps.
+• Closed AB2–CN2 (Sec. 5): the bare step, the analytical R3 scaffolding (Fourier-diagonal
+   multiplies on the already available ω̂, N̂ ; the L3 ω piece folds into the implicit solve at zero cost),
+   and one network forward. Measured in the production stepper: bare 5 FFTs/step → closed 8
+   FFTs/step, plus the network (≈ 170 multiply–accumulates per grid point—negligible next to
+   an FFT). The conditioned variant adds zero further FFTs at rollout: its spectral context reuses
+   the stepper’s own spectral states.
+To integrate to horizon T at matched accuracy, the bare scheme needs T /hf steps at the fine step
+and the closed scheme T /∆T steps at the coarse step: the ideal speedup is
+                   bare FFTs/step
+speedup ≈ K ×                      = K × 58             (vs fine AB2–CN2),        K × 20
+                                                                                      8    (vs fine RK4),
+                  closed FFTs/step
+                                                                                               (24)
+with K = ∆T /hf set at training time. The honest accounting of what fraction of (24) is realized—
+given the measured accuracy at each ∆T —is in Sec. 9.4.
+
+                                                    8
+\end{Verbatim}
+\newpage
+% ---- Original PDF page 9 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+4.4. Stability analysis.
+4.4.1. Explicit regions. For the explicit families the absolute-stability region is {z : |g(z)| ≤ 1}
+                                                                                 2     3   z4
+with g the max-modulus root of ρ(ζ) − zσ(ζ) (AB) or g = R(z) = 1 + z + z2 + z6 + 24           (RK4).
+For advection the eigenvalues are near-imaginary, so the binding number is the imaginary-axis
+stability boundary (ISB): AB2’s imaginary-axis   √ interval is empty (marginal at the origin only),
+AB3’s is ≈ 0.724, AB4’s ≈ 0.43, and RK4’s is 2 2 ≈ 2.83 [4, 10]. RK4’s region is vastly larger per
+step—but costs four Jacobians (Sec. 4.3); AB2 survives in the IMEX pair because the CN-treated
+viscosity pulls the advective eigenvalues off the axis.
+
+
+
+
+          Figure placeholder: absolute-stability regions of AB1–AB4 and RK4 with axis
+                   intercepts. Source: analysis/ab_stability_regions.py.
+
+
+
+
+4.4.2. IMEX amplification factors. On a Fourier mode, split z = zL + zN with zL = hL̂(k) treated
+by CN and zN the explicit advection symbol; the frozen-coefficient (von Neumann) worst case over
+background velocity is zN = ih U |k|. With
+                                      1 + zL /2                 zN
+                                 r=             ,       ρ=             ,                       (25)
+                                      1 − zL /2              1 − zL /2
+
+AB2–CN2 is the two-step recurrence ω n+1 = (r + 32 ρ) ω n − 21 ρ ω n−1 with companion amplification
+                                
+                  g 2 − r + 32 ρ g + 21 ρ = 0,   gAB2 = max-modulus root,                     (26)
+
+AB4–CN2 the analogous quartic companion, and gRK4 = R(zL + zN ). Absolute stability of the
+discrete mode is |g| ≤ 1; the maximum stable ∆T per regime follows by bisection over all dealiased
+modes, using each regime’s measured characteristic velocity.
+
+
+
+           Figure placeholder: per-regime stability summary—|g| = 1 contours at the
+           median zL , the zL (k) cloud, worst-mode |g| vs ∆T , and max stable ∆T per
+                    (regime, scheme) over the 14 ensemble regimes. Source:
+                  Theoretical_guarantees/imex_stability_regions.py,
+                                   analysis/vn_stability.py.
+
+
+
+
+4.4.3. Truncation symbols. For the closure analysis we need the LTE in amplification space. Re-
+placing Lj ω → λjL and N (m) → λN (λL + λN )m per mode, the order-p operator becomes the
+polynomial
+                                                 X
+                                                 p
+                      Pp (zL , zN ) = ap,0 zLp +   ap,k zLp−k zN (zL + zN )k−1 ,           (27)
+                                                k=1
+
+
+                                                    9
+\end{Verbatim}
+\newpage
+% ---- Original PDF page 10 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+        (2)
+with ap the AB2–CN2 coefficient rows of Prop. 2, so that
+                                                        X Pp                                          z5
+                 τ̂AB2 = ez − gAB2 = −                               ,       τ̂RK4 = ez − R(z) =         + O(z 6 ).          (28)
+                                                        p
+                                                                Dp                                   120
+
+
+5. The step-size resolution closure.
+                                         n+1
+5.1. Definition and targets. Since ωAB2CN2        + τ = ω(tn + h) exactly, the correction to add to
+each bare step is δ = τ , with two natural targets:
+                           3    (2)       4       (2)       5       (2)
+     δ1 = τAB2 = − h12 R3 − h24 R4 − 240
+                                     h
+                                         R5 − . . .                                    (target = exact flow / K → ∞),         (29)
+     δ2 = τAB2 − τRK4 = δ1 − h T5             5
+                                                                                       (target = fine-step RK4),              (30)
+                           P
+with symbols δ̂1 = −             p Pp /Dp and δ̂2 = δ̂1 − z /120.
+                                                           5                           Removing the truncation through O(h6 )
+leaves O(h7 ):
+                                                            ∆T 3      ∆T 4      ∆T 5      ∆T 6
+                        n+1
+                       ωclosed    n+1
+                               = ωAB2CN2 −                       R3 −      R4 −      R5 −      R6 .                          (31)
+                                                             12        24       240       1440
+
+5.2. Why target RK4: the stability margin. Closing exactly gives g = gAB2 + δ̂1 = ez + O(z 6 )
+or g = gAB2 + δ̂2 = R(z) + O(z 6 ). On the advection axis z = iy,
+
+                                                                                  y6
+              |eiy | ≡ 1       (margin 0),              |R(iy)| = 1 −                + O(y 8 ) < 1    (margin > 0) :         (32)
+                                                                                 144
+RK4 agrees with ez through z 4 and the z 5 /120 difference is purely imaginary on the axis (a phase
+error), so the modulus deficit first appears at y 6 —RK4 is faintly dissipative. The exact flow,
+being neutral, buys no buffer: any perturbation of an exact-flow-matching closure (analytic tail or
+network error) can be destabilizing. This asymmetry, made precise in Sec. 7, is the deployment
+rationale for δ2 /fine-RK4 as the reference: the goal of the whole construction is AB2–CN2 cost at
+coarse ∆T with the accuracy and stability of fine-hf RK4.
+
+5.3. Analytical/learned split. Each operator separates into a part that is free at inference and
+a part that would require nested Jacobians:
+
+ Rp =         Rpanal           +          RpNN                  ,         e.g.   R3anal = L3 ω + L2 N,     R3NN = LṄ − 5N̈ . (33)
+              | {z }                      |{z}
+        powers of L on ω, N        time derivatives of N
+
+The analytical parts are Fourier-diagonal
+                                ...              (or reuse the Jacobian already computed for N ). The
+learned parts contain Ṅ , N̈ , N , . . . —each another layer of nested Jacobians...(5)—and are the only
+expensive pieces. The network therefore predicts the local fields [Ṅ , N̈ , N ]; every Lk -weighting
+(including the nonlocal β term) is applied analytically at assembly, never learned. By Prop. 7 the
+N̈ channel dominates the assembled correction 1:1 across the envelope.
+
+5.4. Inference decomposition. At inference the linear L3 ω piece is folded into the implicit solve
+(it shifts the CN denominator), the L2 N piece is applied explicitly on the cached Jacobian, and
+the network supplies the rest:
+                                 2                     1 2 n                
+     n+1
+    ωclosed = IMEX r, s ; L + ∆T    L 3
+                                          + ∆T 3
+                                                 1 −  1
+                                                       2   L N  + ∆T 3
+                                                                       1 −  1
+                                                                             2   fNN (history), (34)
+              |          {z    12
+                                        } |          {z 12
+                                                     K
+                                                               } |         K
+                                                                               {z            }
+                       implicit, folded                             explicit, analytical             explicit, learned
+
+
+                                                                          10
+\end{Verbatim}
+\newpage
+% ---- Original PDF page 11 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+                                                                                           ...
+with fNN ≈ 12 1
+                [LṄ − 5N̈ ] the ∆T -independent learning target (plus the R4 channel via N where
+warranted). The network is applied online: it is evaluated on the closure trajectory’s own evolving
+history and its correction feeds the next step, so errors compound autoregressively and the network
+never sees truth at deployment.
+
+6. Method: the learned estimator.
+
+6.1. Network architecture. The estimator (CheapDerivClosureNet) maps the stored step his-
+tory to the local derivative fields,
+                                                                             ...
+                X = ω0 , . . . , ω−(S−1) , ψ0 , . . . , ψ−(S−1) 7−→ [Ṅ , N̈ , N ], S = 7, (35)
+in four stages that mirror the operator being estimated:
+ 1. Time finite differences (frozen, exact). Backward-FD rows Wki from the Vandermonde
+             P           p                   (k)  (k)
+    system i Wki (−i)                                                                                 k
+                       p! = δkp produce ωFD , ψFD , k = 0, . . . , 3, via the per-sample path Wki /∆T .
+    Nothing is learned here: ... rescaling the unit stencil per sample is exact. Accuracy at S = 7: Ṅ
+    O(∆T 6 ), N̈ O(∆T 5 ), N O(∆T 4 ).
+ 2. Order clip. Only time-orders 0, . . . , 3 are emitted; the unused rows (scaled 1/∆T 4...6 ≈ 1010 –
+    1013 ) are dropped before any parameterized layer. All S snapshots still feed each emitted row
+    (the order-3 row of a 7-node stencil is 4th-order accurate).
+ 3. Learnable spatial gradients. Depthwise width-15 stencils (14th-order central-difference ini-
+    tialization) apply ∂x , ∂y to the 8 differentiated fields, circular padding. The stencil parameter is
+    the dimensionless unit-spacing operator; the physical 1/dx, 1/dy scaling is applied per sample
+    at forward—exact by linearity, and the optimizer never sees the 1/dx amplification. One stencil
+    pair serves all grids.
+ 4. Jacobian features and physics-initialized mix. The (4)2 = 16 pointwise products J (ψ (i) ,ω (j) )
+    feed a 1×1 mix initialized to the exact chain-rule binomials of (5) (w[m−1, (m−j, j)] = − m     j ):
+    at initialization the network is the analytic estimator up to the two FD truncations.
+Totals: 3,700 parameters, of which the 49 time-FD weights are an inert frozen buffer (the trained
+capacity is the stencils and the mix); ≈ 170 multiply–accumulates per grid point; no FFTs inside
+the model—the pointwise product is the sole irreducible nonlinearity, and carrying ψ in the history
+makes even the β term local (β∂x ∆−1 ω = −βv). The architecture is exactly quadratic in the input
+field, matching the quadratic nonlinearity of (3).
+Remark 4 (Why the spatial stencils are learnable at all). Their job is double: approximate ∂x , ∂y
+and absorb the differentiated time-FD error. The second job is the Wiener mechanism analyzed
+next, and is why the width was set to 15 and why the stencils are conditioned in Sec. 6.3.
+
+6.2. Exact error analysis of the estimator. Two error operators separate cleanly. The time-FD
+estimate carries
+                                                                        1 X
+                                                                            S−1
+                (k)
+          εk ≡ ωFD − ω (k) = Ck ∆T S−k ω (S) + O(∆T S−k+1 ),       Ck =     Wki (−i)S ,         (36)
+                                                                        S!
+                                                                            i=0
+
+with ε0 = 0 and εψ          −1      −1 commutes with the stencil). The learned gradients carry
+                   k = ∆ εk (∆
+Dθ = ∂ +δθ with δθ the stencil gap. Propagating both through the bilinear Jacobian and discarding
+O(εδ, ε2 , δ 2 ),
+                                                 h                           i
+∆N (m) = T (m) +A(m) [δθ ],    T (m) = ∆T S−m Cm −J ∆−1 ω (S) , ω −J ψ, ω (S) +O(∆T S−m+1 ) :
+                                                                                             (37)
+
+                                                 11
+\end{Verbatim}
+\newpage
+% ---- Original PDF page 12 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+the leading time error at every order m is driven by the same field ω (S) , entering through exact
+Jacobians, while A(m) [δθ ] is linear in the stencil gap. Training therefore solves a Wiener problem
+[18]: the least-squares-optimal stencil correction δ ⋆ pre-cancels the time error it can reach.
+6.2.1. The pooled floor and its three parts. For a pool of tiers j = (member, ∆T ) with weights wj ,
+orthogonal decomposition of the quadratic loss about the per-tier optima gives
+                 X                         X                     2
+                                                                     X                      2
+      Luncond
+       min    =      w j L j (δ ⋆⋆
+                                j  ) + min   w j E j A[δ ⋆
+                                                         j − δ̄]   +   wj Ej A[δj⋆⋆ − δj⋆ ] , (38)
+                                                 δ̄
+                      j                               j                                  j
+                  |        {z        }       |                {z                 }   |                  {z             }
+                 (i) cascade remainder           (ii) pooled-variance mismatch           (iii) width-W shape deficit
+
+where δj⋆ is the best width-W filter for tier j and δj⋆⋆ the best shell-diagonal transfer. Measured at
+S = 7, m = 2, W = 15 (valid band): diagonal-absorbable fraction 0.21–0.29; full-slot absorbable
+0.36–0.44; (ii) = 0.72; (iii) = 0.31. A single unconditioned stencil can only fit the pooled mean;
+its net absorption is ≈ 0.03—the pooled variance (ii) dominates everything. Deleting (ii) is what
+conditioning is for.
+6.2.2. Single-mode analysis of the driver. Under a sweeping split N̂ = −i(k · U)ω̂ + fˆ (A1), frozen
+coefficients over the stencil span (A2), advective band    2  λ2 (A3), and subdominant triads in
+                                       (n)    n
+                                                    P Ωj ˆ(n−1−j)
+the shell balance (A4), induction on ω̂ = a ω̂ + j a f            , a = iΩ + λ, gives the per-shell
+transfer between derivative orders:
+
+        ωd                     d
+         (S) = σ (κ)S−k eiφ(κ) ω
+            κ   ω
+                                 (k) + r̂,
+                                    κ                       φ = (S − k) π2 sign(Ω),                   r̂ = r̂1 + r̂2 + r̂3 ,   (39)
+
+with the shell rate σω (κ)2 = hΩ2 ishell = 12 κ2 U 2 + 12 β 2 /κ2 − U β cos αU . The remainder taxonomy
+bounds what any conditioning can recover: r1 (cascade input, shell-incoherent with ω (k) ; irre-
+ducible—measured incoherent fraction 0.71–0.79 on healthy tiers); r2 (coefficient drift within the
+stencil span, size (S−k)(S+k−1)
+                         2      τκ /TU with τκ = 1/σω (κ) the per-shell state timescale and TU the
+large-eddy turnover, conditionable in time); r3 (intra-shell anisotropy: for odd S − k the sweeping
+transfer ∝ cosS−k θ shell-averages to zero, so an isotropic correction captures none of it and only
+cos 3θ, cos 5θ harmonics are reachable by angular features).
+
+6.3. Physics conditioning. Combining (36) and (39), the per-shell regression coefficient of the
+time error on the resolved field factorizes:
+                           (k)
+                          rj (κ) = ∆TjS−k × Ck σω (κ; Re, β, μ)S−k eiφ(κ) +h.o.t.                                              (40)
+                                   | {z } |              {z             }
+                                           exact                    g (k) (κ)
+
+
+Two structural facts follow. First, the optimal stencil correction varies as (∆T σ(κ))S−k —a factor
+35 ≈ 243 across our ∆T -sweep at k = 2—which derives the physics conditioning: no single un-
+conditioned stencil can track it. Second, (Re, β, μ) enter only through σω (κ), so the regime never
+needs to be supplied as scalars: it is measurable from the model’s own input stack. The two-mark
+estimator with arcsin de-biasing (a single mode rotating at Ω has FD response ∆T  2
+                                                                                    | sin(Ω∆T /2)|),
+
+                                            2                                               
+                                                                   ∆T ∥(ω̂0 −ω̂−1 )κ ∥
+                                 σ̂(κ) =      arcsin min            2  ∆T ∥(ω̂0 )κ ∥ , 1          ,                            (41)
+                                           ∆T
+recovers σ(κ) with median relative error 0.000–0.001: data-conditioning is lossless. The measured
+∆T -collapse of rj /∆T S−k across the sweep is 1.6× (vs 243× raw), confirming (40).
+
+
+
+                                                              12
+\end{Verbatim}
+\newpage
+% ---- Original PDF page 13 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+Conditioned architecture (production: local taps). The deliverable keeps the zero-FFT
+locality of the estimator and conditions the stencils by tap modulation:
+                                       ∆T S−k                         
+                     (k)      (k)
+                 tapsd = tapsd,base +             ∆tapsθ,k,d σ̂-features , k ≥ 1, (42)
+                                       ∆Tref
+
+with ∆Tref = 1.5 × 10−2 anchoring the exact scaling law at O(1) (raw ∆T S−k ≈ 10−11 –10−16
+renders the path numerically dead: raw ∆T S−k ≲ 5 × 10−8 down to ∼ 10−14 across the sweep),
+amplitude exactly zero on the k = 0 channels (ε0 = 0: the undifferenced mark has no time error to
+absorb), and ∆tapsθ a small shared MLP (10 → 24 → 24 → 240, tanh, ≈ 6.9k parameters) read-
+ing [xi , log(1+xi )], xi = ∆T σ̂(κi ), at five fixed relative shells κi /κmax ∈ {0.15, 0.3, 0.5, 0.7, 0.85}.
+The output head is zero-initialized: at initialization the conditioned model is bit-identical to the
+                                                (k)
+unconditioned control. A spectral variant D̂d = ikd [1 + ∆T S−k gθA (x, κ̃)] + kd ∆T S−k gθB (x, κ̃) has
+zero shape deficit and serves as the ceiling instrument, but costs ≈ 24 FFTs per forward and is not
+deployed.
+                                                                                               p
+Predicted ceilings. The conditioned floor deletes term (ii) of (38); per-tier, floorcond
+                                                                                   j    = rawj irrj + cohj (def(F)
+Predictions: kf4@1.5 × 10−2 : 0.031 → 0.023; FRC-256@1.5 × 10−2 : 0.047 → 0.037; FRC-256@10−2 :
+0.0068 → 0.0055; pooled raw floor over 9 tiers 0.175 (vs the observed unconditioned plateau 0.19);
+conditioned-pooled excluding the past-wall tier ≈ 0.05. Section 9.1 confronts these with the trained
+result.
+
+6.4. Loss.
+                                                                                               ...
+Offline derivative loss. Per-sample, per-order relative L2 with equal weights over [Ṅ , N̈ , N ]
+(Prop. 7 makes equal weights correct), predictions 2/3-dealiased before the loss, and a norm floor
+max(ktc k , 0.1 × member-median ktc k) in the denominator to cap the leverage of near-zero-target
+samples without dropping them. Medians are logged alongside floored means: relative errors on
+near-quiescent samples otherwise poison the optimizer (Sec. 8).
+
+Rollout fine-tune. The offline objective does not see          the closed loop, so the estimator is fine-
+                                                     1 PM              closed , ω truth ) against fine-RK4
+tuned through the stepper: the supervised head is M       m=1 relL2 (ωm          m
+truth over M coarse steps (truncated backpropagation, window 4; M scheduled up to 21), followed
+by a truth-free tail. The model that produced every a posteriori result of Sec. 9 used, on that
+                                           (f )  (f −1) 
+tail, an annulus-enstrophy hinge relu log Zann /Zann      over the aliased band |k| > 32 kmax , weight
+10−3 (larger weights destabilize the supervised head—an objective-imbalance failure we observed
+directly).
+
+Upgraded tail (current training campaign; results pending). Two replacements for the
+hinge are in a running λ-sweep whose results had not landed at the time of writing and are not
+claimed in Sec. 9:
+ 1. Analytic free-tail supervision. On truth-free rolled steps the model heads are supervised against
+    the on-the-fly exact analytic targets (5) of the pre-step rolled state (weight 10−2 , capped): the
+    estimator must remain a consistent derivative estimator on its own trajectory, arbitrarily far
+    from the data horizon.                                                                             2
+ 2. Von Neumann certificate penalty (derived in Sec. 7): Lstab = λ meanκ relu |Geff (κ)| − (1 − ε) ,
+    ε = 0.02, restricted to the linearization’s validity shells |∆T σ̂(κ)| ≤ 21 ; λ ∈ {0.1, 1, 10} is the
+    only new hyperparameter.
+
+                                                    13
+\end{Verbatim}
+\newpage
+% ---- Original PDF page 14 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+7. Stability analysis of the learned closure.
+
+7.1. Amplification of the closed scheme. The correction enters the update additively, hence
+the amplification additively:
+
+                           gNN,i (z) = g⋆,i (z) + ε̂i (z),    ε̂i = ε̂an,i + ε̂NN,i ,             (43)
+
+with g⋆,1 = ez , g⋆,2 = R(z), ε̂an the deterministic leftover from cropping the closure at order p, and
+ε̂NN the stochastic fit residual.
+
+Proposition 8 (Finite-order closure: the base shows through). Assembling R3 , . . . , Rp cancels the
+base scheme’s truncation series term-by-term up to order p only:
+
+                           gNN,i = g⋆,i − τp+1
+                                           base p+1
+                                               z    + O(z p+2 ) + εrel O(h3 ) .                   (44)
+                                        |         {z         } | {z }
+                                                     ε̂an,i               ε̂NN,i
+
+
+The surviving tail is the base scheme’s own (τkAB2 6= τkAB4 ; e.g. R3 carries −5N̈ for AB2 and 0
+for AB4), never the target’s: above the assembled order the closure reverts to gbase , even when
+matching RK4.
+
+Corollary 2 (Empirical closure, K → ∞). The full-tail empirical correction δ = Φref − Φbase is a
+difference of maps, not a truncated series: ε̂an = 0 and gNN,i = g⋆,i + εrel O(h3 ), base-agnostic.
+
+7.2. Margin bound. By the triangle inequality, |gNN,i | ≤ 1 is guaranteed whenever εi ≤ mi (z) =
+1 − |g⋆,i (z)|, tight on the advection axis. There the two targets differ qualitatively (cf. (32)):
+m1 (iy) = 0—no perturbation of an exact-flow-matching closure can be certified stable—while
+
+                                                   y     6
+                                         m2 (iy) = 144 + O(y 8 ) :                                (45)
+
+matching RK4, the closed scheme is provably stable whenever −τp+1
+                                                               base (iy)p+1 +ε O(h3 ) ≤ y 6 /144.
+                                                                              rel
+Refining h helps the network term; the analytic-ceiling term is an h-independent comparison of
+y-coefficients set by the base scheme. This margin asymmetry is the quantitative form of the
+deployment rationale of Sec. 5.2.
+                                                            P
+7.3. Accumulated error. Over n = T /h steps, ke(T )k ≤ εi m<n |g|m , which for |g| ≤ 1 gives
+
+match exact: ke(T )k ≤ Cbase hp T +εrel O(h2 )T ;    match RK4: ke(T )k ≤ Ch4 T +Cbase hp T +εrel O(h2 )T,
+                                                                                                 (46)
+(drop Cbase hp T in the empirical case). The learned floor εrel O(h2 )T preserves second-order conver-
+gence, is linear in horizon and in network quality; the finite-order floor is smaller in h but frozen
+(reducible only by adding analytic orders) and base-dependent.
+
+7.4. A trainable certificate. The margin bound needs |gNN | per mode for the actual trained net-
+work. Linearizing the learned piece about a frozen advecting background (the Wiener linearization:
+Jacobians frozen to iσ advection, the stencil pair entering through its trigonometric-polynomial
+symbol ratio ρ(κ) = Ŵbase+mod (θ)/Ŵexact (θ) evaluated on the sample’s own σ̂ shells) yields the
+closed AB2–CN2 companion with effective symbols
+               2                                          2                       
+   I = L̂ + ∆T
+             12 L̂
+                   3
+                     (implicit, folded),  E = iσ̂ 1 + ∆T12 L̂
+                                                              2      1
+                                                                  + 12 L̂ T1 − 5 T2 (explicit), (47)
+
+
+                                                       14
+\end{Verbatim}
+\newpage
+% ---- Original PDF page 15 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+Tc the linearized transfer of the learned Ṅ , N̈ heads, and
+                                        
+                                 a+b c                                                                    1
+Geff (κ) = spectral radius of               ,      a = r 1+ ∆T I , b = 23 ∆T rE, c = − 21 ∆T rE, r =              .
+                                  1    0                    2
+                                                                                                        1 − ∆T
+                                                                                                             2 I
+                                                                                                     (48)
+Geff is differentiable in every trainable tensor (taps, modulation, mix), reproduces the analytic-arm
+stability exactly at zero modulation (ρ ≡ 1), and is evaluated only on shells with |∆T σ̂| ≤ 12 , outside
+which the frozen-coefficient model provably departs from the dynamics and the penalty would be
+noise. It serves as both diagnostic (a per-step contraction certificate is horizon-free, removing the
+fixed-horizon asterisk of rollout training structurally) and penalty (Lstab of Sec. 6.4). Caveats: it
+is linearized (the r2 , r3 remainders are neglected) and isotropic per shell. On the current stable
+reference model the certificate reads |Geff | valid-shell mean 0.9992, max 0.9997—marginal at large
+∆T , as it must be.
+
+8. Ensemble training.
+
+Data. Training data are deep 28-mark windows advanced by fine RK4 from developed snapshots
+of an ensemble of forced-turbulence members spanning the (Re, β)-range (5122 , FRC-256 at 2562 ;
+domains 4π, isotropic), sliced into S = 7 stencils at the sweep steps ∆T ∈ {5 × 10−3 , 10−2 , 1.5 ×
+10−2 }. The unconditioned control pool is 18 (member, ∆T ) roots (FRC-{b2, b25, kf4, Re25k,
+combo, 256}×3 steps); the conditioned run trained on an enlarged 41-root pool that adds further
+forced members (FRC-{b0, b05, b075, b1}) and decaying-turbulence members. The       ... hygiene control
+of Sec. 9.1 isolates that data difference on the 17 shared roots. Targets [Ṅ , N̈ , N ] are computed
+once per window by the exact spectral chain rule (5) (forcing rebuilt per member from its manifest;
+the targets themselves are forcing-free since m ≥ 1). The ∆T sweep deliberately includes near-wall
+and past-wall tiers (Re25k at 1.5 × 10−2 exceeds its ∆T ⋆ ).
+
+Pipeline safeguards (each one earned by a failure).
+• By-window splits. Whole windows go to one split; anchored slices within a window are near-
+  duplicates ∼ hf apart, so per-sample random splits leak and chronological splits shift covariates.
+• Quiescent-window filter. Early quasi-zonal spin-up flow has J (ψ, ω) ≈ 0 and derivative targets
+  104 –105 × smaller than developed flow; per-sample relative losses explode on them and the
+  optimizer’s cheapest move is shrinking all predictions toward zero. Windows are dropped when
+  the target norm falls below 10−2 × the member median or the stack roughness freezes. Spin-up
+  duration is β-dependent (9–33% of windows across members), so per-member start times are
+  set by a developed-flow criterion, and the filter is the safety net.
+• Multigrid handling. Batches are shape-homogeneous but the dx-rescale of the stencils is strictly
+  per-sample (equal shape does not imply equal dx); dealias masks are per-shape; anisotropic
+  members are refused.
+• Precision. All closure-pipeline compute is float64: the raw target is O(∆T 3 ) ≈ 10−9 , below
+  float32 machine epsilon.
+                   ...      (Disk storage of inputs is float32, upcast at load; this floors only the
+  deepest channel N , which carries 2.6% of the closure.)
+
+Optimization. Offline: AdamW, lr 5 × 10−5 , weight decay 10−4 , cosine schedule, 200 epochs,
+batch 4, float64, physics init, seed 0. Rollout fine-tune (reference run, whose epoch-33 checkpoint
+produced all a posteriori results): warm start from the offline conditioned model; strides 1, 2, 3
+(∆T = stride × 5 × 10−3 ); unroll schedule 4:6, 8:8, 12:8, 16:8, 21:10 with per-stride clamps 21/7/3;
+
+
+                                                   15
+\end{Verbatim}
+\newpage
+% ---- Original PDF page 16 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+truncated BPTT window 4; lr 5 × 10−5 ; grad-clip 1.0; batch 1 with member-pure accumulation; 40
+epochs.
+
+9. Results.
+
+9.1. A priori accuracy and the floors. Pooled test relative L2 per order (means; medians in
+parentheses where they differ materially):
+
+                                                                                                    ...
+ model                                                pooled        Ṅ              N̈              N
+ unconditioned control (deriv7_filtered_floor0.1)      0.269       0.058           0.186           0.563
+ conditioned (cond_local, best ep63)                   0.214   0.074 (0.054)   0.138 (0.093)   0.430 (0.178)
+ hygiene control (equal 17-root data, ep107)           0.250       0.059           0.178           0.511
+
+Three readings. (a) The unconditioned N̈ plateau 0.186 matches the predicted pooled raw floor
+0.175 of (38): the control is data-efficient but variance-limited, as derived. (b) Conditioning is real
+on equal data: the conditioned model beats the hygiene control on N̈ on 16/17 shared roots (e.g. kf4
+across the three ∆T : 0.058/0.065/0.057 vs 0.085/0.088/0.086), and the improvement concentrates
+at low κ (the ε(κ) profile is U-shaped, not a high-k cliff). (c) The predicted conditioned ceilings were
+not reached: kf4@ 1.5 × 10−2 plateaued at 0.065 vs the predicted 0.023, pooled 0.214 vs ≈ 0.05;
+the run was stopped at plateau (epoch 78 of 300). The prediction is open, not falsified—the gap
+is the difference between the information-theoretic floor of the conditioned family and what this
+optimizer/parameterization extracted—but we report it as unmet.
+
+
+
+
+         Figure placeholder: per-(member,∆T ,order) a priori rel-L2 heatmap, conditioned
+                    vs control, with the per-tier Wiener floors overlaid. Source:
+                                training/eval_deriv_by_root.py,
+                       Theoretical_guarantees/check_wiener_floor.py.
+
+
+
+
+9.2. A posteriori rollout: accuracy. Protocol: 16 coarse closed steps against fine-RK4 truth
+(hf = 10−5 ; K = 500–1500), improvement = relLbare
+                                              2    /relLclosed
+                                                        2      at t = 16∆T ; 10 initial-condition
+draws per ∆T across three members—kf4 and combo at 5122 , FRC-256 at 2562 —with combo held
+out of the fine-tune entirely.
+
+Analytic ceiling. The network-free R3 closure (exact chain-rule Ṅ , N̈ ; no learned component)
+is stable in every arm and sets the honest upper bound: 71.4× / 35.1× / 132.6× over bare at
+∆T = 5×10−3 /10−2 /1.5×10−2 . A one-step truncation-ratio computation predicts 66.6/30.7/19.1×:
+the two agree within 7–14% at the two smaller steps, while the 132.6× at 1.5 × 10−2 exceeds its
+one-step ceiling because the bare baseline there enters super-linear error growth—an accumulation
+property of the baseline, not of the closure.
+
+Learned closure.      After rollout fine-tuning, over the 10-draw replication:
+
+
+                                                 16
+\end{Verbatim}
+\newpage
+% ---- Original PDF page 17 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+          ∆T           stable   improvement over bare, median [min, max]   vs analytic ceiling
+                −3
+          5 × 10       10/10              15.96× [0.92, 23.57]                  71.4×
+          10−2          9/10               0.50× [0.01, 6.17]                   35.1×
+          1.5 × 10−2    6/10               0.65× [0.33, 1.89]              19.1× (one-step)
+
+The 16× gain at the operating step replicates across draws and members, including the held-out
+member (its worst draw is parity, 0.92). At the two larger steps the learned closure is at or
+below parity where it is stable, and stability itself degrades to 60% of draws at 1.5 × 10−2 . For
+calibration: the pre-fine-tune model blew up at the two larger steps (steps 7 and 13) and was stable
+but below parity (0.72×) at the operating step—the fine-tune converted 0.72× into 16× there and
+only partially cured the envelope edge. The gap between 16× and the 71× analytic ceiling is the
+direct cost of the remaining N̈ estimation error (Prop. 7).
+
+
+
+
+         Figure placeholder: rollout error growth, bare vs closed vs analytic-R3 , per ∆T ;
+         vorticity fields and differences at t = 16∆T ; improvement-factor box plots over
+                 the 10 draws. Source: diagnostics/rollout_aposteriori.py,
+                          diagnostics/consolidate_apost_cases.py.
+
+
+
+
+9.3. A posteriori rollout: stability, the horizon wall, and the mechanism. Three stability
+findings, reported in full.
+
+The instability is network-specific. The analytic R3 arm is stable at every (∆T, IC) tested,
+at CFL up to 0.85; the learned arm can diverge even at CFL 0.56. Removing the N̈ channel from
+the learned correction restores stability in every arm but also removes all gain (1.00× everywhere):
+the destabilizer and the value live in the same channel.
+
+Mechanism: history contamination. The blow-up is a feedback loop specific to the memory of
+the method: network noise enters the correction, contaminates the stored 7-level history, is amplified
+by the 1/∆T k time-FD weights into noisier derivative estimates, and returns as a noisier correction.
+The blow-up horizon tracks (steps until injected noise ≈ truncation signal) + ∼4. Aliasing is not the
+carrier (the learned arm gets worse in a fully dealiased world; the analytic arm is indifferent), and
+the radial enstrophy-injection component is small and ∆T -independent—a dissipative projection
+of the correction (P0 experiment) shifts blow-ups by ≤ ±1 step and fails its pre-registered stability
+bars, ruling out the cheap inference-time fix. The within-shell (phase) component identified by the
+certificate is the active target.
+
+The horizon wall. Extending the 5 × 10−3 arm from 16 to 64 and 128 steps: 0/10 draws stable
+in both arms, blow-ups at steps 21–38, i.e. at ≈ 2× the fine-tune’s free horizon. The replicated
+16× gain is therefore horizon-limited: valid within the trained window, not unconditional. This
+is the sharpest open problem; the certificate penalty (Sec. 7.4) attacks exactly this—a per-step
+
+
+
+                                                  17
+\end{Verbatim}
+\newpage
+% ---- Original PDF page 18 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+contraction certificate is horizon-free by construction—and the corresponding λ-sweep is running
+at the time of writing.
+
+
+
+
+         Figure placeholder: blow-up step vs horizon, 10 draws, 16/64/128 steps, with the
+         free-horizon line; certificate |Geff (κ)| histograms before/after the penalty. Source:
+                             diagnostics/aposteriori_stability.py,
+                                 training/wiener_certificate.py.
+
+
+
+
+9.4. Cost. Measured on the production stepper (5122 ): the closed step costs 8 FFTs vs the bare
+5, plus ≈ 170 MACs/point of network—a per-step overhead of ≈ 60%, against the K-fold step-
+count reduction of (24). At the replicated operating point (∆T = 5 × 10−3 , 16× error reduction
+on-horizon), matching the closed accuracy with the bare scheme would require ≈ 4× smaller steps
+(second-order scheme), so the realized speedup at matched accuracy is ≈ (4 × 5)/8 = 2.5× against
+bare AB2–CN2 on the trained horizon; the ideal bound (24) is approached only as the learned
+N̈ error approaches the analytic ceiling. The conditioned context costs zero additional FFTs at
+rollout (spectral states reused); training-side costs are modest (rollout fine-tune ≈ 2–3 GPU-h;
+the offline ensemble run ≈ 20 GPU-h; truth generation dominates and is cached across all experi-
+ments). [TODO: tighten the realized-speedup accounting with wall-clock numbers from
+rollout_timed_pareto.py on the final model.]
+
+10. Conclusions and future work. We posed the time-discretization error of spectral AB2–CN2
+as a closure problem and carried it from closed-form truncation theory to a deployed, certificate-
+regularized learned scheme. The theory side is complete and verified: LTEs of the scheme family
+to O(h6 ) (Props. 1–3), a finite and universal convergence radius ∆T ⋆ = 2.08 τλ (Prop. 5), an inner
+stencil wall (Prop. 6), benign 1:1 error propagation (Prop. 7), the margin asymmetry that makes
+fine-RK4 the right target (Sec. 5.2), and an exact Wiener analysis of the estimator that derives—
+and prices—physics conditioning (Sec. 6.2). The practice side is honest: the analytic R3 closure
+alone is unconditionally stable in our tests and worth up to two orders of magnitude; the learned
+closure replicates 16× at the operating step on the trained horizon, beats its matched control on
+the dominant N̈ channel on 16 of 17 shared roots as an estimator, but has not reached its predicted
+conditioned floor, is at parity at the envelope edge, and remains horizon-limited by a diagnosed
+history-contamination loop.
+
+Future work. (i) Certificate-regularized training (λ-sweep in flight): convert the horizon-limited
+gain into a per-step contraction guarantee. (ii) Conditioned-floor gap: close the factor 2–3 between
+the trained conditioned model and its information-theoretic ceiling (longer training, richer σ̂ fea-
+tures, angular harmonics for the r3 remainder). (iii) Weight-tied recursion cell: one cell unrolled p
+times generalizes the estimator to any order N (p) with the exact ∂t recursion—no inner wall—at
+the price of a ∆−1 per order; the exact-FFT vs learned-local ∆−1 decision is open, and is the
+same decision as the deferred flux-form vs advective Jacobian consistency. (iv) Decaying-turbulence
+members (non-stationary: the τλ identity needs detrending) and obstacle flows. (v) Generalization
+across schemes: the entire construction used only (r, s) and the AB bracket; matching any linear
+multistep method to its better-resolved self is mechanical from Prop. 3’s template.
+
+
+                                                 18
+\end{Verbatim}
+\newpage
+% ---- Original PDF page 19 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+Reproducibility. The        spectral      QG     solver      follows    Suresh   Babu    et    al.
+[15].              Truncation       operators:           analysis/validate_ab2cn2_vs_truth.py;
+magnitudes         and        radii:              analysis/measure_truncation_magnitudes.py,
+Theoretical_guarantees/convergence_radius.py; microscale: check_decorrelation_time.py;
+stencil     walls:           fd_depth_check.py,            temporal_fd_floor_deep.py;          er-
+ror       propagation:               closure_error_propagation.py;              Wiener      floors:
+check_wiener_floor.py;          stability    regions:          analysis/ab_stability_regions.py,
+analysis/vn_stability.py,                 Theoretical_guarantees/imex_stability_regions.py;
+certificate:    training/wiener_certificate.py;             training:     training/train_deriv.py,
+training/train_deriv_rollout.py;             evaluation:          training/eval_deriv_by_root.py,
+diagnostics/rollout_aposteriori.py. [TODO: code/data availability statement +
+repository link.]
+
+A. RK4 stage expansions. Throughout, f = G(ω n ), J = G′ (ω n ) = L + 2B(ω n , ·), and the exact
+identity (7): G(ω n + p) = f + Jp + B(p, p), B symmetric bilinear.
+                                         2
+A.1. k2 . p = h2 f : k2 = f + h2 Jf + h4 B(f, f ).
+                                                            2        3
+A.2. k3 . p = h2 k2 . Linear part Jp = h2 Jf + h4 J 2 f + h8 JB(f, f ); quadratic part B(p, p) =
+h2           h3            h4                 h4
+4 B(f, f ) + 4 B(f, Jf ) + 8 B(f, B(f, f )) + 16 B(Jf, Jf ) + O(h ). Hence
+                                                                 5
+
+                    2               3                3             4                  4
+ k3 = f + h2 Jf + h4 J 2 f +B(f, f ) + h8 JB(f, f )+ h4 B(f, Jf )+ h8 B(f, B(f, f ))+ h16 B(Jf, Jf ). (49)
+
+A.3. k4 . p = hk3 . Collecting linear and quadratic parts through h4 ,
+                                                                                       
+    k4 = f + hJf + h2 12 J 2 f + B(f, f ) + h3 14 J 3 f + 41 JB(f, f ) + B(f, Jf )
+                                                                                                   
+          + h4 18 J 2 B(f, f ) + 41 JB(f, Jf ) + 12 B(f, J 2 f ) + 12 B(f, B(f, f )) + 14 B(Jf, Jf ) .   (50)
+
+No stage builds the depth-four chain, so the h4 coefficient of J 4 f in k4 is zero; assembling h6 (k1 +
+2k2 + 2k3 + k4 ) and subtracting from the exact expansion gives Prop. 1, per elementary differential:
+
+                        elementary differential     exact ×h5    RK4 ×h5      τRK4 × h5
+
+                        J 4f                         1/120           0         1/120
+                          2
+                        J B(f, f )                    1/60         1/48       −1/240
+                        JB(f, Jf )                    1/20         1/24        1/120
+                               2
+                        B(f, J f )                    1/15         1/12        −1/60
+                        B(f, B(f, f ))                2/15         1/8         1/120
+                        B(Jf, Jf )                    1/20         1/16        −1/80
+
+
+References.
+ [1] U. M. Ascher, S. J. Ruuth, and B. T. R. Wetton. Implicit–explicit methods for time-dependent
+     partial differential equations. SIAM J. Numer. Anal., 32(3):797–823, 1995.
+
+ [2] Y. Bar-Sinai, S. Hoyer, J. Hickey, and M. P. Brenner. Learning data-driven discretizations for
+     partial differential equations. Proc. Natl. Acad. Sci., 116(31):15344–15349, 2019.
+
+ [3] J. P. Boyd. Chebyshev and Fourier Spectral Methods. 2nd ed., Dover, 2001.
+
+                                                       19
+\end{Verbatim}
+\newpage
+% ---- Original PDF page 20 ----
+\begin{Verbatim}[fontsize=\fontsize{6.35}{7.15}\selectfont,breaklines=false]
+ [4] J. C. Butcher. Numerical Methods for Ordinary Differential Equations. 3rd ed., Wiley, 2016.
+
+ [5] C. Canuto, M. Y. Hussaini, A. Quarteroni, and T. A. Zang. Spectral Methods: Fundamentals
+     in Single Domains. Springer, 2006.
+
+ [6] A. Charous and P. F. J. Lermusiaux. Dynamically orthogonal Runge–Kutta schemes with
+     perturbative retractions for the dynamical low-rank approximation. SIAM J. Sci. Comput.,
+     45(2):A872–A897, 2023.
+
+ [7] J. Frank, W. Hundsdorfer, and J. G. Verwer. On the stability of implicit-explicit linear multi-
+     step methods. Appl. Numer. Math., 25(2–3):193–205, 1997.
+
+ [8] Y. Guan, A. Chattopadhyay, A. Subel, and P. Hassanzadeh. Stable a posteriori LES of 2D
+     turbulence using convolutional neural networks. J. Comput. Phys., 458:111090, 2022.
+
+ [9] A. Gupta and P. F. J. Lermusiaux. Neural closure models for dynamical systems. Proc. R.
+     Soc. A, 477:20201004, 2021.
+
+[10] E. Hairer, S. P. Nørsett, and G. Wanner. Solving Ordinary Differential Equations I: Nonstiff
+     Problems. 2nd ed., Springer, 1993.
+
+[11] D. Kochkov, J. A. Smith, A. Alieva, Q. Wang, M. P. Brenner, and S. Hoyer. Machine learning–
+     accelerated computational fluid dynamics. Proc. Natl. Acad. Sci., 118(21):e2101784118, 2021.
+
+[12] J.-L. Lions, Y. Maday, and G. Turinici. Résolution d’EDP par un schéma en temps “pararéel”.
+     C. R. Acad. Sci. Paris, 332:661–668, 2001.
+
+[13] K. Srinivasan, M. D. Chekroun, and J. C. McWilliams. Turbulence closure with small, lo-
+     cal neural networks: forced two-dimensional and β-plane flows. J. Adv. Model. Earth Syst.,
+     16:e2023MS003795, 2024.
+
+[14] H. J. Stetter. The defect correction principle and discretization methods. Numer. Math.,
+     29:425–443, 1978.
+
+[15] A. N. Suresh Babu, A. Sadam, and P. F. J. Lermusiaux. [TODO: title]. arXiv:2508.06678,
+     2025.
+
+[16] G. K. Vallis. Atmospheric and Oceanic Fluid Dynamics. 2nd ed., Cambridge University Press,
+     2017.
+
+[17] R. F. Warming and B. J. Hyett. The modified equation approach to the stability and accuracy
+     analysis of finite-difference methods. J. Comput. Phys., 14:159–179, 1974.
+
+[18] N. Wiener. Extrapolation, Interpolation, and Smoothing of Stationary Time Series. MIT Press,
+     1949.
+
+
+
+
+                                                20
+\end{Verbatim}
+\end{document}
