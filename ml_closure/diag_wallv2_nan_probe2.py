@@ -37,7 +37,7 @@ def main():
     ap.add_argument('--config', required=True)
     args = ap.parse_args()
     conf = load_conf(HERE / args.config)
-    tc = conf['training']
+    tc = conf['train']
     seed = int(conf.get('seed', 0))
     torch.manual_seed(seed)
     runs = build_runs(conf)
