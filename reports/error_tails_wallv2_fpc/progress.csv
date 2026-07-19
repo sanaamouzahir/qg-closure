@@ -1,0 +1,3 @@
+timestamp,event,job_id,host,note
+2026-07-19T05:51:03,start,1840759,ibfdr-compute-0-4.local,diagnose_error_tails.py --ckpt runs_piff/piff_fpc_gjs_wallv2/best.pt --config conf_piff_fpc_gjs_wallv2.yaml --device cpu --report-run error_tails_wallv2_fpc
+2026-07-19T05:53:12,fail,1840759,ibfdr-compute-0-4.local,diagnose_error_tails.py exited rc=1 -- raw log in <branch>/logs/
