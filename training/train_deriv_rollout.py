@@ -1196,11 +1196,25 @@ def main():
     if args.anchor_lambda > 0.0:
         anc_roots = args.anchor_roots
         if anc_roots is None and args.init_ckpt is not None:
-            # default: the warm-start ckpt's own training pool
+            # default: the warm-start ckpt's own training pool. Fine-tuned
+            # ckpts (rollout configs) carry no 'roots' key -- follow their
+            # init_ckpt chain up to the underlying derivative-loss run
+            # (2026-07-19: w31p3 warm from vn05 ep20 crashed here on the
+            # direct read; "always building on top" makes chains normal).
             ck_cfg = args.init_ckpt.parent / 'config.json'
-            if ck_cfg.exists():
-                anc_roots = [Path(r) for r in
-                             json.loads(ck_cfg.read_text())['roots']]
+            for _hop in range(8):
+                if not ck_cfg.exists():
+                    break
+                cfg_d = json.loads(ck_cfg.read_text())
+                if cfg_d.get('roots'):
+                    anc_roots = [Path(r) for r in cfg_d['roots']]
+                    print(f"[anchor] roots from {ck_cfg} "
+                          f"({_hop} hop(s) up the warm chain)")
+                    break
+                nxt = cfg_d.get('init_ckpt')
+                if not nxt:
+                    break
+                ck_cfg = Path(nxt).parent / 'config.json'
         if not anc_roots:
             raise SystemExit('--anchor-lambda > 0 needs --anchor-roots (or an '
                              '--init-ckpt with a config.json listing roots)')
