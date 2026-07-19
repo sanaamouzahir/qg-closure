@@ -30,7 +30,10 @@ export PYTHONUNBUFFERED=1 MPLBACKEND=Agg
 QG_ROOT=/gdata/projects/ml_scope/Closure_modeling/QG-closure
 WT=$QG_ROOT/qg-wiener-conditioning
 REP=$WT/diagnostics/Results/apost_opt2_rep_20260711
-OUT=$WT/diagnostics/Results/apost_longroll_postft_20260716
+# LONGROLL_OUT (qsub -v) overrides the output tree; default = the 2026-07-16
+# p1-arm rolls dir, byte-identical behavior when unset (tags collide across
+# ckpts -- ALWAYS override for a new ckpt).
+OUT=${LONGROLL_OUT:-$WT/diagnostics/Results/apost_longroll_postft_20260716}
 export MPLCONFIGDIR=$QG_ROOT/.mplcache; mkdir -p "$MPLCONFIGDIR"
 source "$QG_ROOT/qg-env/bin/activate"
 cd "$WT/training"
