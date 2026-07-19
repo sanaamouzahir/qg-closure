@@ -2,7 +2,7 @@
 
 **Machine-learned temporal and spatial closures for coarse simulations of 2D quasi-geostrophic turbulence.**
 
-PhD research (MIT MSEAS, Mechanical Engineering + Center for Computational Science and Engineering). Two closure tracks, one pseudo-spectral GPU solver, twos papers in preparation (one submitted one in prep),IEEE,SIAMCSE27 &AGU2027 coming up soon, and a fully documented multi-agent development workflow.
+PhD research (MIT MSEAS, Mechanical Engineering + Center for Computational Science and Engineering). Two closure tracks, one pseudo-spectral GPU solver, two papers in preparation (one submitted, one in prep), upcoming IEEE, SIAM CSE27 & AGU 2027 presentations, and a fully documented multi-agent development workflow.
 
 ## What this is
 
