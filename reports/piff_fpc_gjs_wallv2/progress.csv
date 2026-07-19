@@ -1,0 +1,2 @@
+timestamp,event,job_id,host,note
+2026-07-19T01:07:01,start,1840757,ibgpu-compute-0-0.local,piff grid point launched: --config conf_piff_fpc_gjs_wallv2.yaml --run-name piff_fpc_gjs_wallv2
