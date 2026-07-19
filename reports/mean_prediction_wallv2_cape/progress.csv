@@ -1,2 +1,3 @@
 timestamp,event,job_id,host,note
 2026-07-19T05:56:57,start,1840767,ibfdr-compute-0-4.local,diagnose_mean_prediction.py --ckpt runs_piff/piff_cape_gjs_wallv2/best.pt --config conf_piff_cape_gjs_wallv2.yaml --device cpu --report-run mean_prediction_wallv2_cape
+2026-07-19T05:58:02,fail,1840767,ibfdr-compute-0-4.local,diagnose_mean_prediction.py exited rc=1 -- raw log in <branch>/logs/
