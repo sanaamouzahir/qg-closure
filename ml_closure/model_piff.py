@@ -392,7 +392,17 @@ class PiffModel(nn.Module):
         if self.use_grad_feature:
             if g is None:
                 raise ValueError("use_grad_feature=true but g not supplied")
-            cols.append((g / self.g_scale).unsqueeze(-1))   # (B,H,W,1)
+            gn = g / self.g_scale
+            if self.use_wall_gate:
+                # wallv2 (probe2 2026-07-19): the GATED g distribution is
+                # extreme (most pixels ~0, near-wall tail to ~184x scale) --
+                # linear input made K_zz numerically NotPSD (eig -1.9e-4 >
+                # gpytorch's 1e-6 jitter ceiling) = the ep-0 NaN. Same
+                # log1p tail compression as lap (Sanaa ruling 2026-07-16).
+                # Applied ONLY under use_wall_gate: every pre-wallv2 ckpt
+                # keeps the linear transform byte-identically.
+                gn = torch.log1p(gn)
+            cols.append(gn.unsqueeze(-1))                   # (B,H,W,1)
         if self.use_lap_feature:
             if lap is None:
                 raise ValueError("use_lap_feature=true but lap not supplied")
