@@ -88,6 +88,11 @@ for g in ${@:-fpc cape}; do
         && [ -n "$w0" ] || { echo "$g: cannot read member config values"; exit 1; }
 
     echo "[$g] scen=$scen width0=$w0 penalty=$penv sponge=$spongev dt=$dtc nu=$nuv"
+    # cape mask is NON-CIRCULAR: ScalarRecorder requires qg.diag.length
+    # (round-1 cape 1840689-92 all crashed at startup without it; value 1.0
+    # = the FPCape production convention, BRANCH_LOG 2026-07-07)
+    extra_diag=""
+    [ "$g" = "cape" ] && extra_diag="+qg.diag.length=1.0"
     hold_ids=""; n_jobs=0
     for m in $mults; do
         w=$(awk "BEGIN{printf \"%g\", $w0 * $m}")
@@ -106,7 +111,7 @@ for g in ${@:-fpc cape}; do
             qg.pde.penalty="$penv" qg.bc.sponge="$spongev" \
             qg.bc.width="$w" +qg.bc.inlet_table="$tbl" \
             +qg.diag.scalar_rate=10 +qg.diag.flush_every=500 \
-            +qg.diag.out="$QG_DIR/$rd/scalars.npz" \
+            +qg.diag.out="$QG_DIR/$rd/scalars.npz" $extra_diag \
             hydra.run.dir="$rd" 2>/dev/null | head -1)
         jid=${jid%%.*}
         [ -n "$jid" ] || { echo "  w=$w qsub FAILED"; exit 1; }
