@@ -6,7 +6,7 @@ PhD research (MIT MSEAS, Mechanical Engineering + Center for Computational Scien
 
 ## What this is
 
-Time integration of turbulence is expensive because accuracy — not stability — sets the step size. This repo develops **step-size resolution closures**: a compact (~10³-parameter) physics-initialized network corrects each coarse AB2–CN2 IMEX step so it matches the accuracy *and stability* of fine-step RK4, at linear-multistep cost.
+Time integration of turbulence is expensive because accuracy and stability set the step size. This repo develops **step-size resolution closures**: a compact (~10³-parameter) physics-initialized network corrects each coarse AB2–CN2 IMEX step so it matches the accuracy *and stability* of fine-step RK4, at linear-multistep cost.
 
 **Temporal closure (δR):** closed-form local truncation error of AB2–CN2 / AB4–CN2 / RK4 to O(ΔT⁶); an analytical/learned split where powers of the Fourier-diagonal linear operator are free and only the time-derivatives of the advective Jacobian are learned; an exact Wiener error analysis that *derives* physics conditioning of the learned stencils on a measurable per-shell decorrelation rate; and a differentiable frozen-coefficient von Neumann stability certificate used as a training penalty. Full manuscript: [`paper/main.tex`](paper/) (branch `exp/wiener-conditioning`).
 
