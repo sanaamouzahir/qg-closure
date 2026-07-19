@@ -1,7 +1,7 @@
 # sigma_events_wallv2_fpc
-updated 2026-07-19 05:53:42  host ibfdr-compute-0-4.local  job 1840763  verdict **START**
+updated 2026-07-19 05:54:19  host ibfdr-compute-0-2.local  job 1840761  verdict **FAIL**
 last events:
-  timestamp event (job_id) note
-  2026-07-19T05:53:42 start (1840762) diagnose_sigma_at_events.py --ckpt runs_piff/piff_fpc_gjs_wallv2/best.pt --config 
-  2026-07-19T05:53:42 start (1840763) diagnose_sigma_at_events.py --ckpt runs_piff/piff_fpc_gjs_wallv2/best.pt --config 
-NEXT: see run emails
+  2026-07-19T05:54:18 fail (1840760) diagnose_sigma_at_events.py exited rc=1 -- raw log in <branch>/logs/
+  2026-07-19T05:54:19 fail (1840763) diagnose_sigma_at_events.py exited rc=1 -- raw log in <branch>/logs/
+  2026-07-19T05:54:19 fail (1840761) diagnose_sigma_at_events.py exited rc=1 -- raw log in <branch>/logs/
+NEXT: diagnose_sigma_at_events.py exited rc=1 -- raw log in <branch>/logs/

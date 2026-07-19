@@ -5,3 +5,4 @@ timestamp,event,job_id,host,note
 timestamp,event,job_id,host,note
 2026-07-19T05:53:42,start,1840762,ibamd-compute-0-3.local,diagnose_sigma_at_events.py --ckpt runs_piff/piff_fpc_gjs_wallv2/best.pt --config conf_piff_fpc_gjs_wallv2.yaml --member FPC-ramp --events runs_piff/piff_fpc_gjs_wallv2/error_tails_diag/FPC-ramp/extreme_events.csv --report-run sigma_events_wallv2_fpc
 2026-07-19T05:53:42,start,1840763,ibfdr-compute-0-4.local,diagnose_sigma_at_events.py --ckpt runs_piff/piff_fpc_gjs_wallv2/best.pt --config conf_piff_fpc_gjs_wallv2.yaml --member FPC-ou --events runs_piff/piff_fpc_gjs_wallv2/error_tails_diag/FPC-ou/extreme_events.csv --report-run sigma_events_wallv2_fpc
+2026-07-19T05:54:18,fail,1840760,ibfdr-compute-0-4.local,diagnose_sigma_at_events.py exited rc=1 -- raw log in <branch>/logs/
