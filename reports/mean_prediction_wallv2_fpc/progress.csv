@@ -1,0 +1,2 @@
+timestamp,event,job_id,host,note
+2026-07-19T05:51:02,start,1840758,ibfdr-compute-0-2.local,diagnose_mean_prediction.py --ckpt runs_piff/piff_fpc_gjs_wallv2/best.pt --config conf_piff_fpc_gjs_wallv2.yaml --device cpu --report-run mean_prediction_wallv2_fpc
