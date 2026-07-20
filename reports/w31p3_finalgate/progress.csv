@@ -1,0 +1,2 @@
+timestamp,event,job_id,host,note
+2026-07-20T05:42:30,start,1841572,ibamd-compute-0-4.local,"p3 final ep20 eval + tiered gate, CPU"
