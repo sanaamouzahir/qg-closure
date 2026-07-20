@@ -224,6 +224,38 @@ def rel_l2(a, b):
     return float(np.sqrt(np.mean((a - b) ** 2)) / max(np.sqrt(np.mean(b ** 2)), 1e-30))
 
 
+def _instr_shells(Ny, Nx, device):
+    """Integer mode-radius shell binning for --instrument-blowup.
+
+    EXACTLY the branch convention (diagnostics/spectral_error_profile.py
+    shell_index, = the run_arm --nn-dissipative-proj binning): shell index
+    round(|k_index|) on the rfft half-plane, with Hermitian double-count
+    weights (kx=0 and the even-Nx Nyquist column are self-conjugate).
+    Returns flattened (shell, weight) so shell reductions are a single
+    scatter_add on already-spectral tensors -- ZERO FFTs.
+    """
+    iy = torch.fft.fftfreq(Ny, d=1.0 / Ny, device=device).to(torch.float64)
+    ix = torch.arange(Nx // 2 + 1, dtype=torch.float64, device=device)
+    sh = torch.round(torch.sqrt(iy[:, None] ** 2 + ix[None, :] ** 2))
+    sh = sh.to(torch.int64)
+    w = torch.full((Nx // 2 + 1,), 2.0, dtype=torch.float64, device=device)
+    w[0] = 1.0
+    if Nx % 2 == 0:
+        w[-1] = 1.0
+    n_sh = int(sh.max()) + 1
+    return (sh.reshape(-1), n_sh,
+            w[None, :].expand(Ny, -1).reshape(-1).contiguous())
+
+
+def _shell_enstrophy(spec, shf, n_sh, wf):
+    """Per-shell 0.5*sum w |f_k|^2 of a spectral field (Parseval, no FFT)."""
+    fr = spec.reshape(-1)
+    e = wf * (fr.real ** 2 + fr.imag ** 2)
+    out = torch.zeros(n_sh, dtype=torch.float64, device=spec.device)
+    out.scatter_add_(0, shf, e)
+    return 0.5 * out
+
+
 # --------------------------------------------------------------------------- #
 # rollout arms                                                                 #
 # --------------------------------------------------------------------------- #
@@ -235,7 +267,7 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
             lte_log=None, profile_step=0,
             nn_kcut=None, nn_gamma=1.0, nn_clip=None, drop_nddot=False,
             nn_project_radius=None, nn_dissipative_proj=False,
-            nn_grad=False, return_stepper=False):
+            nn_grad=False, return_stepper=False, instrument=None):
     """One arm of the comparison. arm in {'bare','r3only','r3anal',
     'closure','closure2'} ('closure2' = a second checkpoint through the
     identical code path, e.g. the control vs the conditioned model;
@@ -325,6 +357,33 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
         stepper the validated a-posteriori arms run (single source of truth
         for the scheme + closure assembly). omega_stack/psi_stack are then
         only read for shape/depth.
+    instrument : dict or None -- blowup-mechanism instrumentation (Sanaa GO
+        2026-07-19: two interventions on LINEAR/spectral mechanisms each moved
+        blowup by <=3 steps, so the mechanism is unknown; instrument one
+        blowing run instead of proposing more arms). None (default) = OFF and
+        the recording block below CANNOT execute -> byte-identical trajectory,
+        identical FFT count, identical walltime path. When a dict is passed it
+        is FILLED with per-step, per-RADIAL-SHELL arrays (integer mode-index
+        shells, _instr_shells convention):
+            Z_k[s]  shell enstrophy of the state qh_curr AFTER step s
+            Ca_k[s] shell enstrophy of the APPLIED explicit ANALYTIC closure
+                    correction of that step (-c12 L^2 N, plus -coef f_anal on
+                    the r3anal arm)
+            Cn_k[s] shell enstrophy of the APPLIED NN correction
+                    (-coef gamma f_NN; closure arms only, else zeros)
+            Ci_k[s] shell enstrophy of the IMPLICITLY folded L^3 correction as
+                    actually applied, -c12 L^3 w_{n+1} (it lives in denom_clos,
+                    not in rhs -- recorded so the closure budget is complete)
+            C_k[s]  = shell enstrophy of (Ca + Cn + Ci) summed as FIELDS
+            R_k[s]  shell enstrophy of the BARE rhs increment
+                    DT*(0.5 L w + AB2 N) -- advection+forcing+linear, the
+                    scale reference
+        plus per-step scalars Z, E, cfl, max_omega (every step, independent of
+        scalars_every). All reductions are scatter_adds on already-spectral
+        tensors (zero FFTs); the per-step cfl/max_omega DO cost iFFTs, so an
+        instrumented arm is NOT a walltime benchmark -- it is bit-identical in
+        TRAJECTORY (all captures read live tensors and write fresh ones; no
+        in-place op ever touches stepper state), which is what is compared.
     """
     from qg.solver.opt.basis import to_spectral, to_physical
     # truth = RK4 (exact flow) -> the target is the FULL Taylor defect:
@@ -388,15 +447,27 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
     dx_v = torch.full((1,), _DX, device=device, dtype=torch.float64)
     dy_v = torch.full((1,), _DY, device=device, dtype=torch.float64)
     frozen_feats = [None]        # filled at t=0 when freeze_sigma
+    # --- blowup instrumentation (OFF unless a dict is passed) ------------- #
+    instr_shells = None
+    instr_cap = [None]           # one_step -> loop handoff of the step's terms
+    if instrument is not None:
+        instr_shells = _instr_shells(Nyg, Nxg, device)
 
     def one_step(qh_curr, qh_minus, Nh_curr, Nh_minus, om_hist, ps_hist,
                  prof=_NOPROF):
         prof.mark('bare')
         AB2_Nh = 1.5 * Nh_curr - 0.5 * Nh_minus
         rhs = qh_curr + Delta_T * (0.5 * L_hat * qh_curr + AB2_Nh)
+        if instrument is not None:
+            # bare increment DT*(0.5 L w + AB2 N) -- a FRESH tensor read off
+            # the live rhs; the stepper's own arithmetic is untouched.
+            instr_cap[0] = {'R': rhs - qh_curr}
         if with_closure:
             prof.mark('e_anal')
             rhs = rhs - c12 * (L2 * Nh_curr)                 # explicit analytic L^2 N
+            if instrument is not None:
+                # recomputed, NOT spliced out of the live rhs arithmetic
+                instr_cap[0]['Ca'] = -c12 * (L2 * Nh_curr)
         if is_anal:
             # full analytic R3 (+R4 with --r4): exact chain-rule Ndot/Nddot
             # at w_n, assembled EXACTLY like the NN arm (same implicit fold,
@@ -419,6 +490,8 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
                 f_anal = f_anal * proj_mask
             prof.mark('combine')
             rhs = rhs - coef * f_anal
+            if instrument is not None:
+                instr_cap[0]['Ca'] = instr_cap[0]['Ca'] - coef * f_anal
             if include_r4:
                 e_r4 = -coef4 * (1.0 / 24.0) * (2.0 * L4 * qh_curr
                                                 + 2.0 * L3 * Nh_curr
@@ -428,6 +501,8 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
                 if dealias_nn:
                     e_r4 = _dealias_mul(e_r4, derivative)
                 rhs = rhs + e_r4
+                if instrument is not None:
+                    instr_cap[0]['Ca'] = instr_cap[0]['Ca'] + e_r4
         if is_clos:
             # feed the stack at float64 so the TimeFD differencing is
             # cancellation-clean (the model handles its own mixed precision);
@@ -494,6 +569,10 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
                 f_nn = f_nn - lam[shf_d].reshape(f_nn.shape) * qh_curr
             prof.mark('combine')
             rhs = rhs - coef * float(nn_gamma) * f_nn        # R2: gamma=1 default
+            if instrument is not None:
+                # the NN correction EXACTLY as added (post dealias/kcut/
+                # proj-radius/dissipative-proj) -- that is what the state sees
+                instr_cap[0]['Cn'] = -coef * float(nn_gamma) * f_nn
             if include_r4:
                 prof.mark('r4')
                 N3dot_h = to_spectral(yhat[:, 2:3][0])       # +1 FFT (--r4 only)
@@ -507,8 +586,15 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
                     e_r4 = _dealias_mul(e_r4, derivative)
                 prof.mark('combine')
                 rhs = rhs + e_r4
+                if instrument is not None:
+                    instr_cap[0]['Cn'] = instr_cap[0]['Cn'] + e_r4
         prof.mark('combine')
         qh_new = rhs / denom
+        if instrument is not None and with_closure:
+            # the L^3 piece is folded into denom_clos, so it never appears in
+            # rhs; its APPLIED value is -c12 L^3 w_{n+1}. Recorded separately
+            # so Ca+Cn+Ci is the complete closure correction of the step.
+            instr_cap[0]['Ci'] = -c12 * (L3 * qh_new)
         if is_clos:
             # the new N eval hands back omega/psi PHYSICAL -> reused for the
             # stencil and the checkpoint dump; neither is iFFT'd a second time.
@@ -528,6 +614,52 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
     om = [s.clone() for s in omega_stack]
     ps = [s.clone() for s in psi_stack]
     w_par = _parseval_weight(qh_curr, Nxg)
+
+    instr_rows = {k: [] for k in ('step', 'Z_k', 'C_k', 'Ca_k', 'Cn_k',
+                                  'Ci_k', 'R_k', 'Z', 'E', 'cfl', 'max_omega')}
+
+    def instr_record(step, qh_state, om_phys):
+        """--instrument-blowup: one row per step. Reads live tensors only,
+        writes fresh ones (no in-place op on stepper state) -> the trajectory
+        is bit-identical to the same run without instrumentation. Shell
+        reductions are scatter_adds on already-spectral fields (zero FFTs);
+        the cfl / max|omega| scalars DO cost iFFTs (diagnostic-only arm)."""
+        shf, n_sh, wf = instr_shells
+        cap = instr_cap[0] or {}
+        zeros = torch.zeros(n_sh, dtype=torch.float64, device=device)
+
+        def shell_of(key):
+            t = cap.get(key)
+            return (zeros if t is None
+                    else _shell_enstrophy(t, shf, n_sh, wf))
+
+        tot = None
+        for key in ('Ca', 'Cn', 'Ci'):        # sum as FIELDS, then reduce
+            t = cap.get(key)
+            if t is not None:
+                tot = t if tot is None else tot + t
+        E_s, Z_s = scalars_from_qh(qh_state, derivative, w_par)
+        finite = bool(torch.isfinite(qh_state.real).all()
+                      and torch.isfinite(qh_state.imag).all())
+        if finite:
+            cfl_s = cfl_from_qh(qh_state, derivative, Delta_T, _DX, _DY)
+            omp = om_phys if om_phys is not None else to_physical(qh_state)
+            mx = float(omp.abs().max())
+        else:
+            cfl_s = mx = float('nan')
+        instr_rows['step'].append(int(step))
+        instr_rows['Z_k'].append(_shell_enstrophy(qh_state, shf, n_sh, wf)
+                                 .cpu().numpy().copy())
+        instr_rows['C_k'].append(
+            (zeros if tot is None
+             else _shell_enstrophy(tot, shf, n_sh, wf)).cpu().numpy().copy())
+        for nm, key in (('Ca_k', 'Ca'), ('Cn_k', 'Cn'),
+                        ('Ci_k', 'Ci'), ('R_k', 'R')):
+            instr_rows[nm].append(shell_of(key).cpu().numpy().copy())
+        instr_rows['Z'].append(Z_s)
+        instr_rows['E'].append(E_s)
+        instr_rows['cfl'].append(cfl_s)
+        instr_rows['max_omega'].append(mx)
 
     def log_sigma(step, qc, qm):
         if sigma_log is None or not (is_clos or is_anal):
@@ -614,6 +746,12 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
     log_sigma(0, qh_curr, qh_minus)
     log_lte(0, qh_curr, qh_minus, om, ps)
 
+    if instrument is not None:
+        # step 0 = the IC state; corrections are zero (no step applied yet).
+        # Drop whatever the untimed warmup left in the capture slot first.
+        instr_cap[0] = None
+        instr_record(0, qh_curr, None)
+
     proj_i0 = len(proj_log) if proj_log is not None else 0   # skip warmup rows
     _sync(device); t0 = time.time()
     for s in range(1, n_steps + 1):
@@ -624,6 +762,8 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
         if is_clos:
             om = [om_new] + om[:-1]        # newest-first history for the stencil
             ps = [ps_new] + ps[:-1]
+        if instrument is not None:         # EVERY step, before the blowup exit
+            instr_record(s, qh_curr, om_new)
         if s % scalars_every == 0 or s in cps or s == n_steps:
             E, Z = scalars_from_qh(qh_curr, derivative, w_par)
             ts.append(s * Delta_T); Es.append(E); Zs.append(Z)
@@ -651,6 +791,18 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
                                                Delta_T, _DX, _DY))
     _sync(device)
     wall = time.time() - t0
+    if instrument is not None:
+        n_sh = instr_shells[1]
+        dk = 2.0 * np.pi / _LX          # isotropic square domains (guarded)
+        instrument.update(
+            step=np.asarray(instr_rows['step'], np.int64),
+            kshell=np.arange(n_sh, dtype=np.float64),
+            kphys=np.arange(n_sh, dtype=np.float64) * dk,
+            Delta_T=float(Delta_T), arm=str(arm),
+            blowup=(-1 if blowup is None else int(blowup)),
+            **{k: np.asarray(instr_rows[k], np.float64)
+               for k in ('Z_k', 'C_k', 'Ca_k', 'Cn_k', 'Ci_k', 'R_k',
+                         'Z', 'E', 'cfl', 'max_omega')})
     proj_counts = proj_frac = None
     if proj_log is not None:
         tail = proj_log[proj_i0:]        # timed loop only (no warmup/profile)
@@ -871,6 +1023,19 @@ def main():
                    help='record E/Z every this many coarse steps')
     p.add_argument('--blowup-factor', type=float, default=10.0,
                    help='declare blowup when Z exceeds this multiple of Z(0)')
+    p.add_argument('--instrument-blowup', type=Path, default=None,
+                   metavar='PATH.npz',
+                   help='BLOWUP-MECHANISM INSTRUMENTATION (off by default; '
+                        'absent => byte-identical behavior). Record, for '
+                        'EVERY step of every arm and per integer mode-radius '
+                        'shell: state enstrophy Z_k, the APPLIED closure '
+                        'correction C_k (split Ca_k analytic / Cn_k NN / '
+                        'Ci_k implicit-L^3) and the bare rhs increment R_k, '
+                        'plus per-step Z, E, cfl, max|omega|. Written to '
+                        'PATH.npz with keys <arm>_<field>. Analyze with '
+                        'diagnostics/analyze_blowup_modes.py. Shell '
+                        'reductions cost zero FFTs; the per-step cfl costs '
+                        'iFFTs, so an instrumented run is not a timing run.')
     p.add_argument('--world-mask-radius', type=float, default=None,
                    metavar='FACTOR',
                    help='ALIAS-CLEAN WORLD: rebuild the solver dealias mask '
@@ -1146,12 +1311,14 @@ def main():
         results['model2'] = model2_name
         results['ckpt2'] = str(args.ckpt2)
     arm_out = {}
+    instr_store = {}
     for arm in arms:
         mdl = model2 if arm == 'closure2' else model
         sig_rows = ([] if (args.log_sigma and (arm.startswith('closure')
                                                or arm == 'r3anal'))
                     else None)
         lte_rows = [] if args.track_lte else None
+        instr = {} if args.instrument_blowup is not None else None
         print(f'[apost] arm={arm}: {M} coarse steps ...'
               + (f'  [ckpt2={args.ckpt2.parent.name}]'
                  if arm == 'closure2' else '')
@@ -1169,8 +1336,13 @@ def main():
                     nn_kcut=args.nn_kcut, nn_gamma=args.nn_gamma,
                     nn_clip=args.nn_clip, drop_nddot=args.drop_nddot,
                     nn_project_radius=args.nn_project_radius,
-                    nn_dissipative_proj=args.nn_dissipative_proj)
+                    nn_dissipative_proj=args.nn_dissipative_proj,
+                    instrument=instr)
         arm_out[arm] = r
+        if instr:
+            instr_store.update({f'{arm}_{k}': v for k, v in instr.items()})
+            print(f'[apost]   blowup instrumentation: {len(instr["step"])} '
+                  f'steps x {len(instr["kshell"])} shells recorded')
         if lte_rows:
             lte_csv = out_dir / f'lte_{args.tag}_{arm}.csv'
             with open(lte_csv, 'w', newline='') as f:
@@ -1220,6 +1392,18 @@ def main():
                   f'removed-frac mean='
                   f'{results[f"{arm}_proj_removed_frac_mean"]:.3e} '
                   f'max={results[f"{arm}_proj_removed_frac_max"]:.3e}')
+
+    # ---- blowup instrumentation dump ---- #
+    # written HERE, immediately after the arms and BEFORE the truth-error
+    # tables: an arm that blows up is exactly the case this file exists for,
+    # and it must not be lost to a downstream failure on its short checkpoint
+    # list. No-op unless --instrument-blowup was given.
+    if instr_store:
+        ip = Path(args.instrument_blowup)
+        ip.parent.mkdir(parents=True, exist_ok=True)
+        np.savez(ip, arms=np.asarray(arms), tag=str(args.tag), **instr_store)
+        print(f'[apost] blowup instrumentation -> {ip} '
+              f'(arms: {",".join(arms)})')
 
     # ---- error tables vs truth ---- #
     if truth_cp is not None:
