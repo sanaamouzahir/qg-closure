@@ -18,3 +18,4 @@ timestamp,event,job_id,host,note
 2026-07-19T23:24:37,done,1841463,ibfdr-compute-0-4.local,FPC-ramp: CONFIDENTLY-WRONG: truth is 8 sigma away (median) -- features cannot d
 2026-07-19T23:24:39,done,1841462,ibfdr-compute-0-4.local,FPC-sine: CONFIDENTLY-WRONG: truth is 6 sigma away (median) -- features cannot d
 2026-07-19T23:24:45,done,1841464,ibfdr-compute-0-4.local,FPC-ou: CONFIDENTLY-WRONG: truth is 5 sigma away (median) -- features cannot d
+2026-07-19T23:24:48,done,1841465,ibfdr-compute-0-4.local,FPC-telS-A: CONFIDENTLY-WRONG: truth is 8 sigma away (median) -- features cannot d

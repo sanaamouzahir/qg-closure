@@ -1,15 +1,15 @@
-# sigma at events -- FPC-ou
+# sigma at events -- FPC-telS-A
 
-verdict: **CONFIDENTLY-WRONG: truth is 5 sigma away (median) -- features cannot distinguish these states; fix = near-wall features**
+verdict: **CONFIDENTLY-WRONG: truth is 8 sigma away (median) -- features cannot distinguish these states; fix = near-wall features**
 
 ```yaml
-member: FPC-ou
+member: FPC-telS-A
 n_events: 50
-rmse_frame_ref: 0.13148827850818634
-sigma_median_at_events: 2.5593082904815674
-sigma_over_rmse_median: 19.464155432852724
-z_true_median: 4.668965746132591
-z_true_p90: 8.581411744993298
-verdict: 'CONFIDENTLY-WRONG: truth is 5 sigma away (median) -- features cannot distinguish
+rmse_frame_ref: 0.26655179262161255
+sigma_median_at_events: 2.6009409427642822
+sigma_over_rmse_median: 9.757731948389052
+z_true_median: 8.12162041248327
+z_true_p90: 13.793969123396417
+verdict: 'CONFIDENTLY-WRONG: truth is 8 sigma away (median) -- features cannot distinguish
   these states; fix = near-wall features'
 ```
