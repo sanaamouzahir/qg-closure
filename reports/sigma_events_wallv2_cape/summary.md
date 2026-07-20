@@ -1,15 +1,15 @@
-# sigma at events -- FPCape-tel
+# sigma at events -- FPCape-ramp
 
 verdict: **KNOWS-IT: truth within ~3 predicted sigma at the events -- fix = inducing coverage / near-wall capacity**
 
 ```yaml
-member: FPCape-tel
+member: FPCape-ramp
 n_events: 50
-rmse_frame_ref: 0.11813812702894211
-sigma_median_at_events: 3.4456944465637207
-sigma_over_rmse_median: 29.166658835886032
-z_true_median: 2.6102735027335564
-z_true_p90: 3.7005239194580515
+rmse_frame_ref: 0.12200583517551422
+sigma_median_at_events: 3.44625985622406
+sigma_over_rmse_median: 28.246680589222358
+z_true_median: 2.5793761219612286
+z_true_p90: 3.487247230477621
 verdict: 'KNOWS-IT: truth within ~3 predicted sigma at the events -- fix = inducing
   coverage / near-wall capacity'
 ```
