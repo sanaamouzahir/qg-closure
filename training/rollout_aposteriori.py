@@ -267,7 +267,8 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
             lte_log=None, profile_step=0,
             nn_kcut=None, nn_gamma=1.0, nn_clip=None, drop_nddot=False,
             nn_project_radius=None, nn_dissipative_proj=False,
-            nn_grad=False, return_stepper=False, instrument=None):
+            nn_grad=False, return_stepper=False, instrument=None,
+            closure_apply='folded'):
     """One arm of the comparison. arm in {'bare','r3only','r3anal',
     'closure','closure2'} ('closure2' = a second checkpoint through the
     identical code path, e.g. the control vs the conditioned model;
@@ -384,6 +385,23 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
         instrumented arm is NOT a walltime benchmark -- it is bit-identical in
         TRAJECTORY (all captures read live tensors and write fresh ones; no
         in-place op ever touches stepper state), which is what is compared.
+    closure_apply : {'folded','postadd'} -- HOW the closure is applied.
+        'folded' (DEFAULT, byte-identical to every run before this flag
+        existed): the -c12 L^3 w term is folded into the implicit denominator
+        (denom_clos) and the remaining terms are subtracted from rhs BEFORE
+        the divide, so every closure term is effectively scaled by
+        r = 1/denom = (1 - 0.5 DT L + c12 L^3)^-1.
+        'postadd' (Sanaa 2026-07-20): step the field with the BARE scheme
+        (denom_bare, no closure in rhs) and then add the FULL closure
+        correction, evaluated at the CURRENT state w_n, directly to the
+        updated field with NO 1/denom scaling:
+            w_{n+1} = w_bare_{n+1} - c12 (L^3 w_n + L^2 N_n + L Ndot - 5 Nddot)
+        Same four terms and same sign convention as the folded path, applied
+        post-step. The NN/analytic pieces get the IDENTICAL post-processing
+        (dealias / nn_kcut / nn_gamma / nn_clip / nn_project_radius /
+        nn_dissipative_proj), so the ONLY difference between the two modes is
+        the folding, not the conditioning. The two agree to O(DT^3) and differ
+        at O(DT^4) per step -- that gap is the whole point of the experiment.
     """
     from qg.solver.opt.basis import to_spectral, to_physical
     # truth = RK4 (exact flow) -> the target is the FULL Taylor defect:
@@ -402,7 +420,13 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
     is_clos = arm.startswith('closure')
     is_anal = arm == 'r3anal'
     with_closure = is_clos or is_anal or arm == 'r3only'
-    denom = denom_clos if with_closure else denom_bare
+    if closure_apply not in ('folded', 'postadd'):
+        raise ValueError(f"closure_apply must be 'folded' or 'postadd', "
+                         f'got {closure_apply!r}')
+    # POSTADD GUARD: is_post is False for the default 'folded' mode, so every
+    # `if is_post` branch below is dead and the folded arithmetic is untouched.
+    is_post = with_closure and closure_apply == 'postadd'
+    denom = denom_bare if (is_post or not with_closure) else denom_clos
     Nyg, Nxg = omega_stack[0].shape[-2], omega_stack[0].shape[-1]
     is_cond = is_clos and hasattr(model, 'context_feats_from_spectral')
     kcut_mask = None
@@ -456,6 +480,14 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
     def one_step(qh_curr, qh_minus, Nh_curr, Nh_minus, om_hist, ps_hist,
                  prof=_NOPROF):
         prof.mark('bare')
+        # postadd only: accumulates the SIGNED closure correction to be added
+        # to the field AFTER the bare divide. Stays None in folded mode.
+        pc = [None]
+
+        def _post(term):
+            """postadd: accumulate a signed correction contribution."""
+            pc[0] = term if pc[0] is None else pc[0] + term
+
         AB2_Nh = 1.5 * Nh_curr - 0.5 * Nh_minus
         rhs = qh_curr + Delta_T * (0.5 * L_hat * qh_curr + AB2_Nh)
         if instrument is not None:
@@ -464,7 +496,12 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
             instr_cap[0] = {'R': rhs - qh_curr}
         if with_closure:
             prof.mark('e_anal')
-            rhs = rhs - c12 * (L2 * Nh_curr)                 # explicit analytic L^2 N
+            if is_post:
+                # postadd: the L^3 w_n and L^2 N_n terms are deferred to the
+                # post-step add (and L^3 is at w_n, not w_{n+1}).
+                _post(-c12 * (L3 * qh_curr + L2 * Nh_curr))
+            else:
+                rhs = rhs - c12 * (L2 * Nh_curr)             # explicit analytic L^2 N
             if instrument is not None:
                 # recomputed, NOT spliced out of the live rhs arithmetic
                 instr_cap[0]['Ca'] = -c12 * (L2 * Nh_curr)
@@ -489,7 +526,10 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
             if proj_mask is not None:                # alias-safe radius
                 f_anal = f_anal * proj_mask
             prof.mark('combine')
-            rhs = rhs - coef * f_anal
+            if is_post:
+                _post(-coef * f_anal)
+            else:
+                rhs = rhs - coef * f_anal
             if instrument is not None:
                 instr_cap[0]['Ca'] = instr_cap[0]['Ca'] - coef * f_anal
             if include_r4:
@@ -500,7 +540,10 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
                                                 + Nd[3])
                 if dealias_nn:
                     e_r4 = _dealias_mul(e_r4, derivative)
-                rhs = rhs + e_r4
+                if is_post:
+                    _post(e_r4)
+                else:
+                    rhs = rhs + e_r4
                 if instrument is not None:
                     instr_cap[0]['Ca'] = instr_cap[0]['Ca'] + e_r4
         if is_clos:
@@ -568,7 +611,12 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
                                      (rem2 / f2) ** 0.5 if f2 > 0.0 else 0.0))
                 f_nn = f_nn - lam[shf_d].reshape(f_nn.shape) * qh_curr
             prof.mark('combine')
-            rhs = rhs - coef * float(nn_gamma) * f_nn        # R2: gamma=1 default
+            if is_post:
+                # f_nn here is POST dealias/kcut/proj-radius/dissipative-proj,
+                # exactly as in folded mode -- only the application differs.
+                _post(-coef * float(nn_gamma) * f_nn)
+            else:
+                rhs = rhs - coef * float(nn_gamma) * f_nn    # R2: gamma=1 default
             if instrument is not None:
                 # the NN correction EXACTLY as added (post dealias/kcut/
                 # proj-radius/dissipative-proj) -- that is what the state sees
@@ -585,16 +633,31 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
                 if dealias_nn:
                     e_r4 = _dealias_mul(e_r4, derivative)
                 prof.mark('combine')
-                rhs = rhs + e_r4
+                if is_post:
+                    _post(e_r4)
+                else:
+                    rhs = rhs + e_r4
                 if instrument is not None:
                     instr_cap[0]['Cn'] = instr_cap[0]['Cn'] + e_r4
         prof.mark('combine')
         qh_new = rhs / denom
+        if is_post:
+            # BARE step done (denom_bare, no closure in rhs); now add the FULL
+            # closure correction evaluated at w_n, UNSCALED by 1/denom.
+            prof.mark('postadd')
+            qh_new = qh_new + pc[0]
         if instrument is not None and with_closure:
-            # the L^3 piece is folded into denom_clos, so it never appears in
-            # rhs; its APPLIED value is -c12 L^3 w_{n+1}. Recorded separately
-            # so Ca+Cn+Ci is the complete closure correction of the step.
-            instr_cap[0]['Ci'] = -c12 * (L3 * qh_new)
+            if is_post:
+                # postadd: there is NO implicit channel. Ca already carries
+                # the explicit L^2 N (and f_anal); Ci records the post-step
+                # L^3 contribution -c12 L^3 w_n, which in this mode is applied
+                # explicitly at the CURRENT state, not implicitly at w_{n+1}.
+                instr_cap[0]['Ci'] = -c12 * (L3 * qh_curr)
+            else:
+                # the L^3 piece is folded into denom_clos, so it never appears
+                # in rhs; its APPLIED value is -c12 L^3 w_{n+1}. Recorded
+                # separately so Ca+Cn+Ci is the complete closure correction.
+                instr_cap[0]['Ci'] = -c12 * (L3 * qh_new)
         if is_clos:
             # the new N eval hands back omega/psi PHYSICAL -> reused for the
             # stencil and the checkpoint dump; neither is iFFT'd a second time.
@@ -939,6 +1002,17 @@ def main():
                         '(r3anal = full analytic R3 via exact chain-rule '
                         'Ndot/Nddot, no NN -- the analytic-LTE ceiling / '
                         'blowup discriminator)')
+    p.add_argument('--closure-apply', type=str, default='folded',
+                   choices=('folded', 'postadd'),
+                   help="HOW the closure is applied. 'folded' (default, "
+                        'byte-identical to all prior runs): L^3 implicit in '
+                        'denom_clos, other terms into rhs before the divide '
+                        '(=> every closure term scaled by 1/denom). '
+                        "'postadd' (Sanaa 2026-07-20): bare step with "
+                        'denom_bare, then add the FULL closure at w_n '
+                        'directly to w_{n+1}, unscaled. Closure arm names get '
+                        "a '_postadd' suffix in the JSON/CSV/NPZ keys so the "
+                        'two modes cannot overwrite each other.')
     p.add_argument('--no-truth', action='store_true',
                    help='skip the fine-truth arm (long-horizon stability runs)')
     p.add_argument('--r4', action='store_true',
@@ -1310,16 +1384,33 @@ def main():
     if model2 is not None:
         results['model2'] = model2_name
         results['ckpt2'] = str(args.ckpt2)
+    # postadd: closure-bearing arms are relabelled so a folded and a postadd
+    # run writing into the same out-dir cannot overwrite each other's keys.
+    # 'bare' carries no closure and is bit-identical in both modes -> no
+    # suffix (so it stays directly comparable / reusable across modes).
+    def _lbl(a):
+        return (f'{a}_postadd'
+                if (args.closure_apply == 'postadd' and a != 'bare') else a)
+
+    labels = {a: _lbl(a) for a in arms}
+    if args.closure_apply == 'postadd':
+        # provenance key written ONLY in postadd mode, so a folded run's JSON
+        # stays byte-identical to every run made before this flag existed.
+        results['closure_apply'] = args.closure_apply
+        print('[apost] closure-apply=POSTADD: bare step (denom_bare), then '
+              'the full closure at w_n added to w_{n+1} unscaled; closure '
+              f'arms labelled {[labels[a] for a in arms if a != "bare"]}')
     arm_out = {}
     instr_store = {}
     for arm in arms:
+        lbl = labels[arm]
         mdl = model2 if arm == 'closure2' else model
         sig_rows = ([] if (args.log_sigma and (arm.startswith('closure')
                                                or arm == 'r3anal'))
                     else None)
         lte_rows = [] if args.track_lte else None
         instr = {} if args.instrument_blowup is not None else None
-        print(f'[apost] arm={arm}: {M} coarse steps ...'
+        print(f'[apost] arm={lbl}: {M} coarse steps ...'
               + (f'  [ckpt2={args.ckpt2.parent.name}]'
                  if arm == 'closure2' else '')
               + ('  [sigma FROZEN at t=0]'
@@ -1337,14 +1428,15 @@ def main():
                     nn_clip=args.nn_clip, drop_nddot=args.drop_nddot,
                     nn_project_radius=args.nn_project_radius,
                     nn_dissipative_proj=args.nn_dissipative_proj,
-                    instrument=instr)
+                    instrument=instr,
+                    closure_apply=args.closure_apply)
         arm_out[arm] = r
         if instr:
-            instr_store.update({f'{arm}_{k}': v for k, v in instr.items()})
+            instr_store.update({f'{lbl}_{k}': v for k, v in instr.items()})
             print(f'[apost]   blowup instrumentation: {len(instr["step"])} '
                   f'steps x {len(instr["kshell"])} shells recorded')
         if lte_rows:
-            lte_csv = out_dir / f'lte_{args.tag}_{arm}.csv'
+            lte_csv = out_dir / f'lte_{args.tag}_{lbl}.csv'
             with open(lte_csv, 'w', newline='') as f:
                 w = csv.DictWriter(f, fieldnames=list(lte_rows[0].keys()))
                 w.writeheader()
@@ -1352,7 +1444,7 @@ def main():
             print(f'[apost]   analytic-LTE track -> {lte_csv.name} '
                   f'({len(lte_rows)} checkpoints)')
         if sig_rows:
-            sig_csv = out_dir / f'sigma_hat_{args.tag}_{arm}.csv'
+            sig_csv = out_dir / f'sigma_hat_{args.tag}_{lbl}.csv'
             n_sh = len(sig_rows[0][2])
             with open(sig_csv, 'w', newline='') as f:
                 w = csv.writer(f)
@@ -1363,35 +1455,35 @@ def main():
                   f'({len(sig_rows)} checkpoints x {n_sh} shells, zero FFTs)')
         print(f'[apost]   walltime {r["walltime"]:.1f}s  cfl_max={r["cfl_max"]:.3f}'
               f'  blowup={"none" if r["blowup"] is None else r["blowup"]}')
-        npz_payload[f'{arm}_stack'] = np.stack(
+        npz_payload[f'{lbl}_stack'] = np.stack(
             [np.asarray(r['fields'][s], np.float32) for s in cp
              if s in r['fields']])
-        npz_payload[f'{arm}_cp_avail'] = np.asarray(
+        npz_payload[f'{lbl}_cp_avail'] = np.asarray(
             [s for s in cp if s in r['fields']], np.int64)
-        npz_payload[f'{arm}_t'] = r['t']
-        npz_payload[f'{arm}_E'] = r['E']
-        npz_payload[f'{arm}_Z'] = r['Z']
-        results[f'{arm}_walltime'] = r['walltime']
-        results[f'{arm}_cfl_max'] = r['cfl_max']
-        results[f'{arm}_blowup_step'] = r['blowup']
-        results[f'{arm}_verdict'] = ('UNSTABLE' if r['blowup'] is not None
+        npz_payload[f'{lbl}_t'] = r['t']
+        npz_payload[f'{lbl}_E'] = r['E']
+        npz_payload[f'{lbl}_Z'] = r['Z']
+        results[f'{lbl}_walltime'] = r['walltime']
+        results[f'{lbl}_cfl_max'] = r['cfl_max']
+        results[f'{lbl}_blowup_step'] = r['blowup']
+        results[f'{lbl}_verdict'] = ('UNSTABLE' if r['blowup'] is not None
                                      else 'STABLE')
         if r.get('proj_counts') is not None and len(r['proj_counts']):
-            npz_payload[f'{arm}_proj_shell_count'] = r['proj_counts']
-            npz_payload[f'{arm}_proj_removed_frac'] = r['proj_frac']
-            results[f'{arm}_proj_shells_mean'] = float(
+            npz_payload[f'{lbl}_proj_shell_count'] = r['proj_counts']
+            npz_payload[f'{lbl}_proj_removed_frac'] = r['proj_frac']
+            results[f'{lbl}_proj_shells_mean'] = float(
                 np.mean(r['proj_counts']))
-            results[f'{arm}_proj_shells_max'] = int(np.max(r['proj_counts']))
-            results[f'{arm}_proj_removed_frac_mean'] = float(
+            results[f'{lbl}_proj_shells_max'] = int(np.max(r['proj_counts']))
+            results[f'{lbl}_proj_removed_frac_mean'] = float(
                 np.mean(r['proj_frac']))
-            results[f'{arm}_proj_removed_frac_max'] = float(
+            results[f'{lbl}_proj_removed_frac_max'] = float(
                 np.max(r['proj_frac']))
             print(f'[apost]   dissipative proj: shells/step mean='
-                  f'{results[f"{arm}_proj_shells_mean"]:.1f} '
-                  f'max={results[f"{arm}_proj_shells_max"]}  '
+                  f'{results[f"{lbl}_proj_shells_mean"]:.1f} '
+                  f'max={results[f"{lbl}_proj_shells_max"]}  '
                   f'removed-frac mean='
-                  f'{results[f"{arm}_proj_removed_frac_mean"]:.3e} '
-                  f'max={results[f"{arm}_proj_removed_frac_max"]:.3e}')
+                  f'{results[f"{lbl}_proj_removed_frac_mean"]:.3e} '
+                  f'max={results[f"{lbl}_proj_removed_frac_max"]:.3e}')
 
     # ---- blowup instrumentation dump ---- #
     # written HERE, immediately after the arms and BEFORE the truth-error
@@ -1401,9 +1493,24 @@ def main():
     if instr_store:
         ip = Path(args.instrument_blowup)
         ip.parent.mkdir(parents=True, exist_ok=True)
-        np.savez(ip, arms=np.asarray(arms), tag=str(args.tag), **instr_store)
+        # Ci_meaning: the Ci channel is mode-dependent. folded -> the
+        # IMPLICITLY folded L^3 as actually applied, -c12 L^3 w_{n+1} (it
+        # lives in denom_clos, never in rhs). postadd -> there IS no implicit
+        # channel; Ci is instead the post-step L^3 contribution -c12 L^3 w_n,
+        # applied explicitly at the CURRENT state. Ca+Cn+Ci is the complete
+        # applied closure correction in BOTH modes.
+        meta = {}
+        if args.closure_apply == 'postadd':
+            # metadata written ONLY in postadd, so a folded npz keeps exactly
+            # the keys it had before this flag existed.
+            meta = dict(closure_apply=str(args.closure_apply),
+                        Ci_meaning='post-step explicit -c12 L^3 w_n (postadd '
+                                   'has NO implicit channel; Ca+Cn+Ci is '
+                                   'still the complete applied correction)')
+        np.savez(ip, arms=np.asarray([labels[a] for a in arms]),
+                 tag=str(args.tag), **meta, **instr_store)
         print(f'[apost] blowup instrumentation -> {ip} '
-              f'(arms: {",".join(arms)})')
+              f'(arms: {",".join(labels[a] for a in arms)})')
 
     # ---- error tables vs truth ---- #
     if truth_cp is not None:
@@ -1414,25 +1521,28 @@ def main():
             row = {'t': s * Delta_T}
             for arm in arms:
                 if s in arm_out[arm]['fields']:
-                    row[f'relL2_{arm}'] = rel_l2(arm_out[arm]['fields'][s],
-                                                 truth_cp[s * K])
+                    row[f'relL2_{labels[arm]}'] = rel_l2(
+                        arm_out[arm]['fields'][s], truth_cp[s * K])
             rows.append(row)
-        hdr = ['t'] + [f'relL2_{a}' for a in arms]
+        # column names carry the closure-apply label (see _lbl): a folded
+        # and a postadd run in the same out-dir stay distinguishable.
+        alb = [labels[a] for a in arms]
+        hdr = ['t'] + [f'relL2_{a}' for a in alb]
         csv_path = out_dir / f'rollout_apost_{args.tag}.csv'
         with open(csv_path, 'w', newline='') as f:
             w = csv.DictWriter(f, fieldnames=hdr)
             w.writeheader()
             w.writerows(rows)
-        print(f'\n{"t":>10}' + ''.join(f'{a:>14}' for a in arms))
+        print(f'\n{"t":>10}' + ''.join(f'{a:>14}' for a in alb))
         for row in rows:
             print(f'{row["t"]:>10.4f}' + ''.join(
-                f'{row.get(f"relL2_{a}", float("nan")):>14.4e}' for a in arms))
+                f'{row.get(f"relL2_{a}", float("nan")):>14.4e}' for a in alb))
         results['error_table'] = rows
-        finals = {a: rows[-1].get(f'relL2_{a}') for a in arms if rows}
+        finals = {a: rows[-1].get(f'relL2_{a}') for a in alb if rows}
         results['final_relL2'] = finals
         if 'bare' in finals:
             imps = []
-            for a in (x for x in arms if x.startswith('closure')):
+            for a in (x for x in alb if x.startswith('closure')):
                 if finals.get(a):
                     results[f'improvement_x_{a}'] = (finals['bare']
                                                      / max(finals[a], 1e-30))
