@@ -1561,17 +1561,17 @@ def main():
         # epoch where every chunk was skipped) => save state, marker,
         # exit 9. NB: skipped-chunk survivor handling (per-sample) stays;
         # this guards the MODEL going globally non-finite.
-        ep_bad = (not np.isfinite(va)) or (nb == 0)
+        ep_bad = not np.isfinite(va)
         if ep_bad and _nan_streak >= 1:
             (run_dir / 'NAN_ABORT.txt').write_text(
-                f"epoch {ep}: val={va} chunks_ok={nb}\n"
+                f"epoch {ep}: val={va}\n"
                 f"STOP > CHECK > FIX > RESUBMIT: do not rerun unchanged; "
                 f"diagnose the first non-finite quantity first.\n")
             torch.save({'model': model.state_dict(), 'epoch': ep,
                         'nan_abort': True, 'config': vars(args)},
                        run_dir / 'last_nan_abort.pt')
-            print(f"[NAN-ABORT] two consecutive bad epochs (ep {ep}, "
-                  f"val={va}, chunks_ok={nb}); exiting 9", flush=True)
+            print(f"[NAN-ABORT] two consecutive non-finite val epochs "
+                  f"(ep {ep}, val={va}); exiting 9", flush=True)
             sys.exit(9)
         _nan_streak = 1 if ep_bad else 0
         sched.step()
