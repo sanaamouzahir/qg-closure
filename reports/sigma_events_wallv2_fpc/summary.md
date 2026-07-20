@@ -1,15 +1,15 @@
-# sigma at events -- FPC-sine
+# sigma at events -- FPC-ou
 
-verdict: **CONFIDENTLY-WRONG: truth is 6 sigma away (median) -- features cannot distinguish these states; fix = near-wall features**
+verdict: **CONFIDENTLY-WRONG: truth is 5 sigma away (median) -- features cannot distinguish these states; fix = near-wall features**
 
 ```yaml
-member: FPC-sine
+member: FPC-ou
 n_events: 50
-rmse_frame_ref: 0.33239278197288513
-sigma_median_at_events: 2.5652127265930176
-sigma_over_rmse_median: 7.717414052638105
-z_true_median: 6.266253608313496
-z_true_p90: 13.336840690386142
-verdict: 'CONFIDENTLY-WRONG: truth is 6 sigma away (median) -- features cannot distinguish
+rmse_frame_ref: 0.13148827850818634
+sigma_median_at_events: 2.5593082904815674
+sigma_over_rmse_median: 19.464155432852724
+z_true_median: 4.668965746132591
+z_true_p90: 8.581411744993298
+verdict: 'CONFIDENTLY-WRONG: truth is 5 sigma away (median) -- features cannot distinguish
   these states; fix = near-wall features'
 ```
