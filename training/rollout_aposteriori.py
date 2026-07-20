@@ -143,6 +143,41 @@ from rollout_perfect_closure import analytic_n_derivs_hat           # noqa: E402
 # model loading (deriv family: cheap_deriv / cond_local / cond_deriv)          #
 # --------------------------------------------------------------------------- #
 
+def _override_nddot_depth(model, K, n_snap):
+    """Replace the model's order-2 (Nddot) time-FD row with the K-point
+    backward 2nd-difference over the NEWEST K snapshots (unit spacing; the
+    dt^-2 rescale is applied downstream exactly as before). Zeros on the
+    unused older slots. Unit-checked at build: the new row sums to 0 (kills
+    constants), has zero 1st moment (kills linear) and 2nd moment 1 (exact
+    2nd derivative) over its K nodes. Aborts if the model has no time_fd.W_unit
+    or K is out of range."""
+    import math
+    fd = getattr(model, 'time_fd', None)
+    if fd is None or not hasattr(fd, 'W_unit'):
+        raise SystemExit('[nddot-depth] model has no time_fd.W_unit')
+    S = int(fd.W_unit.shape[-1])
+    if not (2 < K <= S):
+        raise SystemExit(f'[nddot-depth] K={K} must be in (2, {S}]')
+    xu = np.array([-j for j in range(K)], dtype=np.float64)
+    Au = np.array([[xu[j] ** m / math.factorial(m) for j in range(K)]
+                   for m in range(K)], dtype=np.float64)
+    row = np.linalg.inv(Au).T[2]                       # K-point order-2 stencil
+    m0 = float(row.sum())
+    m1 = float((row * xu).sum())
+    m2 = float((row * xu ** 2 / 2.0).sum())
+    if abs(m0) > 1e-10 or abs(m1) > 1e-10 or abs(m2 - 1.0) > 1e-10:
+        raise SystemExit(f'[nddot-depth] UNIT CHECK FAIL: K={K} row moments '
+                         f'sum={m0:.2e} m1={m1:.2e} m2={m2:.6f}')
+    full = np.zeros(S, dtype=np.float64)
+    full[:K] = row
+    with torch.no_grad():
+        fd.W_unit[2] = torch.from_numpy(full).to(fd.W_unit.dtype)
+    print(f'[nddot-depth] order-2 row -> newest {K} snapshots '
+          f'(sum|W2|: 7-pt=102 -> {float(np.abs(full).sum()):.1f}); '
+          f'unit checks PASS (sum={m0:.1e} m1={m1:.1e} m2={m2:.4f})',
+          flush=True)
+
+
 def load_deriv_model(ckpt_path: Path, manifest, dt_rollout, device,
                      nn_float64=True):
     """Load a train_deriv.py checkpoint (best.pt: {'model': sd, 'config': ...}).
@@ -1376,6 +1411,16 @@ def main():
                         '(r3anal = full analytic R3 via exact chain-rule '
                         'Ndot/Nddot, no NN -- the analytic-LTE ceiling / '
                         'blowup discriminator)')
+    p.add_argument('--nddot-depth', type=int, default=0,
+                   help="STABILITY PROBE (Sanaa 2026-07-20): overwrite the "
+                        "model's order-2 (Nddot) time-FD row with the K-point "
+                        "backward 2nd-difference over the NEWEST K snapshots "
+                        "(zeros on the rest). 0 = off (byte-identical). This "
+                        "REDUCES the closed-loop gain sum|W2| (7-pt=102, "
+                        "4-pt=12, 3-pt=4) WITHOUT retraining -- the model is "
+                        "then Nddot-inaccurate but the test is STABILITY: if "
+                        "the blowup step moves late/away the history-FD loop "
+                        "is confirmed as the mechanism.")
     p.add_argument('--closure-apply', type=str, default='folded',
                    choices=('folded', 'postadd'),
                    help="HOW the closure is applied. 'folded' (default, "
@@ -1677,6 +1722,8 @@ def main():
     # ---- model ---- #
     model, model_name, n_snap = load_deriv_model(
         args.ckpt, manifest, Delta_T, device, nn_float64=args.nn_float64)
+    if args.nddot_depth > 0:
+        _override_nddot_depth(model, args.nddot_depth, n_snap)
     input_fields = (['omega_0'] + [f'omega_m{k}' for k in range(1, n_snap)]
                     + ['psi_0'] + [f'psi_m{k}' for k in range(1, n_snap)])
     model2 = model2_name = None
