@@ -2,3 +2,4 @@ timestamp,event,job_id,host,note
 2026-07-19T01:07:01,start,1840766,ibgpu-compute-0-0.local,piff grid point launched: --config conf_piff_cape_gjs_wallv2.yaml --run-name piff_cape_gjs_wallv2
 2026-07-19T05:55:28,done,1840766,ibgpu-compute-0-0.local,piff train complete
 2026-07-19T19:43:08,start,1841467,ibgpu-compute-0-0.local,piff grid point launched: --config conf_piff_cape_gjs_wallv2.yaml --run-name piff_cape_gjs_wallv2
+2026-07-19T23:12:24,done,1841467,ibgpu-compute-0-0.local,piff train complete
