@@ -1,3 +1,5 @@
 timestamp,event,job_id,host,note
 2026-07-19T05:51:02,start,1840758,ibfdr-compute-0-2.local,diagnose_mean_prediction.py --ckpt runs_piff/piff_fpc_gjs_wallv2/best.pt --config conf_piff_fpc_gjs_wallv2.yaml --device cpu --report-run mean_prediction_wallv2_fpc
 2026-07-19T05:53:12,fail,1840758,ibfdr-compute-0-2.local,diagnose_mean_prediction.py exited rc=1 -- raw log in <branch>/logs/
+2026-07-19T23:10:38,start,1841459,ibfdr-compute-0-2.local,diagnose_mean_prediction.py --ckpt runs_piff/piff_fpc_gjs_wallv2/best.pt --config conf_piff_fpc_gjs_wallv2.yaml --device cpu --report-run mean_prediction_wallv2_fpc
+2026-07-19T23:18:39,done,1841459,ibfdr-compute-0-2.local,mean-prediction diag piff_fpc_gjs_wallv2 (5 members)

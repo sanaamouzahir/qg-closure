@@ -1,0 +1,12 @@
+# mean-prediction diagnostics -- piff_fpc_gjs_wallv2 (val, filtered variant gaussian_jonly_ylp75)
+
+| member | modulation | n_frames | r2 | rmse | bias | max_err | min_err | pearson_Re_rmse | corr_ae_sdf | corr_ae_y | L_error | L_truth | L_pred | pred_truth_corr |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| FPC-const | constant_inflow | 74 | 0.9649 | 0.12024 | +1.781e-04 | 25.3928 | -38.056 | nan | -0.164 | 0.01 | 0.0339 | 0.0532 | 0.0541 | 0.9824 |
+| FPC-sine | sine_modulation | 44 | 0.9383 | 0.17111 | -9.315e-04 | 35.4709 | -37.6501 | -0.389 | -0.144 | 0.008 | 0.0457 | 0.0543 | 0.0553 | 0.9698 |
+| FPC-ramp | ramp_modulation | 44 | 0.9422 | 0.17994 | +1.943e-03 | 34.5063 | -36.2328 | nan | -0.145 | 0.009 | 0.0342 | 0.0534 | 0.0547 | 0.9707 |
+| FPC-ou | ornstein_uhlenbeck_modulation | 44 | 0.9513 | 0.15475 | +8.015e-04 | 23.0203 | -23.4058 | 0.436 | -0.158 | 0.008 | 0.0345 | 0.0527 | 0.0538 | 0.9754 |
+| FPC-telS-A | telegraph_modulation | 44 | 0.9395 | 0.20194 | +2.006e-03 | 42.2704 | -57.8419 | nan | -0.136 | 0.007 | 0.0338 | 0.0528 | 0.0541 | 0.9694 |
+
+figures: /gdata/projects/ml_scope/Closure_modeling/QG-closure/qg-sgs-closure/ml_closure/pngs/mean_prediction_diag/piff_fpc_gjs_wallv2
+per-member yaml/csv: runs_piff/piff_fpc_gjs_wallv2/mean_prediction_diag
