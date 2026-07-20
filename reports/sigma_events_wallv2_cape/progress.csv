@@ -19,3 +19,4 @@ timestamp,event,job_id,host,note
 2026-07-19T23:24:20,done,1841472,ibfdr-compute-0-4.local,FPCape-const: KNOWS-IT: truth within ~3 predicted sigma at the events -- fix = induc
 2026-07-19T23:24:33,done,1841476,ibfdr-compute-0-4.local,FPCape-tel: KNOWS-IT: truth within ~3 predicted sigma at the events -- fix = induc
 2026-07-19T23:24:36,done,1841474,ibfdr-compute-0-4.local,FPCape-ramp: KNOWS-IT: truth within ~3 predicted sigma at the events -- fix = induc
+2026-07-19T23:24:54,done,1841475,ibfdr-compute-0-4.local,FPCape-ou: KNOWS-IT: truth within ~3 predicted sigma at the events -- fix = induc
