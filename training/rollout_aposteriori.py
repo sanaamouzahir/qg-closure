@@ -257,6 +257,98 @@ def _shell_enstrophy(spec, shf, n_sh, wf):
 
 
 # --------------------------------------------------------------------------- #
+# --track-fnn-error : per-step NN-vs-analytic closure error, by radial band    #
+# --------------------------------------------------------------------------- #
+# Bands (integer mode-radius, the _instr_shells / spectral_error_profile
+# convention): low = the energy-carrying core, mid = out to the TRUE alias-safe
+# radius (2/3)*min(kx_max,ky_max) = 170.67 at 512^2, ann = the 170.7--241.4
+# annulus the solver's RADIAL sqrt(2)*(2/3)*k_max mask leaves alias-
+# contaminated, bey = outside the solver mask (must stay ~0).
+_FNN_BAND_EDGES = (60, 170, 241)          # the 512^2 values
+_FNN_BAND_NAMES = ('low', 'mid', 'ann', 'bey')
+
+
+def _default_band_edges(Nx):
+    """The band edges are ABSOLUTE mode indices, so the 512^2 defaults
+    (60, 170, 241) mislabel any other grid: on 256^2 the alias-safe radius is
+    85 and the max radius 181, so 'mid' would swallow the contaminated annulus
+    and 'bey' would be empty BY CONSTRUCTION. Rescale with the grid: e1 =
+    (2/3)k_max (the true alias-safe radius), e2 = sqrt(2)(2/3)k_max (the
+    solver's radial mask), e0 = 60 at 512^2 pro rata."""
+    kmax = Nx // 2
+    return (int(round(60.0 * Nx / 512.0)),
+            int(round((2.0 / 3.0) * kmax)),
+            int(round(np.sqrt(2.0) * (2.0 / 3.0) * kmax)))
+
+
+def _fnn_bands(Ny, Nx, device, edges=_FNN_BAND_EDGES):
+    """Radial band masks + Hermitian double-count weights on the rfft
+    half-plane. w broadcasts over the last two dims, so every band rms below
+    is a Parseval reduction -- ZERO FFTs."""
+    iy = torch.fft.fftfreq(Ny, d=1.0 / Ny, device=device).to(torch.float64)
+    ix = torch.arange(Nx // 2 + 1, dtype=torch.float64, device=device)
+    r = torch.round(torch.sqrt(iy[:, None] ** 2 + ix[None, :] ** 2))
+    w = torch.full((Nx // 2 + 1,), 2.0, dtype=torch.float64, device=device)
+    w[0] = 1.0
+    if Nx % 2 == 0:
+        w[-1] = 1.0
+    e0, e1, e2 = (float(e) for e in edges)
+    masks = [r < e0,
+             (r >= e0) & (r <= e1),
+             (r > e1) & (r <= e2),
+             r > e2]
+    return ([m.to(torch.float64) for m in masks],
+            w[None, :].expand(Ny, -1).contiguous())
+
+
+def _spec_rms(spec, w):
+    """Physical-space rms of a spectral field by Parseval (solver convention
+    norm='forward' => <f^2> = sum_k w_k |f_k|^2). Zero FFTs. Cross-checked
+    against to_physical(f).pow(2).mean().sqrt() by unit check U0."""
+    e = spec.real ** 2 + spec.imag ** 2
+    return float((e * w).sum()) ** 0.5
+
+
+def _fnn_postproc(f, derivative, dealias_nn, kcut_mask, proj_mask,
+                  diss_shells, qh_curr, nn_clip):
+    """The EXACT post-processing chain the closure arm applies to f_NN, in the
+    SAME order (nn_clip -> dealias -> nn_kcut -> proj_mask -> dissipative
+    projection), applied here to the ANALYTIC f so the --track-fnn-error
+    comparison is apples-to-apples.
+
+    Deliberately a SEPARATE replica of the live chain rather than a refactor of
+    it: the live f_NN arithmetic stays byte-untouched. The replica is verified
+    against the live chain END-TO-END by unit check U2 (--fnn-selftest pushes
+    the analytic derivatives through the NN slot; any difference in the replica
+    would show up there as a non-round-off rel).
+    """
+    from qg.solver.opt.basis import to_spectral, to_physical
+    if nn_clip is not None:
+        fp = to_physical(f)
+        s = float(nn_clip) * torch.sqrt((fp ** 2).mean())
+        f = to_spectral(fp.clamp(-s, s))
+    if dealias_nn:
+        f = _dealias_mul(f, derivative)
+    if kcut_mask is not None:
+        f = f * kcut_mask
+    if proj_mask is not None:
+        f = f * proj_mask
+    if diss_shells is not None:
+        shf_d, n_sh_d, w_d = diss_shells
+        fr = f.reshape(-1)
+        qr = qh_curr.reshape(-1)
+        q2 = qr.real ** 2 + qr.imag ** 2
+        num = torch.zeros(n_sh_d, dtype=torch.float64, device=f.device)
+        den = torch.zeros_like(num)
+        num.scatter_add_(0, shf_d, w_d * (fr.real * qr.real
+                                          + fr.imag * qr.imag))
+        den.scatter_add_(0, shf_d, w_d * q2)
+        lam = num.clamp_max(0.0) / den.clamp_min(1e-300)
+        f = f - lam[shf_d].reshape(f.shape) * qh_curr
+    return f
+
+
+# --------------------------------------------------------------------------- #
 # rollout arms                                                                 #
 # --------------------------------------------------------------------------- #
 
@@ -268,7 +360,9 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
             nn_kcut=None, nn_gamma=1.0, nn_clip=None, drop_nddot=False,
             nn_project_radius=None, nn_dissipative_proj=False,
             nn_grad=False, return_stepper=False, instrument=None,
-            closure_apply='folded'):
+            closure_apply='folded', fnn_err_log=None, fnn_selftest=False,
+            fnn_band_edges=_FNN_BAND_EDGES, truth_hist=None,
+            truth_stats=None, return_capture=False):
     """One arm of the comparison. arm in {'bare','r3only','r3anal',
     'closure','closure2'} ('closure2' = a second checkpoint through the
     identical code path, e.g. the control vs the conditioned model;
@@ -402,6 +496,45 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
         nn_dissipative_proj), so the ONLY difference between the two modes is
         the folding, not the conditioning. The two agree to O(DT^3) and differ
         at O(DT^4) per step -- that gap is the whole point of the experiment.
+
+    fnn_err_log : optional list -- --track-fnn-error. None (default) => the
+        tracker CANNOT execute and the arm is byte-identical. When a list is
+        passed AND the arm is a closure arm, then at EVERY step the ANALYTIC
+        reference is built at the SAME state the NN just saw (the driver's own
+        path: analytic_n_derivs_hat -> f_anal = (1/12)(L Ndot - 5 Nddot)),
+        pushed through the IDENTICAL post-processing chain (_fnn_postproc), and
+        rms(f_NN), rms(f_anal), rms(f_NN - f_anal) and their ratio are appended
+        -- globally AND per radial band (fnn_band_edges). All reductions are
+        Parseval (zero FFTs); the analytic chain-rule build costs ~50
+        FFTs/step, so a tracked arm is a DIAGNOSTIC arm, never a walltime
+        benchmark. The trajectory is untouched: the tracker only READS the live
+        f_nn tensor the step already produced and writes fresh tensors.
+        WHY it exists: at the IC the NN and analytic closures agree to ~1% and
+        the whole correction is ~2e-5 of the state, yet the closure arm blows
+        up at step 37 while r3anal runs clean -- the arms must therefore
+        diverge AFTER step 0, and this is the per-step, per-band record of
+        where and when.
+    fnn_selftest : DEBUG switch for unit check U2 -- replace the model output
+        by the ANALYTIC derivatives (through the identical to_physical /
+        to_spectral round trip the NN output takes), so --track-fnn-error must
+        then measure rel ~ 0. False (default) => the branch is dead.
+    truth_hist : optional {coarse_step: (omega, psi)} -- --truth-history. None
+        (default) => the substitution CANNOT execute and the arm is
+        byte-identical. When passed (closure arms only) the arm still ADVANCES
+        ITS OWN state, but the history stack HANDED TO THE MODEL at each step
+        has slot k replaced by the TRUE snapshot at that step when one exists;
+        slots with no stored truth fall back to the arm's own rolled history
+        and are COUNTED in truth_stats. Isolates covariate shift (model fed its
+        own drifting history) from every other mechanism. Truth is normally
+        stored only at checkpoints, so the fallback rate is high unless the
+        refs were saved on a per-step grid -- read truth_stats before believing
+        any result from this mode.
+    truth_stats : optional dict, filled with req/hit/miss/miss_slot counters
+        for the substitution above.
+    return_capture : with return_stepper, hand back (one_step, instr_cap) so a
+        caller driving the stepper itself can read each step's applied
+        correction terms (needs instrument=<dict>). Default False keeps the
+        existing single-value return -- train_deriv_rollout.py is unaffected.
     """
     from qg.solver.opt.basis import to_spectral, to_physical
     # truth = RK4 (exact flow) -> the target is the FULL Taylor defect:
@@ -471,6 +604,15 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
     dx_v = torch.full((1,), _DX, device=device, dtype=torch.float64)
     dy_v = torch.full((1,), _DY, device=device, dtype=torch.float64)
     frozen_feats = [None]        # filled at t=0 when freeze_sigma
+    # --- f_NN error tracker (OFF unless a list is passed) ----------------- #
+    # track_fnn is False for every default run, so the capture line inside
+    # one_step and the logger in the loop below are both dead -> byte-
+    # identical trajectory, identical FFT count.
+    track_fnn = (fnn_err_log is not None) and is_clos
+    fnn_bands = fnn_bw = None
+    fnn_cap = [None]             # one_step -> loop handoff of (f_nn, state)
+    if track_fnn:
+        fnn_bands, fnn_bw = _fnn_bands(Nyg, Nxg, device, fnn_band_edges)
     # --- blowup instrumentation (OFF unless a dict is passed) ------------- #
     instr_shells = None
     instr_cap = [None]           # one_step -> loop handoff of the step's terms
@@ -569,9 +711,25 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
                     kw['cond_feats'] = model.context_feats_from_spectral(
                         qh_curr, qh_curr - qh_minus, dt_v, _LX, _LY, Nyg, Nxg)
             prof.mark('nn_conv')
-            with (contextlib.nullcontext() if nn_grad else torch.no_grad()):
-                yhat = model(x, dt=dt_v, dx=dx_v, dy=dy_v,
-                             **kw).to(torch.float64)
+            if fnn_selftest:
+                # U2 debug switch (dead by default): the ANALYTIC derivatives
+                # take the NN's place, through the identical physical <->
+                # spectral round trip, so the tracker below must read rel ~ 0.
+                Nd_st = analytic_n_derivs_hat(qh_curr, derivative, L_hat,
+                                              F_hat, max_order=2)
+                # analytic_n_derivs_hat returns RANK-3 spectral fields
+                # (1, Ny, Nxh) -> to_physical (1, Ny, Nx); the model output is
+                # RANK-4 (1, C, Ny, Nx), so a channel axis must be inserted
+                # before the cat (without it the cat stacks along Ny and the
+                # consumer below silently slices a single row).
+                p1 = to_physical(Nd_st[1])[:, None]
+                p2 = to_physical(Nd_st[2])[:, None]
+                yhat = torch.cat([p1, p2, torch.zeros_like(p1)],
+                                 dim=1).to(torch.float64)
+            else:
+                with (contextlib.nullcontext() if nn_grad else torch.no_grad()):
+                    yhat = model(x, dt=dt_v, dx=dx_v, dy=dy_v,
+                                 **kw).to(torch.float64)
             prof.mark('nn_fft')
             Ndot_h = to_spectral(yhat[:, 0:1][0])            # 1 FFT
             Nddot_h = to_spectral(yhat[:, 1:2][0])           # 1 FFT
@@ -610,6 +768,11 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
                     proj_log.append((int((lam < 0.0).sum()),
                                      (rem2 / f2) ** 0.5 if f2 > 0.0 else 0.0))
                 f_nn = f_nn - lam[shf_d].reshape(f_nn.shape) * qh_curr
+            if track_fnn:
+                # read-only handoff of the FULLY post-processed f_NN exactly as
+                # it is about to be applied, plus the state it was built from
+                # (the analytic reference must be evaluated at the SAME state)
+                fnn_cap[0] = (f_nn, qh_curr)
             prof.mark('combine')
             if is_post:
                 # f_nn here is POST dealias/kcut/proj-radius/dissipative-proj,
@@ -668,7 +831,9 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
 
     if return_stepper:
         # rollout-loss trainer path: expose the exact stepper, skip the loop.
-        return one_step
+        # return_capture is False by default -> the existing single-value
+        # return is unchanged for every existing caller.
+        return (one_step, instr_cap) if return_capture else one_step
 
     qh_curr = to_spectral(omega_stack[0])
     qh_minus = to_spectral(omega_stack[1])
@@ -723,6 +888,69 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
         instr_rows['E'].append(E_s)
         instr_rows['cfl'].append(cfl_s)
         instr_rows['max_omega'].append(mx)
+
+    def truth_sub(s_latest, om_h, ps_h):
+        """--truth-history: hand the model TRUE snapshots where they exist.
+        Slot k of the newest-first stack is the state at coarse step
+        s_latest - k. Falls back to the arm's own rolled entry when no truth
+        snapshot was stored for that step, and counts every fallback."""
+        om_o, ps_o = [], []
+        truth_stats.setdefault('req', 0)
+        truth_stats.setdefault('hit', 0)
+        truth_stats.setdefault('miss', 0)
+        truth_stats.setdefault('hit_slot', [0] * len(om_h))
+        truth_stats.setdefault('miss_slot', [0] * len(om_h))
+        for k in range(len(om_h)):
+            tr = truth_hist.get(s_latest - k)
+            truth_stats['req'] += 1
+            if tr is None:
+                om_o.append(om_h[k])
+                ps_o.append(ps_h[k])
+                truth_stats['miss'] += 1
+                truth_stats['miss_slot'][k] += 1
+            else:
+                om_o.append(tr[0])
+                ps_o.append(tr[1])
+                truth_stats['hit'] += 1
+                truth_stats['hit_slot'][k] += 1
+        return om_o, ps_o
+
+    def log_fnn_err(step):
+        """--track-fnn-error: the analytic closure at the SAME state the NN
+        just saw, through the SAME post-processing -> rms/rel globally and per
+        radial band. Reads the live capture, writes fresh tensors only."""
+        if not track_fnn or fnn_cap[0] is None:
+            return
+        f_nn_a, qh_used = fnn_cap[0]
+        if not (torch.isfinite(qh_used.real).all()
+                and torch.isfinite(qh_used.imag).all()):
+            return
+        Nd = analytic_n_derivs_hat(qh_used, derivative, L_hat, F_hat,
+                                   max_order=2)
+        f_an = ((1.0 / 12.0) * (L_hat * Nd[1]) if drop_nddot
+                else (1.0 / 12.0) * (L_hat * Nd[1] - 5.0 * Nd[2]))
+        f_an = _fnn_postproc(f_an, derivative, dealias_nn, kcut_mask,
+                             proj_mask, diss_shells, qh_used, nn_clip)
+        g = float(nn_gamma)                 # applied to BOTH -> rel unchanged
+        fn, fa = g * f_nn_a, g * f_an
+        df = fn - fa
+        row = dict(step=int(step), t_state=float((step - 1) * Delta_T))
+        row['rms_fnn'] = _spec_rms(fn, fnn_bw)
+        row['rms_fanal'] = _spec_rms(fa, fnn_bw)
+        row['rms_diff'] = _spec_rms(df, fnn_bw)
+        row['rel'] = row['rms_diff'] / max(row['rms_fanal'], 1e-300)
+        for nm, m in zip(_FNN_BAND_NAMES, fnn_bands):
+            a_b = _spec_rms(fa * m, fnn_bw)
+            row[f'rms_fnn_{nm}'] = _spec_rms(fn * m, fnn_bw)
+            row[f'rms_fanal_{nm}'] = a_b
+            row[f'rms_diff_{nm}'] = _spec_rms(df * m, fnn_bw)
+            row[f'rel_{nm}'] = row[f'rms_diff_{nm}'] / max(a_b, 1e-300)
+        fnn_err_log.append(row)
+        print(f'      [fnn s={row["step"]:>4d} t={row["t_state"]:.4f}] '
+              f'nn={row["rms_fnn"]:.4e} an={row["rms_fanal"]:.4e} '
+              f'diff={row["rms_diff"]:.4e} rel={row["rel"]:.4e} | '
+              + ' '.join(f'{nm}={row[f"rel_{nm}"]:.3e}'
+                         for nm in _FNN_BAND_NAMES), flush=True)
 
     def log_sigma(step, qc, qm):
         if sigma_log is None or not (is_clos or is_anal):
@@ -796,6 +1024,7 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
     # NOTE: freeze_sigma context is (re)pinned from the REAL IC states below,
     # not from the warmup clones.
     frozen_feats[0] = None
+    fnn_cap[0] = None            # discard whatever the untimed warmup left
 
     fields = {}
     cps = set(cp_steps)
@@ -818,8 +1047,15 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
     proj_i0 = len(proj_log) if proj_log is not None else 0   # skip warmup rows
     _sync(device); t0 = time.time()
     for s in range(1, n_steps + 1):
+        # --truth-history: om_in/ps_in ARE om/ps unless truth_hist was passed,
+        # so the default path hands the stepper the identical objects.
+        om_in, ps_in = om, ps
+        if truth_hist is not None and is_clos:
+            om_in, ps_in = truth_sub(s - 1, om, ps)
         qh_new, Nh_new, om_new, ps_new = one_step(qh_curr, qh_minus,
-                                                  Nh_curr, Nh_minus, om, ps)
+                                                  Nh_curr, Nh_minus,
+                                                  om_in, ps_in)
+        log_fnn_err(s)                     # before the swap: qh_curr = state
         qh_minus, qh_curr = qh_curr, qh_new
         Nh_minus, Nh_curr = Nh_curr, Nh_new
         if is_clos:
@@ -895,6 +1131,144 @@ def run_arm(arm, omega_stack, psi_stack, Delta_T, n_steps, cp_steps,
     return dict(fields=fields, t=np.asarray(ts), E=np.asarray(Es),
                 Z=np.asarray(Zs), cfl_max=cfl_max, blowup=blowup,
                 walltime=wall, proj_counts=proj_counts, proj_frac=proj_frac)
+
+
+def run_fnn_unit_checks(model, omega_stack, psi_stack, Delta_T, derivative,
+                        L_hat, F_hat, device, input_fields, args):
+    """The three MANDATORY unit checks for --track-fnn-error (Sanaa mandate
+    2026-07-20). Nothing this tracker measures is reportable unless all three
+    print PASS.
+
+      U0  the Parseval band-rms used by the tracker equals the physical-space
+          rms of the same field (the reduction itself is right).
+      U1  the analytic f_anal the TRACKER builds reproduces what the r3anal
+          ARM actually applies at step 0, to <1e-12 relative -- same state,
+          same post-processing. Compared through the arm's OWN instrumentation
+          channel (per-shell enstrophy of the applied analytic correction), so
+          this is the live arm's number, not a restatement of the tracker's.
+      U2  with the tracker ON and the model replaced by the analytic
+          derivatives (--fnn-selftest), rel must be ~0: the tracker measures
+          zero when there is nothing to measure. This is also what validates
+          the _fnn_postproc replica against the live post-processing chain.
+      U3  the tracker does not perturb the trajectory: 3 steps with the flag
+          ON and 3 steps with it OFF must end BIT-identical.
+
+    Returns True iff every check passed.
+    """
+    from qg.solver.opt.basis import to_spectral, to_physical
+    print('\n===== --track-fnn-error UNIT CHECKS (mandatory) =====')
+    Ny, Nx = omega_stack[0].shape[-2], omega_stack[0].shape[-1]
+    coef = Delta_T ** 3
+    c12 = coef / 12.0
+    qh0 = to_spectral(omega_stack[0])
+    ok = True
+
+    # ---- U0: Parseval band-rms == physical rms ---- #
+    _, w_b = _fnn_bands(Ny, Nx, device)
+    r_spec = _spec_rms(qh0, w_b)
+    r_phys = float(torch.sqrt((to_physical(qh0) ** 2).mean()))
+    d0 = abs(r_spec - r_phys) / max(r_phys, 1e-300)
+    print(f'  U0 Parseval rms {r_spec:.12e} vs physical {r_phys:.12e}  '
+          f'rel={d0:.3e}  -> {"PASS" if d0 < 1e-12 else "FAIL"}')
+    ok &= d0 < 1e-12
+
+    # ---- U1: tracker's f_anal == what the r3anal arm applies at step 0 ---- #
+    remediated = (args.nn_kcut is not None or args.nn_clip is not None
+                  or args.nn_dissipative_proj)
+    if remediated or args.r4:
+        print('  U1 SKIPPED: '
+              + ('--r4 is on, so the r3anal arm folds the R4 term into the '
+                 'same applied-correction channel while the tracker is R3-only'
+                 if args.r4 else
+                 'a remediation (--nn-kcut/--nn-clip/--nn-dissipative-proj) '
+                 'is active, so the tracker chain (the f_NN chain, by spec) '
+                 'and the r3anal chain differ BY DESIGN')
+              + '. Run the unit checks without it.')
+        ok = False
+        print('  U1 counts as NOT PASSED -- run the checks in the plain '
+              'configuration before reporting any tracker number.')
+    else:
+        proj_mask = None
+        if args.nn_project_radius is not None:
+            kx2 = (-(derivative.dx ** 2)).real
+            ky2 = (-(derivative.dy ** 2)).real
+            k_safe = float(args.nn_project_radius) * min(
+                float(kx2.max()) ** 0.5, float(ky2.max()) ** 0.5)
+            proj_mask = (torch.sqrt(kx2 + ky2) <= k_safe).to(torch.float64)
+        instr = {}
+        run_arm('r3anal', omega_stack, psi_stack, Delta_T, 1, [1],
+                derivative, L_hat, F_hat, device,
+                dealias_nn=args.dealias_nn, include_r4=args.r4,
+                drop_nddot=args.drop_nddot,
+                nn_project_radius=args.nn_project_radius,
+                scalars_every=10 ** 9, instrument=instr,
+                closure_apply=args.closure_apply)
+        Nh0 = N_spectral(qh0, derivative, F_hat)
+        Nd = analytic_n_derivs_hat(qh0, derivative, L_hat, F_hat, max_order=2)
+        f_an = ((1.0 / 12.0) * (L_hat * Nd[1]) if args.drop_nddot
+                else (1.0 / 12.0) * (L_hat * Nd[1] - 5.0 * Nd[2]))
+        f_an = _fnn_postproc(f_an, derivative, args.dealias_nn, None,
+                             proj_mask, None, qh0, None)
+        # what the r3anal arm applies explicitly: -c12 L^2 N - coef f_anal
+        Ca_ref = -c12 * ((L_hat ** 2) * Nh0) - coef * f_an
+        shf, n_sh, wf = _instr_shells(Ny, Nx, device)
+        ref = _shell_enstrophy(Ca_ref, shf, n_sh, wf).cpu().numpy()
+        got = np.asarray(instr['Ca_k'][1], np.float64)   # step 1 = at the IC
+        den = max(float(np.abs(ref).sum()), 1e-300)
+        d1 = float(np.abs(got - ref).sum()) / den
+        print(f'  U1 tracker f_anal vs r3anal applied correction: '
+              f'sum|d|/sum|ref|={d1:.3e}  (rms_f_anal='
+              f'{_spec_rms(f_an, w_b):.6e}, coef*rms={coef*_spec_rms(f_an, w_b):.6e})'
+              f'  -> {"PASS" if d1 < 1e-12 else "FAIL"}')
+        if not d1 < 1e-12:
+            print(f'  U1 FAIL DETAIL: the tracker\'s analytic reference does '
+                  f'NOT reproduce what the r3anal arm applies '
+                  f'(rel {d1:.3e} >= 1e-12). No tracker number is reportable.')
+        ok &= bool(d1 < 1e-12)
+
+    # ---- U2: tracker reads ~0 when the NN IS the analytic derivatives ---- #
+    log2 = []
+    run_arm('closure', omega_stack, psi_stack, Delta_T, 1, [1],
+            derivative, L_hat, F_hat, device, model=model,
+            input_fields=input_fields, dealias_nn=args.dealias_nn,
+            include_r4=args.r4, drop_nddot=args.drop_nddot,
+            nn_kcut=args.nn_kcut, nn_gamma=args.nn_gamma, nn_clip=args.nn_clip,
+            nn_project_radius=args.nn_project_radius,
+            nn_dissipative_proj=args.nn_dissipative_proj,
+            closure_apply=args.closure_apply,
+            scalars_every=10 ** 9, fnn_err_log=log2, fnn_selftest=True)
+    r2 = log2[0]['rel'] if log2 else float('nan')
+    p2 = np.isfinite(r2) and r2 < 1e-12
+    print(f'  U2 tracker rel with the NN replaced by the analytic derivatives: '
+          f'{r2:.3e}  -> {"PASS" if p2 else "FAIL"}')
+    ok &= bool(p2)
+
+    # ---- U3: the tracker does not perturb the trajectory ---- #
+    kw3 = dict(model=model, input_fields=input_fields,
+               dealias_nn=args.dealias_nn, include_r4=args.r4,
+               drop_nddot=args.drop_nddot, nn_kcut=args.nn_kcut,
+               nn_gamma=args.nn_gamma, nn_clip=args.nn_clip,
+               nn_project_radius=args.nn_project_radius,
+               nn_dissipative_proj=args.nn_dissipative_proj,
+               closure_apply=args.closure_apply, scalars_every=10 ** 9)
+    r_off = run_arm('closure', omega_stack, psi_stack, Delta_T, 3, [3],
+                    derivative, L_hat, F_hat, device, **kw3)
+    r_on = run_arm('closure', omega_stack, psi_stack, Delta_T, 3, [3],
+                   derivative, L_hat, F_hat, device, fnn_err_log=[], **kw3)
+    if 3 not in r_off['fields'] or 3 not in r_on['fields']:
+        print('  U3 FAIL: the 3-step probe did not reach step 3 (arm blew up '
+              'or went non-finite) -- byte-identity is untested.')
+        ok = False
+    else:
+        a_off, a_on = r_off['fields'][3], r_on['fields'][3]
+        same = bool(np.array_equal(a_off, a_on))
+        mx = float(np.max(np.abs(a_off - a_on)))
+        print(f'  U3 3-step final state, tracker OFF vs ON: max|diff|={mx:.3e}'
+              f'  bit-identical={same}  -> {"PASS" if same else "FAIL"}')
+        ok &= same
+
+    print(f'===== UNIT CHECKS {"ALL PASS" if ok else "FAILED"} =====\n')
+    return ok
 
 
 def diag_term_rms(model, omega_stack, psi_stack, Delta_T, derivative, L_hat,
@@ -1073,6 +1447,53 @@ def main():
                         '(closure arms) to lte_<tag>_<arm>.csv. Non-zero '
                         'compute inside the timed loop -- diagnostics runs '
                         'only, not headline timings.')
+    p.add_argument('--track-fnn-error', action='store_true',
+                   help='closure arms only: at EVERY step build the analytic '
+                        'reference at the SAME state through the driver\'s own '
+                        'path and the IDENTICAL post-processing, and log '
+                        'rms(f_NN), rms(f_anal), rms(f_NN-f_anal), their ratio '
+                        '-- globally and per radial band (low/mid/annulus/'
+                        'beyond) -- so WHERE the model first departs is '
+                        'visible. Absent => byte-identical run. Costs ~50 '
+                        'FFTs/step: diagnostic arm, not a benchmark.')
+    p.add_argument('--fnn-band-edges', type=str, default=None,
+                   help='integer mode-radius band edges for --track-fnn-error '
+                        '(low<e0, mid e0..e1, annulus e1+1..e2, beyond >e2). '
+                        'Default: DERIVED FROM THE GRID -- core / alias-safe '
+                        '(2/3)k_max / the alias-contaminated annulus out to '
+                        'sqrt(2)(2/3)k_max / outside the solver mask; that is '
+                        '60,170,241 at 512^2 and 30,85,121 at 256^2. Pass '
+                        'explicit edges only if you mean absolute mode indices.')
+    p.add_argument('--fnn-selftest', action='store_true',
+                   help='DEBUG (unit check U2): feed the ANALYTIC derivatives '
+                        'through the NN slot, so --track-fnn-error must read '
+                        'rel ~ 0. Not a physics run.')
+    p.add_argument('--truth-history', action='store_true',
+                   help='closure arms only: the arm still ADVANCES ITS OWN '
+                        'state, but the omega/psi history handed to the model '
+                        'each step is replaced by the TRUE snapshots where '
+                        'they exist (fallback to the rolled history is COUNTED '
+                        'and reported; a high fallback rate makes the test '
+                        'inconclusive). Isolates covariate shift. Absent => '
+                        'byte-identical run.')
+    p.add_argument('--truth-history-npz', type=Path, default=None,
+                   help='refs npz holding the truth snapshots for '
+                        '--truth-history (default: the --load-refs file). '
+                        'Truth is stored only at CHECKPOINT steps, so save a '
+                        'per-step refs file (--n-checkpoints == --n-steps '
+                        '--save-refs) if you want a conclusive test.')
+    p.add_argument('--truth-history-allow-partial', action='store_true',
+                   help='override the --truth-history coverage gate. A stack '
+                        'that mixes true and rolled snapshots is differenced '
+                        'across the seam and divided by dt^k, so the result '
+                        'is an artefact; runs using this are labelled INVALID.')
+    p.add_argument('--fnn-unit-checks', action='store_true',
+                   help='run the three mandatory unit checks (U1 analytic '
+                        'reference == what the r3anal arm applies; U2 tracker '
+                        'reads ~0 when the NN is replaced by the analytic '
+                        'derivatives; U3 the tracker does not perturb the '
+                        'trajectory) and EXIT. No result is reported unless '
+                        'these pass.')
     p.add_argument('--profile-step', type=int, default=0, metavar='N',
                    help='after the clean closure timing, N instrumented '
                         'steps with per-block cuda-event timers + host-vs-'
@@ -1159,6 +1580,46 @@ def main():
         print(f'[apost] NN remediation active: kcut={args.nn_kcut}  '
               f'gamma={args.nn_gamma}  clip={args.nn_clip} '
               f'(closure arms, R3 f_NN only)')
+    band_edges = (_default_band_edges(Nx) if args.fnn_band_edges is None
+                  else tuple(int(x) for x in args.fnn_band_edges.split(',')))
+    if len(band_edges) != 3:
+        sys.exit(f'[apost] --fnn-band-edges needs exactly 3 integers, got '
+                 f'{args.fnn_band_edges!r}')
+    if args.track_fnn_error:
+        print(f'[apost] TRACK-FNN-ERROR ON (closure arms): per-STEP analytic '
+              f'reference at the SAME state, identical post-processing; bands '
+              f'(mode radius) {band_edges}'
+              f'{" [grid-derived]" if args.fnn_band_edges is None else " [explicit]"}'
+              f'. ~50 extra FFTs/step -- diagnostic arm, NOT a walltime '
+              f'benchmark. Trajectory unaffected (unit check U3).')
+        if args.r4:
+            print('[apost]   NOTE: --r4 is on but the tracker compares the R3 '
+                  'correction only (f = (1/12)(L Ndot - 5 Nddot)); the R4 '
+                  'term is excluded from both sides.')
+        if args.nn_clip is not None:
+            print('[apost]   WARNING: --nn-clip thresholds at clip*rms of EACH '
+                  'field\'s own rms, so f_NN and f_anal are clipped at '
+                  'DIFFERENT absolute levels and the reported rel conflates '
+                  'the model gap with a clip-threshold mismatch. Interpret '
+                  'with care, or drop --nn-clip for this diagnostic.')
+    if args.fnn_selftest and not args.fnn_unit_checks:
+        # a live arm running --fnn-selftest is NOT the model; make that
+        # impossible to mistake downstream (tag, json, npz all carry it)
+        args.tag = f'{args.tag}_FNNSELFTEST'
+        results_selftest_stamp = True
+        print('[apost] FNN-SELFTEST ON in a LIVE arm: the model output is '
+              'REPLACED by the analytic derivatives. This is NOT a model run; '
+              f'outputs are tagged {args.tag} so they cannot be mistaken for '
+              'one. --track-fnn-error must read rel ~ 0.')
+    else:
+        results_selftest_stamp = False
+    if args.truth_history and args.track_fnn_error:
+        sys.exit('[apost] --truth-history with --track-fnn-error is refused: '
+                 'the tracker builds its analytic reference at the ARM\'s own '
+                 'state, but under --truth-history the model was fed the TRUE '
+                 'history, so the reported rel would mix the model gap with '
+                 'the trajectory drift and read as if it were the model gap. '
+                 'Run the two diagnostics separately.')
     if args.drop_nddot:
         print('[apost] ABLATION: --drop-nddot -- R3 assembled WITHOUT the '
               '-5*Nddot term (closure/closure2/r3anal)')
@@ -1283,6 +1744,13 @@ def main():
                  f'vs physical ({E_p:.6e}, {Z_p:.6e}) -- norm convention changed?')
     print(f'[apost] E/Z Parseval check OK: E={E_s:.6e} Z={Z_s:.6e}')
 
+    # ---- mandatory unit checks for the f_NN error tracker ---- #
+    if args.fnn_unit_checks:
+        good = run_fnn_unit_checks(model, omega_stack, psi_stack, Delta_T,
+                                   derivative, L_hat, F_hat, device,
+                                   input_fields, args)
+        sys.exit(0 if good else 3)
+
     # ---- horizon ---- #
     om_rms = float(torch.sqrt((omega_stack[0] ** 2).mean()))
     tau_eddy = args.tau_eddy or 1.0 / om_rms
@@ -1309,6 +1777,12 @@ def main():
                    model=model_name, cp_steps=cp)
     if diag_terms is not None:
         results['diag_term_rms'] = diag_terms
+    if results_selftest_stamp:
+        results['fnn_selftest'] = True
+        results['NOT_A_MODEL_RUN'] = ('the NN output was replaced by the '
+                                      'analytic derivatives (--fnn-selftest)')
+    if args.track_fnn_error:
+        results['fnn_band_edges'] = list(band_edges)
     npz_payload = dict(cp_steps=np.asarray(cp, np.int64),
                        cp_times=np.asarray([s * Delta_T for s in cp]))
     truth_cp = None
@@ -1369,6 +1843,77 @@ def main():
                   f'({len(avail_cp)} checkpoints, float32) -- reuse with '
                   f'--load-refs {refs_path}')
 
+    # ---- --truth-history: TRUE snapshots for the model's input stack ---- #
+    truth_hist = None
+    if args.truth_history:
+        th_path = args.truth_history_npz or args.load_refs
+        if th_path is None:
+            sys.exit('[apost] --truth-history needs --truth-history-npz (or '
+                     '--load-refs) pointing at a refs npz with truth_stack')
+        th = np.load(th_path)
+        if abs(float(th['Delta_T']) - Delta_T) > 1e-12 * max(Delta_T, 1e-30):
+            sys.exit(f'[apost] --truth-history Delta_T mismatch: refs '
+                     f'{float(th["Delta_T"])} vs current {Delta_T}')
+        th_cp = [int(s) for s in th['cp_steps']]
+        st = np.asarray(th['truth_stack'])
+        ic_saved = np.asarray(th['ic_omega_0'], np.float64)
+        ic_cur = omega_stack[0][0].detach().cpu().numpy()
+        rel_ic = (np.sqrt(np.mean((ic_saved - ic_cur) ** 2))
+                  / max(np.sqrt(np.mean(ic_cur ** 2)), 1e-30))
+        if rel_ic > 1e-12:
+            sys.exit(f'[apost] --truth-history IC mismatch (rel {rel_ic:.2e}): '
+                     f'that truth was integrated from a DIFFERENT state.')
+        truth_hist = {}
+        for i, s in enumerate(th_cp):
+            if i >= len(st):
+                break
+            o = torch.tensor(np.asarray(st[i], np.float64),
+                             dtype=dtype, device=device)
+            if o.dim() == 2:
+                o = o[None]
+            truth_hist[int(s)] = (o, psi_from_omega(o, derivative))
+        cov = len(truth_hist) / max(M + 1, 1)
+        print(f'[apost] TRUTH-HISTORY ON: {len(truth_hist)} true snapshots at '
+              f'steps {th_cp[:4]}...{th_cp[-1:]} from {th_path} '
+              f'(dtype on disk {st.dtype}); they cover {cov:.1%} of the '
+              f'{M + 1} states this run visits. The arm still ADVANCES ITS '
+              f'OWN state; only the model-facing history is substituted.')
+        if st.dtype != np.float64:
+            print(f'[apost]   NOTE: refs stored {st.dtype}. The TimeFD divides '
+                  f'by dt^k, so float32 quantization (~6e-8 relative) enters '
+                  f'N-ddot amplified by ~1/dt^2={1.0 / Delta_T ** 2:.2e}; at '
+                  f'dT={Delta_T} that is ~1e-4 relative on N-ddot -- two '
+                  f'orders below the ~1% NN gap under investigation, so it '
+                  f'does not confound this test.')
+        # COVERAGE GATE. A stack with truth in SOME slots and the arm's own
+        # drifted state in the others is not a diluted covariate-shift signal:
+        # the TimeFD differences ACROSS the truth/own seam and divides by
+        # dt^k, so a partial stack fabricates a jump and then amplifies it by
+        # ~1/dt^2 on N-ddot. That is worse than either pure mode, so it is
+        # REFUSED by default rather than merely warned about.
+        need = set(range(max(M, 0) + 1)) | {  # every state the run visits...
+            s for s in range(-(n_snap - 1), 0)}      # ...and the pre-IC lags
+        have = set(truth_hist)
+        missing = sorted(s for s in need if s >= 0 and s not in have)
+        if missing:
+            msg = (f'[apost] --truth-history coverage is PARTIAL: '
+                   f'{len(missing)} of the {len(need)} history states this '
+                   f'run needs have no stored truth snapshot (first missing '
+                   f'{missing[:6]}). A stack mixing truth and rolled state is '
+                   f'differenced across the seam and divided by dt^k, so the '
+                   f'result would be an artefact, not a covariate-shift '
+                   f'measurement.\n'
+                   f'  FIX: save a per-step refs file --\n'
+                   f'    ... --n-steps {M} --n-checkpoints {M} --save-refs\n'
+                   f'  then pass it as --truth-history-npz.')
+            if not args.truth_history_allow_partial:
+                sys.exit(msg + '\n  (--truth-history-allow-partial overrides, '
+                                'but the run is then labelled INVALID.)')
+            print(msg + '\n[apost]   --truth-history-allow-partial given: '
+                        'proceeding, result will be labelled INVALID.')
+        # NOTE the pre-IC lags (steps -1..-(S-1)) are never in a refs file;
+        # they are only read at the first few steps and always fall back.
+
     # ---- arms ---- #
     arms = [a.strip() for a in args.arms.split(',') if a.strip()]
     bad = [a for a in arms if a not in ('bare', 'r3only', 'r3anal',
@@ -1410,6 +1955,13 @@ def main():
                     else None)
         lte_rows = [] if args.track_lte else None
         instr = {} if args.instrument_blowup is not None else None
+        # both stay None on a default run -> run_arm's new branches are dead
+        fnn_rows = ([] if (args.track_fnn_error and arm.startswith('closure'))
+                    else None)
+        th_stats = (dict(req=0, hit=0, miss=0,
+                         hit_slot=[0] * n_snap, miss_slot=[0] * n_snap)
+                    if (truth_hist is not None and arm.startswith('closure'))
+                    else None)
         print(f'[apost] arm={lbl}: {M} coarse steps ...'
               + (f'  [ckpt2={args.ckpt2.parent.name}]'
                  if arm == 'closure2' else '')
@@ -1429,7 +1981,11 @@ def main():
                     nn_project_radius=args.nn_project_radius,
                     nn_dissipative_proj=args.nn_dissipative_proj,
                     instrument=instr,
-                    closure_apply=args.closure_apply)
+                    closure_apply=args.closure_apply,
+                    fnn_err_log=fnn_rows, fnn_selftest=args.fnn_selftest,
+                    fnn_band_edges=band_edges,
+                    truth_hist=(truth_hist if th_stats is not None else None),
+                    truth_stats=th_stats)
         arm_out[arm] = r
         if instr:
             instr_store.update({f'{lbl}_{k}': v for k, v in instr.items()})
@@ -1443,6 +1999,52 @@ def main():
                 w.writerows(lte_rows)
             print(f'[apost]   analytic-LTE track -> {lte_csv.name} '
                   f'({len(lte_rows)} checkpoints)')
+        if th_stats is not None:
+            req = max(th_stats['req'], 1)
+            fb = th_stats['miss'] / req
+            results[f'{lbl}_truthhist_slots'] = int(th_stats['req'])
+            results[f'{lbl}_truthhist_hits'] = int(th_stats['hit'])
+            results[f'{lbl}_truthhist_fallback_rate'] = float(fb)
+            results[f'{lbl}_truthhist_miss_by_slot'] = list(
+                th_stats['miss_slot'])
+            print(f'[apost]   TRUTH-HISTORY: {th_stats["hit"]}/{req} history '
+                  f'slots served from truth, fallback rate {fb:.1%} '
+                  f'(per-slot misses {th_stats["miss_slot"]})')
+            # the only fallbacks a gated run can have are the pre-IC lags at
+            # the first S-1 steps; anything more means the gate was overridden
+            n_preic = n_snap * (n_snap - 1) // 2
+            if th_stats['miss'] > n_preic:
+                results[f'{lbl}_truthhist_verdict'] = 'INVALID'
+                print(f'[apost]   VERDICT: INVALID -- {fb:.1%} of the '
+                      f'model-facing history slots were the arm\'s OWN rolled '
+                      f'state spliced into a truth stack. The TimeFD '
+                      f'differences across that seam and divides by dt^k, so '
+                      f'this run measures a fabricated jump, NOT covariate '
+                      f'shift. Do not report it. Save a per-step refs file '
+                      f'and rerun.')
+            else:
+                results[f'{lbl}_truthhist_verdict'] = 'VALID'
+                print(f'[apost]   VERDICT: VALID -- the only fallbacks are the '
+                      f'{th_stats["miss"]} pre-IC lag slots at the first '
+                      f'{n_snap - 1} steps (no refs file can hold those). '
+                      f'This run does isolate the model-facing history.')
+        if fnn_rows:
+            keys = list(fnn_rows[0].keys())
+            fnn_csv = out_dir / f'fnnerr_{args.tag}_{lbl}.csv'
+            with open(fnn_csv, 'w', newline='') as f:
+                w = csv.DictWriter(f, fieldnames=keys)
+                w.writeheader()
+                w.writerows(fnn_rows)
+            for k in keys:
+                npz_payload[f'{lbl}_fnnerr_{k}'] = np.asarray(
+                    [row[k] for row in fnn_rows], np.float64)
+            rels = np.asarray([row['rel'] for row in fnn_rows], np.float64)
+            results[f'{lbl}_fnnerr_rel_first'] = float(rels[0])
+            results[f'{lbl}_fnnerr_rel_last'] = float(rels[-1])
+            results[f'{lbl}_fnnerr_rel_max'] = float(np.max(rels))
+            print(f'[apost]   f_NN-vs-analytic track -> {fnn_csv.name} '
+                  f'({len(fnn_rows)} steps)  rel: first={rels[0]:.3e} '
+                  f'max={np.max(rels):.3e} last={rels[-1]:.3e}')
         if sig_rows:
             sig_csv = out_dir / f'sigma_hat_{args.tag}_{lbl}.csv'
             n_sh = len(sig_rows[0][2])
