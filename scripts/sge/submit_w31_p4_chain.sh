@@ -42,6 +42,7 @@ TRAIN=$(qsub -terse -q ibgpu.q -l gpu=1 -N "w31p4_TRN" -hold_jid "$HOLD" -j y \
         -o "$LOGS/w31p4_TRN.\$JOB_ID.log" \
         scripts/sge/train_deriv_rollout_job.sh \
         --deep-roots $ROOTS --init-ckpt "$D/training_runs/$P3/last.pt" \
+        --anchor-baseline-csv "$D/training_runs/deriv7_cond_local_w31/eval_by_root_val.csv" \
         --strides 1,2,3 --grad-mode trunc:4 --free-horizon 48 \
         --free-mode hinge --free-weight 1.0e-2 --free-cap 10.0 \
         --vn-lambda 0.5 --vn-single-slot \
