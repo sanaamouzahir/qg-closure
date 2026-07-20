@@ -1,3 +1,4 @@
 timestamp,event,job_id,host,note
 2026-07-19T05:56:57,start,1840768,ibfdr-compute-0-2.local,diagnose_error_tails.py --ckpt runs_piff/piff_cape_gjs_wallv2/best.pt --config conf_piff_cape_gjs_wallv2.yaml --device cpu --report-run error_tails_wallv2_cape
 2026-07-19T05:57:46,fail,1840768,ibfdr-compute-0-2.local,diagnose_error_tails.py exited rc=1 -- raw log in <branch>/logs/
+2026-07-19T23:13:23,start,1841471,ibamd-compute-0-4.local,diagnose_error_tails.py --ckpt runs_piff/piff_cape_gjs_wallv2/best.pt --config conf_piff_cape_gjs_wallv2.yaml --device cpu --report-run error_tails_wallv2_cape
