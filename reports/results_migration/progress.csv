@@ -1,3 +1,4 @@
 timestamp,event,job_id,host,note
 2026-07-17T17:01:00,start,1837560,ibfdr-compute-0-2.local,results-tree migration started on ibfdr-compute-0-2.local
 2026-07-17T17:04:26,done,1837560,ibfdr-compute-0-2.local,results-tree migration rc=0 (manifest in reports/results_migration/summary.md)
+2026-07-20T02:15:13,start,1841580,ibamd-compute-0-4.local,results-tree migration started on ibamd-compute-0-4.local
