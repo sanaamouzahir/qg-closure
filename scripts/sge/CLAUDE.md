@@ -13,3 +13,11 @@ NO long-running job ships without a NaN reaction (STOP > CHECK > FIX > RESUBMIT)
 - Submit scripts wire their LIVE/FINALIZE monitor sidecars THEMSELVES — monitor
   wiring is never a separate manual step (root cause of the 2026-07-19 wallv2 burn).
 - sge-checker: treat a submission without these as a FAIL finding.
+
+## Diagnostics-table convention (Sanaa 2026-07-19)
+EVERY submission chain wires its diagnostics/metrics-table job at fire time
+(-hold_jid on the work jobs) and spools a [QG][REPORT] mail containing the
+summary TABLE on completion — never a bare "done". A run without its table
+chain is incomplete; sge-checker treats it as a FAIL finding. (Live examples:
+ramp analyzer -> metric table mail; wallv2 -> gate table mail; w31 -> monitor
+digest + gate table.)
