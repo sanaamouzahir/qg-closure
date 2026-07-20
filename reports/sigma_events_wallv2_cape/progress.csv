@@ -16,3 +16,4 @@ timestamp,event,job_id,host,note
 2026-07-19T23:19:52,start,1841474,ibfdr-compute-0-4.local,diagnose_sigma_at_events.py --ckpt runs_piff/piff_cape_gjs_wallv2/best.pt --config conf_piff_cape_gjs_wallv2.yaml --member FPCape-ramp --events runs_piff/piff_cape_gjs_wallv2/error_tails_diag/FPCape-ramp/extreme_events.csv --report-run sigma_events_wallv2_cape
 2026-07-19T23:19:52,start,1841475,ibfdr-compute-0-4.local,diagnose_sigma_at_events.py --ckpt runs_piff/piff_cape_gjs_wallv2/best.pt --config conf_piff_cape_gjs_wallv2.yaml --member FPCape-ou --events runs_piff/piff_cape_gjs_wallv2/error_tails_diag/FPCape-ou/extreme_events.csv --report-run sigma_events_wallv2_cape
 2026-07-19T23:23:19,done,1841473,ibfdr-compute-0-4.local,FPCape-sine: CONFIDENTLY-WRONG: truth is 13 sigma away (median) -- features cannot 
+2026-07-19T23:24:20,done,1841472,ibfdr-compute-0-4.local,FPCape-const: KNOWS-IT: truth within ~3 predicted sigma at the events -- fix = induc
