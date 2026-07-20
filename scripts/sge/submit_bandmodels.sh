@@ -105,7 +105,11 @@ for g in "${GEOMS[@]}"; do
     # baseline gate inputs (old paths are results-tree symlinks â€” still valid)
     for d in "$ML/runs_piff/$BASE/error_tails_diag" \
              "$ML/runs_piff/$BASE/mean_prediction_diag"; do
-        [ -e "$d" ] || { echo "MISSING baseline diagnostics: $d" >&2; exit 1; }
+        # WARN, do not block (2026-07-20): the baselines are consumed only by
+        # the GATE job hours later, and gate_piff_events.py already hard-fails
+        # REGRESSED on missing artifacts. Blocking here would idle 4 GPUs while
+        # CPU diagnostics regenerate in parallel.
+        [ -e "$d" ] || echo "WARNING: baseline diagnostics absent ($d) — regenerate before the gate fires" >&2
     done
     # anti-clobber on the RUN DIRS, not best.pt: a partially-trained/interrupted
     # dir (no best.pt yet) must not be silently reused (G5 audit 2026-07-19)
