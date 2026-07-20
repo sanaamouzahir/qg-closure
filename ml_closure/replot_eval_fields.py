@@ -42,6 +42,7 @@ from matplotlib.colors import SymLogNorm
 
 from dataset_piff import load_conf, build_runs, split_frames
 from model_piff import PiffModel
+from piff_model_loader import load_piff_model  # two-band blend (Sanaa GO 2026-07-20): plain ckpt -> identical PiffModel path
 from eval_piff import full_frame_slice
 
 HERE = Path(__file__).resolve().parent
@@ -118,7 +119,7 @@ def main():
     outdir = Path(args.outdir or (Path(args.ckpt).parent / 'eval'))
     outdir.mkdir(parents=True, exist_ok=True)
 
-    model = PiffModel(ckpt['conf']).to(device)
+    model = load_piff_model(ckpt, device, conf=conf)
     model.load_state_dict(ckpt['model'])
     model.eval()
 

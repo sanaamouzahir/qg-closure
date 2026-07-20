@@ -65,6 +65,7 @@ import matplotlib.pyplot as plt
 from dataset_piff import load_conf, build_runs, split_frames
 from member_naming import member_dirname, member_stamp, modulation_name
 from model_piff import PiffModel
+from piff_model_loader import load_piff_model  # two-band blend (Sanaa GO 2026-07-20): plain ckpt -> identical PiffModel path
 from eval_piff import predict_frame, full_frame_slice
 
 HERE = Path(__file__).resolve().parent
@@ -428,7 +429,7 @@ def main():
     # feature propagate into the data conf -- a gaussian-trained model is
     # never silently evaluated on sharp targets.
     ck = torch.load(ckpt, map_location='cpu', weights_only=False)
-    model = PiffModel(ck['conf']).to(args.device)
+    model = load_piff_model(ck, args.device, conf=conf)
     model.load_state_dict(ck['model'])
     model.eval()
     conf.setdefault('model', {})['use_grad_feature'] = model.use_grad_feature

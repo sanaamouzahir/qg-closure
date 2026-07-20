@@ -101,25 +101,25 @@ for g in "${GEOMS[@]}"; do
     # FINALIZE postmortems after exit. train_piff.py additionally hard-
     # aborts in-process on 2 consecutive non-finite epochs (exit 9).
     TLOG="$LOGS/pWv2_$g.$TRAIN.log"
-    MONL=$(qsub_go -terse -q all.q -N "pWv2monL_$g" -j y -cwd -V \
-           -o "$LOGS/pWv2monL_$g.\$JOB_ID.log" \
+    MONL=$(qsub_go -terse -q all.q -N "wv2L_$g" -j y -cwd -V \
+           -o "$LOGS/wv2L_$g.\$JOB_ID.log" \
            scripts/sge/piff_monitor_job.sh "$TLOG" "$RN" "$TRAIN")
-    MONF=$(qsub_go -terse -q all.q -N "pWv2monF_$g" -hold_jid "$TRAIN" \
+    MONF=$(qsub_go -terse -q all.q -N "wv2F_$g" -hold_jid "$TRAIN" \
            -v QG_MONITOR_FINALIZE=1 -j y -cwd -V \
-           -o "$LOGS/pWv2monF_$g.\$JOB_ID.log" \
+           -o "$LOGS/wv2F_$g.\$JOB_ID.log" \
            scripts/sge/piff_monitor_job.sh "$TLOG" "$RN" "$TRAIN")
     echo "monitors $RN: live $MONL finalize $MONF"
 
     # ---- CPU diagnostics (all.q), held on the trainer --------------------- #
-    MP=$(qsub_go -terse -q all.q -N "pWv2mp_$g" -hold_jid "$TRAIN" -j y -cwd -V \
+    MP=$(qsub_go -terse -q all.q -N "wv2mp_$g" -hold_jid "$TRAIN" -j y -cwd -V \
          -v QG_DIGEST_RUN="mean_prediction_wallv2_$g" \
-         -o "$LOGS/pWv2mp_$g.\$JOB_ID.log" \
+         -o "$LOGS/wv2mp_$g.\$JOB_ID.log" \
          scripts/sge/piff_tool_job.sh diagnose_mean_prediction.py \
          --ckpt "runs_piff/$RN/best.pt" --config "$CONF" --device cpu \
          --report-run "mean_prediction_wallv2_$g")
-    ET=$(qsub_go -terse -q all.q -N "pWv2et_$g" -hold_jid "$TRAIN" -j y -cwd -V \
+    ET=$(qsub_go -terse -q all.q -N "wv2et_$g" -hold_jid "$TRAIN" -j y -cwd -V \
          -v QG_DIGEST_RUN="error_tails_wallv2_$g" \
-         -o "$LOGS/pWv2et_$g.\$JOB_ID.log" \
+         -o "$LOGS/wv2et_$g.\$JOB_ID.log" \
          scripts/sge/piff_tool_job.sh diagnose_error_tails.py \
          --ckpt "runs_piff/$RN/best.pt" --config "$CONF" --device cpu \
          --report-run "error_tails_wallv2_$g")
@@ -129,9 +129,9 @@ for g in "${GEOMS[@]}"; do
     HOLD_ALL="$MP,$ET"
     for m in $(members_of "$g"); do
         SFX="${m#*-}"
-        SIG=$(qsub_go -terse -q all.q -N "pWv2sg_${g}_${SFX}" -hold_jid "$ET" \
+        SIG=$(qsub_go -terse -q all.q -N "w2${g}s${SFX}" -hold_jid "$ET" \
               -j y -cwd -V -v QG_DIGEST_RUN="sigma_events_wallv2_$g" \
-              -o "$LOGS/pWv2sg_${g}_${SFX}.\$JOB_ID.log" \
+              -o "$LOGS/w2${g}s${SFX}.\$JOB_ID.log" \
               scripts/sge/piff_tool_job.sh diagnose_sigma_at_events.py \
               --ckpt "runs_piff/$RN/best.pt" --config "$CONF" \
               --member "$m" \
@@ -142,10 +142,10 @@ for g in "${GEOMS[@]}"; do
     done
 
     # ---- event gate vs ylp75 baseline, held on everything ----------------- #
-    GATE=$(qsub_go -terse -q all.q -N "pWv2gt_$g" -hold_jid "$HOLD_ALL" -j y -cwd -V \
+    GATE=$(qsub_go -terse -q all.q -N "wv2gt_$g" -hold_jid "$HOLD_ALL" -j y -cwd -V \
            -m ea -M "$QG_NOTIFY_EMAIL" \
            -v QG_DIGEST_RUN="gate_wallv2_$g" \
-           -o "$LOGS/pWv2gt_$g.\$JOB_ID.log" \
+           -o "$LOGS/wv2gt_$g.\$JOB_ID.log" \
            scripts/sge/piff_tool_job.sh gate_piff_events.py \
            --new-run "runs_piff/$RN" --baseline-run "runs_piff/$BASE" \
            --expect-members "$(members_of "$g" | tr ' ' ',')" \

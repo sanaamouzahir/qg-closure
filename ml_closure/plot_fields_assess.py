@@ -38,6 +38,7 @@ import matplotlib.pyplot as plt
 
 from dataset_piff import load_conf, build_runs, split_frames
 from model_piff import PiffModel
+from piff_model_loader import load_piff_model  # two-band blend (Sanaa GO 2026-07-20): plain ckpt -> identical PiffModel path
 from eval_piff import full_frame_slice
 from replot_eval_fields import predict_frame_full
 
@@ -62,7 +63,7 @@ def main():
     outdir = Path(args.outdir or (Path(args.ckpt).parent / 'eval_assess'))
     outdir.mkdir(parents=True, exist_ok=True)
 
-    model = PiffModel(ckpt['conf']).to(device)
+    model = load_piff_model(ckpt, device, conf=conf)
     model.load_state_dict(ckpt['model'])
     model.eval()
     conf.setdefault('model', {})['use_grad_feature'] = model.use_grad_feature
@@ -72,6 +73,10 @@ def main():
     conf['zeta']['tshed_smooth'] = ckpt['conf'].get('zeta', {}).get(
         'tshed_smooth', 2.992)
 
+    variant = conf['data'].get('variant')
+    print(f"[assess] DATA VARIANT (truth+pred filter) = {variant!r}  "
+          f"ckpt variant = {ckpt['conf'].get('data', {}).get('variant')!r}  "
+          f"scale = LINEAR shared +-p99|truth|", flush=True)
     runs = build_runs(conf)
     frames = split_frames(runs, 'val', conf)
     sel, tags = [], []
@@ -144,7 +149,9 @@ def main():
             f"{run.name}  t={p['t']:.2f}  Re={p['Re']:.0f}   |   "
             f"r2={r2:.3f}   RMSE/RMS_truth={rms_e / max(rms_t, 1e-30):.1%}   "
             f"pixels with |err|>0.25 RMS: {frac_bad:.1%}   "
-            f"worst-0.1% pixels hold {tail_share:.0%} of squared error",
+            f"worst-0.1% pixels hold {tail_share:.0%} of squared error   |   "
+            f"variant={variant}  LINEAR shared scale +-{vmax:.3g}  "
+            f"RMS(truth)={rms_t:.3g}",
             fontsize=11)
         fig.tight_layout()
         fdir = outdir / tag
@@ -155,7 +162,9 @@ def main():
         fig.savefig(fp, dpi=130)
         plt.close(fig)
         print(f"[assess] {fp}  r2={r2:.3f} rmse/rms={rms_e / rms_t:.3f} "
-              f"tail={tail_share:.2f}", flush=True)
+              f"tail={tail_share:.2f}  [AUDIT member={run.name} t={p['t']:.2f} "
+              f"Re={p['Re']:.0f} rms_truth={rms_t:.6e} vmax={vmax:.6e} "
+              f"npix={tvals.size} variant={variant}]", flush=True)
 
     print(f"[assess] done: {len(sel)} figures in {outdir}", flush=True)
 

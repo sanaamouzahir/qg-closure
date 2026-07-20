@@ -260,9 +260,40 @@ class RunData:
             self.upstream_blend = np.clip(
                 (xs - (x_edge - bw)) / bw, 0.0, 1.0).astype(np.float64)
         self.valid = (~strip) & (self.sdf >= 0.0)          # (Ny, Nx) bool
+        # TWO-BAND specialist training (Sanaa GO 2026-07-20). data.band =
+        # {name, sdf_lo, sdf_hi} in units of D restricts the TRAIN/VAL valid
+        # mask to a signed-distance band, intersected with the mask above.
+        # null bound = unbounded on that side. ABSENT (default) => self.valid
+        # and everything derived from it (loss mask, count_masked_pixels,
+        # target_stats, conditioning_stats, tail_candidates,
+        # signal_block_weights, crop sampling) are BIT-IDENTICAL to the
+        # pre-band code — the block below does not execute at all.
+        # WHY the whole valid mask and not just the loss: each band must get
+        # its OWN y-standardization and feature scales (the 40x near/far RMS
+        # gap is the measured failure mode of one shared GP), and those come
+        # from target_stats/conditioning_stats over exactly this mask.
+        bandc = dc.get('band')
+        self.band = None
+        if bandc:
+            lo, hi = bandc.get('sdf_lo'), bandc.get('sdf_hi')
+            if lo is None and hi is None:
+                raise ValueError(f"{self.name}: data.band has both bounds null "
+                                 f"— that is not a band, drop the block instead")
+            bm = np.ones((self.Ny, self.Nx), dtype=bool)
+            if lo is not None:
+                bm &= (self.sdf >= _f(lo) * self.D)
+            if hi is not None:
+                bm &= (self.sdf <= _f(hi) * self.D)
+            self.band = {'name': str(bandc.get('name') or 'unnamed'),
+                         'sdf_lo': (None if lo is None else _f(lo)),
+                         'sdf_hi': (None if hi is None else _f(hi))}
+            self.band_mask = bm
+            self.valid = self.valid & bm
         self.n_valid = int(self.valid.sum())
         if self.n_valid == 0:
-            raise ValueError(f"{self.name}: empty valid mask")
+            raise ValueError(f"{self.name}: empty valid mask"
+                             + (f" (data.band {self.band} selects no pixel)"
+                                if self.band else ""))
 
     def signal_block_weights(self, block):
         """Per-frame block-sampling weights ∝ sum of Pi^2 over (block x block)
@@ -299,6 +330,17 @@ class RunData:
             thr = float(np.quantile(ap[self.valid], float(quantile)))
             cache[key] = np.nonzero(self.valid & (ap >= thr))
         return cache[key]
+
+    def band_candidates(self):
+        """(iy, ix) index arrays of the run's in-band VALID pixels (two-band
+        training, Sanaa GO 2026-07-20). Only ever called when data.band is
+        present; cached (one static table per run)."""
+        if self.band is None:
+            raise ValueError(f"{self.name}: band_candidates() without data.band")
+        c = getattr(self, '_bandc', None)
+        if c is None:
+            c = self._bandc = np.nonzero(self.valid)
+        return c
 
     def frames_in(self, t_lo, t_hi):
         """Frame indices with t in [t_lo, t_hi). Times read from the record —
@@ -495,6 +537,13 @@ class PiffCropDataset(Dataset):
         tb = dc.get('tail_bias') or {}
         self.tail_frac = _f(tb.get('frac', 0.0)) if split == 'train' else 0.0
         self.tail_quantile = _f(tb.get('quantile', 0.999))
+        # two-band redraw signal quantile (G4 MAJOR 3, 2026-07-20): when an
+        # out-of-band crop center is redrawn, this fraction of the in-band
+        # valid pixels' |Pi| distribution defines the "high-|Pi|" pool that
+        # data.signal_frac of the redraws are taken from — the in-band
+        # analogue of the Pi^2 block bias. Only read when data.band is
+        # present; irrelevant (and unused) otherwise.
+        self.band_signal_quantile = _f(dc.get('band_signal_quantile', 0.9))
         self.set_epoch(0)
 
     def set_epoch(self, epoch):
@@ -598,6 +647,81 @@ class PiffCropDataset(Dataset):
                     cy = int(rng.integers(0, r.Ny))
                     cx = int(rng.integers(0, r.Nx))
                 tbl[i] = (ri, fi, cy, cx)
+        # ---- two-band crop-center restriction (Sanaa GO 2026-07-20) -------- #
+        # Applied as a POST-PASS on the finished table, with its OWN rng
+        # stream, so the legacy signal/wake/uniform/tail call sequence above is
+        # untouched: with data.band ABSENT this loop does not run and the crop
+        # table is bit-identical to the pre-band code. Centers that already
+        # landed in-band are kept; out-of-band centers are REDRAWN.
+        #
+        # G4 MAJOR 3 (2026-07-20) — the redraw must PRESERVE SIGNAL CHARACTER.
+        # A plain uniform-in-band redraw silently converted the NEAR
+        # specialist's sampler to uniform: the near band is a thin collar, so
+        # most signal/wake centers land outside it and were ALL replaced by
+        # uniform draws — the near model lost the Pi^2 signal bias that is its
+        # whole point, and the two specialists no longer differed only by band.
+        # The redraw therefore mirrors the conf's own signal share: with
+        # probability data.signal_frac the replacement center comes from the
+        # HIGH-|Pi| in-band candidates (tail_candidates at
+        # data.band_signal_quantile — its threshold is a quantile over the
+        # BAND-RESTRICTED valid mask, so those pixels are in-band by
+        # construction), otherwise uniformly from the in-band valid pixels.
+        # Crops still WRAP periodically and still span out-of-band pixels —
+        # those are excluded by the loss mask (the band-restricted self.valid),
+        # never by zeroing inputs (spec S1.5).
+        self.redraw_stats = None
+        if any(r.band is not None for r in self.runs):
+            brng = np.random.default_rng(
+                [self.seed, {'train': 0, 'val': 1}[self.split], int(epoch), 7])
+            u_rd = brng.random(self.n_crops)
+            per_run, n_band, n_red, n_sig = {}, 0, 0, 0
+            for i in range(self.n_crops):
+                r = self.runs[int(tbl[i, 0])]
+                if r.band is None:
+                    continue
+                st = per_run.setdefault(r.name,
+                                        {'n': 0, 'redrawn': 0, 'signal': 0})
+                st['n'] += 1
+                n_band += 1
+                if r.valid[int(tbl[i, 2]), int(tbl[i, 3])]:
+                    continue                       # already in-band: keep it
+                st['redrawn'] += 1
+                n_red += 1
+                cand = None
+                if u_rd[i] < self.signal_frac:
+                    iy_c, ix_c = r.tail_candidates(int(tbl[i, 1]),
+                                                   self.band_signal_quantile)
+                    if iy_c.size:                  # high-|Pi| in-band draw
+                        cand = (iy_c, ix_c)
+                        st['signal'] += 1
+                        n_sig += 1
+                if cand is None:                   # uniform in-band draw
+                    cand = r.band_candidates()
+                iy_c, ix_c = cand
+                j = int(brng.integers(0, iy_c.size))
+                tbl[i, 2], tbl[i, 3] = int(iy_c[j]), int(ix_c[j])
+            for st in per_run.values():
+                st['redraw_frac'] = st['redrawn'] / max(st['n'], 1)
+                st['signal_frac_of_redraws'] = (st['signal']
+                                                / max(st['redrawn'], 1))
+            self.redraw_stats = {
+                'split': self.split, 'epoch': int(epoch),
+                'n_crops': int(self.n_crops), 'n_band_crops': int(n_band),
+                'n_redrawn': int(n_red),
+                'redraw_frac': n_red / max(n_band, 1),
+                'n_redrawn_signal': int(n_sig),
+                'signal_frac_of_redraws': n_sig / max(n_red, 1),
+                'conf_signal_frac': float(self.signal_frac),
+                'band_signal_quantile': float(self.band_signal_quantile),
+                'per_run': per_run,
+            }
+            # ON THE RECORD BEFORE ANY GATE IS READ: a band result cannot be
+            # interpreted without the crop distribution that produced it
+            print(f"[dataset] band crop redraw {self.split} ep{int(epoch)}: "
+                  f"{n_red}/{n_band} centers redrawn "
+                  f"({100.0 * n_red / max(n_band, 1):.1f}%), of which {n_sig} "
+                  f"({100.0 * n_sig / max(n_red, 1):.1f}%) from the high-|Pi| "
+                  f"in-band tail (q={self.band_signal_quantile})", flush=True)
         self.table = tbl
 
     def __len__(self):
@@ -639,6 +763,7 @@ def describe(runs, conf, seed):
         'N_val_pixels': count_masked_pixels(runs, 'val', conf),
         'valid_per_frame': {r.name: r.n_valid for r in runs},
         'lomo_holdout': conf['data'].get('lomo_holdout'),
+        'band': (runs[0].band if runs and runs[0].band else None),
     }
 
 

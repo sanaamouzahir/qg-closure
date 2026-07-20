@@ -312,6 +312,15 @@ def main():
     info.update({'lr': lr, 'weight_decay': wd, 'epochs': epochs,
                  'film': bool(conf['model']['film']), 'ELBO_num_data': N,
                  'device': device})
+    # two-band crop-redraw census (G4 MAJOR 3, 2026-07-20): under data.band the
+    # sampler redraws out-of-band centers, so the run's ACTUAL crop
+    # distribution differs from the conf's nominal signal/wake shares. The
+    # epoch-0 census goes into run_info.yaml so it is ON FILE BEFORE anyone
+    # reads the gate; the per-epoch rate is printed by set_epoch. No data.band
+    # => redraw_stats is None => key absent => artifact unchanged.
+    if getattr(train_ds, 'redraw_stats', None) is not None:
+        info['band_crop_redraw'] = {'train': train_ds.redraw_stats,
+                                    'val': val_ds.redraw_stats}
     print('[train]', json.dumps(info, indent=2))
     with open(outdir / 'run_info.yaml', 'w') as f:
         yaml.safe_dump(info, f, sort_keys=False)

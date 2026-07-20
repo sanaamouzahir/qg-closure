@@ -16,6 +16,7 @@ import numpy as np, torch, yaml
 from dataset_piff import load_conf, build_runs
 from member_naming import modulation_name
 from model_piff import PiffModel
+from piff_model_loader import load_piff_model  # two-band blend (Sanaa GO 2026-07-20): plain ckpt -> identical PiffModel path
 from eval_piff import predict_frame
 
 HERE = Path(__file__).resolve().parent
@@ -46,7 +47,7 @@ def main():
     ckpt = Path(args.ckpt)
     conf = load_conf(HERE / args.config)
     ck = torch.load(ckpt, map_location='cpu', weights_only=False)
-    model = PiffModel(ck['conf'])
+    model = load_piff_model(ck, 'cpu', conf=conf)
     model.load_state_dict(ck['model']); model.eval()
     conf.setdefault('model', {})['use_grad_feature'] = model.use_grad_feature
     v = ck['conf'].get('data', {}).get('variant')
