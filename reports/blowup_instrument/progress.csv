@@ -1,2 +1,3 @@
 timestamp,event,job_id,host,note
 2026-07-20T07:33:05,start,1841926,ibfdr-compute-0-2.local,"instrument FRC-kf4 ic912 h64, arms bare(control)+closure, CPU"
+2026-07-20T07:40:50,done,1841926,ibfdr-compute-0-2.local,instrumented FRC-kf4 ic912; onset table + verdict mailed
