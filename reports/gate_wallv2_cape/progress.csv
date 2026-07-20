@@ -1,3 +1,6 @@
 timestamp,event,job_id,host,note
 2026-07-19T05:59:57,start,1840774,ibfdr-compute-0-2.local,"gate_piff_events.py --new-run runs_piff/piff_cape_gjs_wallv2 --baseline-run runs_piff/piff_cape_gjs_ylp75 --expect-members FPCape-const,FPCape-sine,FPCape-ramp,FPCape-ou,FPCape-tel --report-run gate_wallv2_cape"
 2026-07-19T06:00:30,fail,1840774,ibfdr-compute-0-2.local,gate_piff_events.py exited rc=1 -- raw log in <branch>/logs/
+2026-07-19T23:25:38,start,1841477,ibfdr-compute-0-2.local,"gate_piff_events.py --new-run runs_piff/piff_cape_gjs_wallv2 --baseline-run runs_piff/piff_cape_gjs_ylp75 --expect-members FPCape-const,FPCape-sine,FPCape-ramp,FPCape-ou,FPCape-tel --report-run gate_wallv2_cape"
+2026-07-19T23:26:12,done,1841477,ibfdr-compute-0-2.local,piff_cape_gjs_wallv2 gate: REGRESSED
+2026-07-19T23:26:33,fail,1841477,ibfdr-compute-0-2.local,gate_piff_events.py exited rc=3 -- raw log in <branch>/logs/
