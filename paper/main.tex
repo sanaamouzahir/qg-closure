@@ -56,7 +56,7 @@
 \title{\bfseries A Step-Size Resolution Closure for IMEX Integration of\\
 Two-Dimensional Quasi-Geostrophic Turbulence:\\
 \large Truncation-Error Analysis, Wiener-Conditioned Learned Stencils,\\
-and Von Neumann--Certified Stability}
+and Network-Jacobian Amplification Analysis}
 
 \author[1]{Sanaa Mouzahir}
 \author[1]{\TODO{co-authors / advisor}}
@@ -90,9 +90,13 @@ pooled training floor deletes the dominant (pooled-variance) term of the
 unconditioned floor. Stability is handled symmetrically: the modified-equation
 analysis shows that a closure targeting the exact flow has zero linear
 stability margin on the advection axis, while targeting fine-step RK4 buys a
-provable $y^6/144$ margin; a differentiable frozen-coefficient von Neumann
-certificate of the \emph{closed} scheme is derived and used both as an a
-priori diagnostic and as a training penalty. The closure assembles the
+provable $y^6/144$ margin. The stability of the ML-augmented scheme is
+characterized by the amplification factor of the closed operator, which
+combines the base scheme's amplification with the network's \emph{own}
+linearization---the Jacobian $J_{\mathrm{NN}}=\partial f_{\mathrm{NN}}/
+\partial(	ext{stored history})$ of the learned correction---rather than
+the analytic closure's; this amplification factor is differentiable and
+serves both as an a priori diagnostic and as a training penalty. The closure assembles the
 $R_3$ \emph{and} $R_4$ operators (the network heads supply the derivative
 fields of both). The analytic (network-free) $R_3$
 closure is unconditionally stable in our experiments and improves coarse-step
@@ -101,13 +105,16 @@ replicated median
 $16\times$ error reduction over ten initial conditions at $\DT=5\times10^{-3}$
 on a 16-step horizon, while a horizon study shows the gain is not yet
 unconditional --- blow-ups reappear at $\sim$2$\times$ the fine-tuned horizon
---- which we diagnose (a network-noise history-contamination loop) and
-attack with the certificate penalty. We report the complete error, cost, and
+--- which we diagnose as a history-contamination loop---the network
+differentiates its own contaminated history in time, an effect the
+frozen-coefficient (analytic-closure) linearization cannot see---and which
+the correct amplification factor, built on the network's Jacobian
+$J_{\mathrm{NN}}$, is designed to penalize. We report the complete error, cost, and
 stability budget of the method, including its failure modes.
 
 \smallskip
 \noindent\textbf{Key words.} time-integration error, modified equation,
-closure modeling, IMEX schemes, Wiener filtering, von Neumann stability,
+closure modeling, IMEX schemes, Wiener filtering, amplification-factor stability,
 pseudo-spectral methods, quasi-geostrophic turbulence, scientific machine
 learning
 \end{abstract}
@@ -182,7 +189,8 @@ step-size-resolution problem of a fixed IMEX scheme addressed here.
 
 \paragraph{Contributions.}
 (i) A cheap, generalizable $\bO(10^3)$-parameter physics-informed neural
-correction, regularized by a differentiable von Neumann certificate penalty,
+correction, regularized by a differentiable penalty on the amplification
+factor of the closed operator (built on the network's Jacobian $J_{\mathrm{NN}}$),
 that adds negligible per-step overhead while delivering
 order-of-magnitude accuracy gains and a substantial stability gain: the
 closed scheme runs at coarse steps far beyond the bare scheme's usable
@@ -195,9 +203,9 @@ prices---physics conditioning on a per-sample measurable rate
 $\shat(\kappa)$ (Secs.~\ref{sec:wiener}--\ref{sec:conditioning}).
 (iii) A detailed stability analysis of the neural-augmented AB2--CN2 scheme:
 closed-form LTEs and truncation symbols, the margin asymmetry between the
-exact-flow and RK4 targets, and a differentiable frozen-coefficient von
-Neumann certificate of the \emph{closed} scheme used as diagnostic and
-training penalty (Secs.~\ref{sec:stability}, \ref{sec:closure},
+exact-flow and RK4 targets, and a differentiable amplification-factor
+analysis of the \emph{closed} scheme---built on the network's own Jacobian
+$J_{\mathrm{NN}}$---used as diagnostic and training penalty (Secs.~\ref{sec:stability}, \ref{sec:closure},
 \ref{sec:nn-stability}).
 (iv) A general framework for linear multistep methods: the construction uses
 only the scheme's $(r,s)$ pair and its explicit bracket, so matching any LMM
@@ -1229,7 +1237,7 @@ model heads are supervised against the on-the-fly \emph{exact analytic}
 targets \eqref{eq:leibniz} of the pre-step rolled state (weight
 $10^{-2}$, capped): the estimator must remain a consistent derivative
 estimator on its own trajectory, arbitrarily far from the data horizon.
-\item \emph{Von Neumann certificate penalty} (derived in
+\item \emph{Amplification-factor penalty} on the network's Jacobian (derived in
 Sec.~\ref{sec:nn-stability}):
 $\mathcal L_{\rm stab}
 =\lambda\,\mathrm{mean}_\kappa\,\mathrm{relu}\big(|G_{\rm eff}(\kappa)|
@@ -1309,43 +1317,64 @@ $\epsilon_{\rm rel}\bO(h^2)T$ preserves second-order convergence, is linear in
 horizon and in network quality; the finite-order floor is smaller in $h$ but
 frozen (reducible only by adding analytic orders) and base-dependent.
 
-\subsection{A trainable certificate}
+\subsection{The amplification factor of the augmented scheme}
 \label{sec:certificate}
 The margin bound needs $|g_{\rm NN}|$ per mode \emph{for the actual trained
-network}. Linearizing the learned piece about a frozen advecting background
-(the Wiener linearization: Jacobians frozen to $i\sigma$ advection, the
-stencil pair entering through its trigonometric-polynomial symbol ratio
-$\rho(\kappa)=\hat W_{\rm base+mod}(\theta)/\hat W_{\rm exact}(\theta)$
-evaluated on the sample's own $\shat$ shells) yields the closed AB2--CN2
-companion with effective symbols
+network}. Because the correction is a network, the per-mode amplification is
+governed by the network's \emph{own} linearization---the Jacobian
 \begin{equation}
-I=\hat\Lop+\tfrac{\DT^2}{12}\hat\Lop^3\ \ (\text{implicit, folded}),\qquad
-E=i\shat\big(1+\tfrac{\DT^2}{12}\hat\Lop^2\big)
-+\tfrac1{12}\big(\hat\Lop\,T_1-5\,T_2\big)\ \ (\text{explicit}),
+J_{\mathrm{NN}}(\kappa)=\frac{\partial \hat f_{\mathrm{NN}}}
+{\partial(\hat\omega^{\,n},\hat\omega^{\,n-1},\dots,\hat\omega^{\,n-S+1})},
+\label{eq:jnn}
 \end{equation}
-$T_c$ the linearized transfer of the learned $\Ndot,\Nddot$ heads, and
+the derivative of the learned correction with respect to its
+\emph{stored-history} input, evaluated at the state the scheme actually
+reaches. The closed-scheme amplification is the spectral radius of the
+degree-$S$ companion whose top row combines the base AB2--CN2 linearization
+with $-\,\mathrm{coef}\cdot J_{\mathrm{NN}}$ and whose remaining rows shift
+the history:
 \begin{equation}
 G_{\rm eff}(\kappa)=\text{spectral radius of }
-\begin{pmatrix} a+b & c\\ 1 & 0\end{pmatrix},\qquad
-a=r\big(1+\tfrac\DT2 I\big),\ \ b=\tfrac32\DT rE,\ \ c=-\tfrac12\DT rE,\ \
-r=\frac1{1-\tfrac\DT2 I}.
+\begin{pmatrix}
+a+b_0 & b_1 & \cdots & b_{S-1}\\
+1 & 0 & \cdots & 0\\
+ & \ddots & & \vdots\\
+ & & 1 & 0
+\end{pmatrix},\qquad
+(b_0,\dots,b_{S-1})=(\text{base AB2 row})-\mathrm{coef}\cdot J_{\mathrm{NN}},
 \label{eq:geff}
 \end{equation}
-$G_{\rm eff}$ is differentiable in every trainable tensor (taps, modulation,
-mix), reproduces the analytic-arm stability exactly at zero modulation
-($\rho\equiv1$), and is evaluated only on shells with
-$|\DT\shat|\le\tfrac12$, outside which the frozen-coefficient model provably
-departs from the dynamics and the penalty would be noise. It serves as both
-diagnostic (a per-step contraction certificate is \emph{horizon-free},
-removing the fixed-horizon asterisk of rollout training structurally) and
-penalty ($\mathcal L_{\rm stab}$ of Sec.~\ref{sec:loss}). Caveats: it is
-linearized (the $r_2,r_3$ remainders are neglected) and isotropic per shell.
-Appendix~\ref{app:vn} derives \eqref{eq:geff} from the exact degree-$S$
-frozen-coefficient recurrence of the closed scheme; the validity shell
-$|\DT\shat|\le\tfrac12$ is precisely the reduction's own error bound.
-On the current stable reference model the certificate reads
-$|G_{\rm eff}|$ valid-shell mean $0.9992$, max $0.9997$---marginal at large
-$\DT$, as it must be.
+which must be kept below unity. $J_{\mathrm{NN}}$ acts on the \emph{full}
+stored history through the network's time-differencing stencils, so the
+companion is of dimension $S$, not $2$: the instability the network can
+create lives precisely in the history levels a two-level companion does not
+contain. $G_{\rm eff}$ is differentiable in every trainable tensor (obtained
+by automatic differentiation of the trained network at the operating state),
+and serves both as a diagnostic---a per-step contraction certificate is
+\emph{horizon-free}, removing the fixed-horizon asterisk of rollout training
+structurally---and as the penalty $\mathcal L_{\rm stab}$ of
+Sec.~\ref{sec:loss}. \TODO{$J_{\mathrm{NN}}$ amplification tests (B: truth
+states; C: network-augmented states) in progress; the required unit test is
+that $G_{\rm eff}$ reproduce the measured per-step rollout amplification
+($\approx1.7$) before the penalty is re-enabled.}
+
+\begin{remark}[Why the analytic-closure linearization is insufficient]
+\label{rmk:frozen-insufficient}
+A tempting simplification replaces $J_{\mathrm{NN}}$ by the \emph{analytic}
+closure's linearization---Jacobians frozen to $i\sigma$ advection and the
+time derivatives frozen to their exact relation $\hat\omega^{(j)}=\mu^{j}
+\hat\omega$ (the Wiener freeze)---which collapses \eqref{eq:geff} to the
+$2\times2$ companion derived in Appendix~\ref{app:vn}. By construction this
+reproduces the amplification of the \emph{analytic} $R_3$ closure, which is
+stable; it therefore reports $|G_{\rm eff}|\approx1$ irrespective of the
+trained weights and cannot see the network's contribution. On the reference
+model this frozen estimate reads valid-shell mean $0.9992$, yet the learned
+closure's \emph{measured} per-step amplification in rollout is $\approx1.7$:
+the frozen linearization measures the wrong operator. The learned-closure
+amplification must be built on $J_{\mathrm{NN}}$ itself \eqref{eq:jnn}, not on
+the analytic freeze. The history-contamination loop of Sec.~\ref{sec:results}
+is exactly the mode this distinction exposes.
+\end{remark}
 
 % ===================================================================== %
 \section{Ensemble training}
@@ -1511,24 +1540,38 @@ carrier (the learned arm gets \emph{worse} in a fully dealiased world;
 the analytic arm is indifferent), and the radial enstrophy-injection
 component is small and $\DT$-independent---a dissipative projection of the
 correction (P0 experiment) shifts blow-ups by $\le\pm1$ step and fails its
-pre-registered stability bars, ruling out the cheap inference-time fix. The
-within-shell (phase) component identified by the certificate is the active
+pre-registered stability bars, ruling out the cheap inference-time fix.
+Instrumentation of a single blow-up isolates the mechanism: a
+\emph{history-contamination loop}. The network estimates $\Nddot$ by
+finite-differencing its \emph{own} stored history in time; a fresh
+correction perturbs the newest level, and that perturbation---uncorrelated
+with the smooth part---is passed by the second difference at large gain and
+re-injected, so the applied correction grows at a constant per-step factor
+($\approx1.7$ in amplitude) while the field is still flat. The analytic arm,
+which forms $\Nddot$ from the instantaneous field with no history, has no
+such loop and is stable. This is a property of the augmented operator's
+spectral radius through $J_{\mathrm{NN}}$ \eqref{eq:jnn}, and is the active
 target.
 
 \paragraph{The horizon wall.}
 Extending the $5\times10^{-3}$ arm from 16 to 64 and 128 steps: \emph{0/10
-draws stable in both arms}, blow-ups at steps 21--38, i.e.\ at
+draws stable}, blow-ups at steps 21--38, i.e.\ at
 $\approx2\times$ the fine-tune's free horizon. The replicated $16\times$ gain
 is therefore horizon-limited: valid within the trained window, not
-unconditional. This is the sharpest open problem; the certificate penalty
-(Sec.~\ref{sec:certificate}) attacks exactly this---a per-step contraction
-certificate is horizon-free by construction---and the corresponding
-$\lambda$-sweep is running at the time of writing.
+unconditional. This is the sharpest open problem, and it is a stability
+question, not an accuracy one: the network reproduces the analytic closure to
+$\approx1\%$ at every step, yet the closed loop diverges. The
+amplification-factor penalty of Sec.~\ref{sec:certificate}, built on
+$J_{\mathrm{NN}}$, is horizon-free by construction and targets exactly this;
+crucially it must use the network's Jacobian, not the analytic-closure
+linearization, which is blind to the loop (Remark~\ref{rmk:frozen-insufficient}).
+A shallower $\Nddot$ stencil, which lowers the gain of the offending second
+difference, is a complementary structural lever under test.
 \figph{3.6cm}{Figure placeholder: blow-up step vs horizon, 10 draws, 16/64/128
-steps, with the free-horizon line; certificate $|G_{\rm eff}(\kappa)|$
-histograms before/after the penalty. Source:
+steps, with the free-horizon line; $J_{\mathrm{NN}}$ amplification
+$|G_{\rm eff}(\kappa)|$ vs.\ rollout step (tests B/C). Source:
 \texttt{diagnostics/aposteriori\_stability.py},
-\texttt{training/wiener\_certificate.py}.}
+\texttt{diagnostics/nn\_amplification.py}.}
 
 \subsection{Cost}
 \label{sec:results-cost}
@@ -1558,8 +1601,8 @@ generation dominates and is cached across all experiments).
 \section{Conclusions and future work}
 \label{sec:conclusion}
 We posed the time-discretization error of spectral AB2--CN2 as a closure
-problem and carried it from closed-form truncation theory to a deployed,
-certificate-regularized learned scheme. The theory side is complete and
+problem and carried it from closed-form truncation theory to a deployed
+learned scheme with an amplification-factor stability analysis. The theory side is complete and
 verified: LTEs of the scheme family to $\bO(h^6)$
 (Props.~\ref{prop:lte-rk4}--\ref{prop:lte-ab4}), a finite and universal
 convergence radius $\DTs=2.08\,\taul$ (Prop.~\ref{prop:two-micro}), an inner
@@ -1577,8 +1620,13 @@ parity at the envelope edge, and remains horizon-limited by a diagnosed
 history-contamination loop.
 
 \paragraph{Future work.}
-(i) \emph{Certificate-regularized training} ($\lambda$-sweep in flight):
-convert the horizon-limited gain into a per-step contraction guarantee.
+(i) \emph{Amplification-factor--regularized training}: penalize the spectral
+radius of the augmented operator built on the network's Jacobian
+$J_{\mathrm{NN}}$ \eqref{eq:jnn} (validated by tests B/C to reproduce the
+measured per-step rollout amplification), to convert the horizon-limited gain
+into a per-step contraction guarantee; and the complementary structural lever
+of a shallower $\Nddot$ time-difference stencil, which lowers the loop gain
+directly.
 (ii) \emph{Conditioned-floor gap}: close the factor 2--3 between the trained
 conditioned model and its information-theoretic ceiling (longer training,
 richer $\shat$ features, angular harmonics for the $r_3$ remainder).
@@ -1605,8 +1653,10 @@ propagation: \texttt{closure\_error\_propagation.py}; Wiener floors:
 \texttt{check\_wiener\_floor.py}; stability regions:
 \texttt{analysis/ab\_stability\_regions.py},
 \texttt{analysis/vn\_stability.py},
-\texttt{Theoretical\_guarantees/imex\_stability\_regions.py}; certificate:
-\texttt{training/wiener\_certificate.py}; training:
+\texttt{Theoretical\_guarantees/imex\_stability\_regions.py}; amplification
+factor ($J_{\mathrm{NN}}$): \texttt{diagnostics/nn\_amplification.py} (the
+analytic-closure reduction of App.~\ref{app:vn}:
+\texttt{training/wiener\_certificate.py}); training:
 \texttt{training/train\_deriv.py}, \texttt{training/train\_deriv\_rollout.py};
 evaluation: \texttt{training/eval\_deriv\_by\_root.py},
 \texttt{diagnostics/rollout\_aposteriori.py}.
@@ -1665,11 +1715,17 @@ $B(Jf,Jf)$    & $1/20$  & $1/16$ & $-1/80$\\
 \end{tabular}
 \end{center}
 
-\section{Derivation of the von Neumann certificate}
+\section{Amplification of the analytic closure: the frozen-coefficient reduction}
 \label{app:vn}
 
 This appendix derives the frozen-coefficient amplification factor of the
-\emph{closed} scheme quoted in Sec.~\ref{sec:certificate}, in full generality: lag depth $S$
+closed scheme under the \emph{analytic}-closure linearization (the Wiener
+freeze of Remark~\ref{rmk:frozen-insufficient}: time derivatives frozen to
+$\hat\omega^{(j)}=\mu^{j}\hat\omega$, Jacobians to $i\sigma$ advection). This
+is the amplification of the analytic $R_3$ arm---the stable control---and is
+\emph{not} the amplification of the learned closure, which requires the
+network Jacobian $J_{\mathrm{NN}}$ of Eq.~\eqref{eq:jnn}. In full generality:
+lag depth $S$
 and spatial stencil width $W$ ($H=(W-1)/2$ taps per side) are kept as
 variables, the learned heads enter through their exact lag structure, and
 the $2\times2$ companion of Sec.~\ref{sec:certificate}, Eq.~\eqref{eq:geff}, is recovered as a
@@ -1772,7 +1828,7 @@ assumption A6, error $O((\kappa_U\Delta x)^2)$),
 Exact taps give $\Omega^{(m)}_\theta\to\Omega$; the shell reduction
 replaces $|\Omega|$ by the sample's own $\hat\sigma(\kappa)$. Equation
 \eqref{eq:vn-heads} also makes the reachability constraint of Sec.~\ref{sec:wiener}
-visible inside the certificate: the trainable parameters move
+visible inside this frozen reduction: the trainable parameters move
 $\Omega^{(m)}_\theta$ only along
 $\mathrm{span}\{U_d\sin(jk_d\Delta x)\}_{j\le H}$.
 
