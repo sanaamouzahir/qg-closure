@@ -104,6 +104,12 @@ def main():
                          'The truth is untouched; the taper-removed truth '
                          'energy fraction is measured and printed per member '
                          'to confirm the truth already lacks that band.')
+    ap.add_argument('--rel-floor', type=float, default=1.0e-3,
+                    help='|truth| below this (Pi* units): the error-%% map '
+                         'shows 0 there (no divide-by-tiny blow-ups; Sanaa '
+                         '2026-07-22). Table stats unaffected.')
+    ap.add_argument('--rel-map-vmax', type=float, default=200.0,
+                    help='linear color cap of the error-%% map, in percent')
     ap.add_argument('--no-mail', action='store_true')
     args = ap.parse_args()
 
@@ -230,7 +236,13 @@ def main():
         # ---- figures ------------------------------------------------------ #
         y, pred, err, t = panel
         vm = float(np.percentile(np.abs(y[r.valid]), 99.5))
-        relmap = np.abs(err) / np.abs(y)
+        # error-%% map: LINEAR scale, zero where the truth is below the floor
+        # (Sanaa 2026-07-22: log scale + near-zero-truth blow-ups made the
+        # map unreadable). Table stats elsewhere are untouched by the floor.
+        at = np.abs(y)
+        relmap = np.where(at >= args.rel_floor,
+                          100.0 * np.abs(err) / np.maximum(at, args.rel_floor),
+                          0.0)
         relmap[~r.valid] = np.nan
         for f in (y, pred, err):
             f[~r.valid] = np.nan
@@ -239,8 +251,9 @@ def main():
         _imshow(axs[0, 1], pred, r'prediction $\hat\Pi_{FF}^*$', -vm, vm)
         _imshow(axs[0, 2], err, r'error $\hat\Pi-\Pi$ (same scale)', -vm, vm)
         _imshow(axs[1, 0], relmap,
-                r'per-pixel $|\hat\Pi-\Pi|/|\Pi|$', None, None, cmap='magma',
-                norm=LogNorm(vmin=1e-2, vmax=1e2))
+                r'per-pixel error % ($100\,|\hat\Pi-\Pi|/|\Pi|$; '
+                r'0 where $|\Pi|<$' + f'{args.rel_floor:g})',
+                0.0, args.rel_map_vmax, cmap='viridis')
         ax = axs[1, 1]
         sel = r.valid.copy()
         idx = np.flatnonzero(sel.ravel())
