@@ -123,10 +123,20 @@ def main():
         r = runs[ri]
         near_m = r.valid & (r.sdf <= split_D * r.D)
         far_m = r.valid & (r.sdf > split_D * r.D)
+        # wake band (2026-07-22): rel-error stats are only meaningful where
+        # the truth is alive — outside the wake |Pi|~0 and |err|/|truth|
+        # explodes regardless of skill. Same box as the crop sampler.
+        dc = conf['data']
+        xs = (np.arange(r.Nx) + 0.5) * r.dx
+        ys = (np.arange(r.Ny) + 0.5) * r.dy
+        wake_m = (r.valid
+                  & (xs[None, :] >= r.x_c + _f(dc['wake_x_lo_D']) * r.D)
+                  & (xs[None, :] <= r.x_c + _f(dc['wake_x_hi_D']) * r.D)
+                  & (np.abs(ys[:, None] - r.y_c) <= _f(dc['wake_y_half_D']) * r.D))
         acc = {k: dict(sse=0.0, sy=0.0, sy2=0.0, n=0)
-               for k in ('all', 'near', 'far')}
-        rel = {'near': [], 'far': []}
-        small = {'near': 0, 'far': 0}
+               for k in ('all', 'near', 'far', 'wake')}
+        rel = {'near': [], 'far': [], 'wake': []}
+        small = {'near': 0, 'far': 0, 'wake': 0}
         panel = None
         mid_fi = frames[len(frames) // 2]
         for fi in frames:
@@ -138,19 +148,21 @@ def main():
                 )[0].cpu().numpy().astype(np.float64)
             y = y.numpy().astype(np.float64)
             err = pred - y
-            for key, sel in (('all', r.valid), ('near', near_m), ('far', far_m)):
+            for key, sel in (('all', r.valid), ('near', near_m),
+                             ('far', far_m), ('wake', wake_m)):
                 e, yy = err[sel], y[sel]
                 acc[key]['sse'] += float((e * e).sum())
                 acc[key]['sy'] += float(yy.sum())
                 acc[key]['sy2'] += float((yy * yy).sum())
                 acc[key]['n'] += int(yy.size)
-            for key, sel in (('near', near_m), ('far', far_m)):
+            for key, sel in (('near', near_m), ('far', far_m),
+                             ('wake', wake_m)):
                 rel[key].append((np.abs(err[sel]) /
                                  np.abs(y[sel])).astype(np.float32))
             if fi == mid_fi:
                 panel = (y, pred, err, float(r.times[fi]))
         rms_y = np.sqrt(acc['all']['sy2'] / acc['all']['n'])
-        for key, sel in (('near', near_m), ('far', far_m)):
+        for key, sel in (('near', near_m), ('far', far_m), ('wake', wake_m)):
             # truth-near-zero census for the relative metric (per member)
             tv = np.concatenate([np.abs(r.pi[fi][sel].astype(np.float64))
                                  * (r.D ** 2 / _f(r.U_snap[fi]) ** 2)
@@ -160,7 +172,7 @@ def main():
         stamp = _stamp(r, siblings)
         mdir = outdir / _dirname(r, siblings)
         mdir.mkdir(parents=True, exist_ok=True)
-        for key in ('all', 'near', 'far'):
+        for key in ('all', 'near', 'far', 'wake'):
             a = acc[key]
             var = a['sy2'] / a['n'] - (a['sy'] / a['n']) ** 2
             row = {'member': r.name, 'region': key, 'n_pixels': a['n'],
@@ -225,7 +237,7 @@ def main():
         print(f'[eval] {r.name}: ' + '  '.join(
             f"{q['region']} R2 {q['r2']:.4f} relmed "
             f"{q.get('rel_median', float('nan')):.3f}"
-            for q in rows[-3:]))
+            for q in rows[-4:]))
 
     # ---- table + mail ----------------------------------------------------- #
     cols = ['member', 'region', 'n_pixels', 'rmse', 'r2', 'rel_median',
