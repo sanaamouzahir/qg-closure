@@ -110,6 +110,16 @@ def main():
                          '2026-07-22; default 1e-2 per her ruling - mutes '
                          'nodal-line + weak-column ratio artifacts). '
                          'Table stats unaffected.')
+    ap.add_argument('--rel-floor-frac', type=float, default=0.25,
+                    help='member-RELATIVE map floor (Sanaa ruling 2026-07-22b):
+'
+                         'show error-%% only where |truth| >= frac * wake rms
+'
+                         '(the signal-carrying ~8%% of pixels; the energy-
+'
+                         'weighted analysis showed the rest carries ~1-2%% of
+'
+                         'Pi^2). 0 disables -> absolute --rel-floor only.')
     ap.add_argument('--rel-map-vmax', type=float, default=200.0,
                     help='linear color cap of the error-%% map, in percent')
     ap.add_argument('--no-mail', action='store_true')
@@ -242,8 +252,11 @@ def main():
         # (Sanaa 2026-07-22: log scale + near-zero-truth blow-ups made the
         # map unreadable). Table stats elsewhere are untouched by the floor.
         at = np.abs(y)
-        relmap = np.where(at >= args.rel_floor,
-                          100.0 * np.abs(err) / np.maximum(at, args.rel_floor),
+        rms_wake = float(np.sqrt(acc['wake']['sy2'] / max(acc['wake']['n'], 1)))
+        floor_eff = max(args.rel_floor, args.rel_floor_frac * rms_wake)
+        shown = float((at[wake_m] >= floor_eff).mean())
+        relmap = np.where(at >= floor_eff,
+                          100.0 * np.abs(err) / np.maximum(at, floor_eff),
                           0.0)
         relmap[~r.valid] = np.nan
         for f in (y, pred, err):
@@ -254,7 +267,8 @@ def main():
         _imshow(axs[0, 2], err, r'error $\hat\Pi-\Pi$ (same scale)', -vm, vm)
         _imshow(axs[1, 0], relmap,
                 r'per-pixel error % ($100\,|\hat\Pi-\Pi|/|\Pi|$; '
-                r'0 where $|\Pi|<$' + f'{args.rel_floor:g})',
+                r'signal pixels only, $|\Pi|\geq$' + f'{floor_eff:.2f}'
+                + f' = {100 * shown:.0f}% of wake px)',
                 0.0, args.rel_map_vmax, cmap='viridis')
         ax = axs[1, 1]
         sel = r.valid.copy()

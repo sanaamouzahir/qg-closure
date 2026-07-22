@@ -15,6 +15,8 @@ ap = argparse.ArgumentParser()
 ap.add_argument('--ckpt', required=True)
 ap.add_argument('--frame-stride', type=int, default=4)
 ap.add_argument('--device', default='cpu')
+ap.add_argument('--levels', type=float, nargs='+',
+                default=[0.25, 0.5, 1.0, 2.0])
 args = ap.parse_args()
 ck = torch.load(args.ckpt, map_location='cpu', weights_only=False)
 conf = ck['conf']; dc = conf['data']
@@ -23,7 +25,7 @@ runs = build_runs(conf)
 fbr = {}
 for ri, fi in split_frames(runs, 'val', conf):
     fbr.setdefault(ri, []).append(fi)
-LEV = [0.25, 0.5, 1.0, 2.0]
+LEV = list(args.levels)
 print(f"{'member':<12}{'lvl':>6}{'pixel%':>8}{'energy%':>9}   (share of wake pixels vs share of wake Pi^2 with rel err below lvl)")
 for ri, frames in sorted(fbr.items()):
     r = runs[ri]
