@@ -414,6 +414,53 @@ def geff_window_penalty(rc: RootCtx, model, omega_stack, stride, vn_lambda,
     return loss, float(gmax.max())
 
 
+def jnn_window_penalty(rc, one_step, omega_stack, vn_lambda, device,
+                       u_probe, eps=None):
+    """J_NN amplification penalty (2026-07-21, Test-A payoff): the amplification
+    factor of the AUGMENTED scheme from the NETWORK'S OWN Jacobian (autodiff),
+    replacing the frozen-i*sigma certificate that Test A proved BLIND (it read
+    ~1.0 while the measured/J_NN amplification was ~1.8).
+
+    Amortized power iteration of the augmented companion
+        A = [[J_NN, 0..0],
+             [   shift    ]] ,      J_NN = d(aug_step)/d(state)  (JVP by autodiff)
+    where aug_step maps the S-deep omega history -> next omega via the EXACT
+    training stepper. u_probe is a PERSISTENT unit (S,Ny,Nx) estimate of the
+    dominant eigenvector (detached), so ONE companion-apply per call amortizes
+    the power iteration across training steps (spectral-norm trick, Miyato+2018).
+    Differentiable in theta (create_graph JVP) so it actually trains stability.
+
+    Returns (loss, rho float, u_new). rho is the per-step AMPLITUDE growth; the
+    penalty pushes it below 1-eps exactly like vn_penalty, but on the REAL
+    network amplification instead of the analytic freeze."""
+    from qg.solver.opt.basis import to_physical
+    if eps is None:
+        eps = wc.EPS_MARGIN
+    S = len(omega_stack)
+
+    def aug_step(om_stack):                       # (S,Ny,Nx) real -> (Ny,Nx)
+        om_list = [om_stack[k:k + 1] for k in range(S)]
+        qc, qm, Nc, Nm, om, ps = init_state(rc, om_list, device)
+        qh_new = one_step(qc, qm, Nc, Nm, om, ps)[0]
+        return to_physical(qh_new)[0]
+
+    x = torch.stack([o.reshape(rc.Ny, rc.Nx) for o in omega_stack], 0).detach()
+    x.requires_grad_(True)
+    y = aug_step(x)                               # graph to x AND theta
+    # J . u_probe via double backward; create_graph keeps the JVP in theta's graph
+    w = torch.zeros_like(y, requires_grad=True)
+    (g,) = torch.autograd.grad(y, x, grad_outputs=w, create_graph=True)   # J^T w
+    (ju,) = torch.autograd.grad(g, w, grad_outputs=u_probe,
+                                create_graph=True)                        # J u_probe (Ny,Nx)
+    Au = torch.cat([ju[None], u_probe[:-1]], 0)   # companion apply -> (S,Ny,Nx)
+    unorm = u_probe.norm().clamp_min(1e-30)
+    Aunorm = Au.norm().clamp_min(1e-30)
+    rho = (Aunorm / unorm).clamp_max(50.0)        # Rayleigh (amplitude), differentiable; cap = safety vs blow-up-regime states
+    u_new = (Au / Aunorm).detach()                # amortized power-iter update
+    loss = vn_lambda * torch.relu(rho - (1.0 - eps)) ** 2
+    return loss, float(rho.detach()), u_new
+
+
 def developed_stack(rc: RootCtx, one_step, omega_stack, n_steps, device):
     """No-grad free roll of the CLOSED scheme n_steps past the window IC,
     returning the rolled 7-deep physical stack (newest first) for
@@ -980,6 +1027,8 @@ def main():
                         "enstrophy hinge (legacy); 'analytic' = P1(a) "
                         "on-the-fly exact N-derivative supervision of the "
                         "rolled state (free_weight = its weight)")
+    p.add_argument('--vn-mode', choices=['analytic', 'jnn'], default='analytic',
+                   help='analytic = frozen-i*sigma certificate (assemble_geff, Test-A BLIND); jnn = the network Jacobian amplification via amortized power iteration (Test-A payoff 2026-07-21)')
     p.add_argument('--vn-lambda', type=float, default=0.0,
                    help="P1(b) von Neumann certificate penalty weight "
                         "(0 = off; sweep {0.1, 1.0, 10.0})")
@@ -1345,6 +1394,8 @@ def main():
 
     anc_it = iter(anchor_batches()) if anc_tl is not None else None
 
+    vn_u_probes = {}                 # jnn vn-mode: persistent dominant-eigvec probes
+
     def train_epoch(ep, M_epoch, rng):
         model.train(True)
         samples = []
@@ -1397,11 +1448,23 @@ def main():
                         if dstack is not None:
                             vn_stacks.append(dstack)
                     for vstk in vn_stacks:
-                        l_vn, gmax_w = geff_window_penalty(
-                            rc, model_rec, vstk, s,
-                            args.vn_lambda / len(vn_stacks), device,
-                            single_slot=args.vn_single_slot,
-                            extra_shells=vn_extra_shells)
+                        if args.vn_mode == 'jnn':
+                            _key = (rc.member, s, len(vstk))
+                            _up = vn_u_probes.get(_key)
+                            if _up is None:
+                                _up = torch.randn(len(vstk), rc.Ny, rc.Nx,
+                                                  dtype=torch.float64, device=device)
+                                _up = _up / _up.norm().clamp_min(1e-30)
+                            l_vn, gmax_w, _up = jnn_window_penalty(
+                                rc, steppers[(rc.member, s)], vstk,
+                                args.vn_lambda / len(vn_stacks), device, _up)
+                            vn_u_probes[_key] = _up
+                        else:
+                            l_vn, gmax_w = geff_window_penalty(
+                                rc, model_rec, vstk, s,
+                                args.vn_lambda / len(vn_stacks), device,
+                                single_slot=args.vn_single_slot,
+                                extra_shells=vn_extra_shells)
                         if torch.isfinite(l_vn):
                             (l_vn / len(chunk)).backward()
                             geff_maxes.append(gmax_w)
@@ -1550,9 +1613,10 @@ def main():
             with open(run_dir / 'geff_hist.csv', 'a') as gf:
                 gf.write(f"{ep},{gm.size},{gm.mean():.6f},"
                          f"{np.percentile(gm, 95):.6f},{gm.max():.6f}\n")
-            print(f"[ep {ep:03d}] |G_eff| max-per-window: mean {gm.mean():.4f} "
+            _vlbl = "J_NN rho" if args.vn_mode == "jnn" else "|G_eff|"
+            print(f"[ep {ep:03d}] {_vlbl} max-per-window: mean {gm.mean():.4f} "
                   f"p95 {np.percentile(gm, 95):.4f} max {gm.max():.4f} "
-                  f"(certificate: <= {1.0 - wc.EPS_MARGIN})")
+                  f"(target <= {1.0 - wc.EPS_MARGIN})")
         va, va_s, rf, n_blown_val, fb, ag, anc_val, anc_per, anc_med = \
             val_epoch()
         # HARD NaN GUARD (Sanaa project-wide mandate 2026-07-19: EVERY code

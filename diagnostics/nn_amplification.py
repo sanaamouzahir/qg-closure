@@ -360,7 +360,7 @@ def roll_closure_states(one_step_closure, om0, ps0, S, want_steps, derivative,
         Nh_curr = N_spectral(qh_curr, derivative, F_hat)
         Nh_minus = N_spectral(qh_minus, derivative, F_hat)
         for s in range(1, max(want) + 1):
-            qh_new, Nh_new, om_new, ps_new = one_step(
+            qh_new, Nh_new, om_new, ps_new = one_step_closure(
                 qh_curr, qh_minus, Nh_curr, Nh_minus, om, ps)
             qh_minus, qh_curr = qh_curr, qh_new
             Nh_minus, Nh_curr = Nh_curr, Nh_new
