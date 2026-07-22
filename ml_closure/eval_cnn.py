@@ -72,6 +72,21 @@ def _imshow(ax, fld, title, vmin, vmax, cmap='seismic', norm=None):
     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.02)
 
 
+def ylp75_taper(field, lo=0.70, hi=0.80):
+    """Global y-spectral cosine taper matching the ylp75 target build's gain:
+    1 below lo*kN, 0 above hi*kN, cosine in between (build_ynotch_variant
+    docstring: 'cut of k_y >= 0.75 k_Nyquist, cosine taper 0.70-0.80'). The
+    build applied it only inside the quiescent band; globally on the TRUTH it
+    is a measured near-no-op (printed per member)."""
+    Ny = field.shape[0]
+    fy = np.abs(np.fft.fftfreq(Ny) * Ny) / (Ny / 2.0)
+    g = np.where(fy <= lo, 1.0,
+                 np.where(fy >= hi, 0.0,
+                          0.5 * (1.0 + np.cos(np.pi * (fy - lo) / (hi - lo)))))
+    F = np.fft.fft(field, axis=0)
+    return np.fft.ifft(F * g[:, None], axis=0).real
+
+
 def main():
     ap = argparse.ArgumentParser(description="per-member eval of a CNN-only ckpt")
     ap.add_argument('--ckpt', required=True)
@@ -82,6 +97,13 @@ def main():
                     help='default results/<geometry>/<run-name>/evaluation')
     ap.add_argument('--eval-split-D', type=float, default=None)
     ap.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu')
+    ap.add_argument('--pred-filter', default='none', choices=['none', 'ylp75'],
+                    help='apply the target-variant ky-taper to the PREDICTION '
+                         '(ylp75: cosine taper 0.70-0.80 kNyquist in y, the '
+                         'same gain the target build used, applied globally). '
+                         'The truth is untouched; the taper-removed truth '
+                         'energy fraction is measured and printed per member '
+                         'to confirm the truth already lacks that band.')
     ap.add_argument('--no-mail', action='store_true')
     args = ap.parse_args()
 
@@ -111,7 +133,9 @@ def main():
     geom = (geometry_name(runs[0].name) if member_stamp is not None
             else 'flow_past_cylinder')
     outdir = Path(args.outdir) if args.outdir else (
-        HERE / 'results' / geom.replace(' ', '_') / run_name / 'evaluation')
+        HERE / 'results' / geom.replace(' ', '_') / run_name /
+        ('evaluation' if args.pred_filter == 'none'
+         else f'evaluation_predfilter_{args.pred_filter}'))
     outdir.mkdir(parents=True, exist_ok=True)
 
     frames_by_run = {}
@@ -138,6 +162,7 @@ def main():
         rel = {'near': [], 'far': [], 'wake': []}
         small = {'near': 0, 'far': 0, 'wake': 0}
         panel = None
+        tt_num = tt_den = 0.0        # taper-removed truth energy (diagnostic)
         mid_fi = frames[len(frames) // 2]
         for fi in frames:
             x, y, m, zeta, zeta_dot, _, _ = r.full_frame(fi)
@@ -147,6 +172,11 @@ def main():
                     zeta_dot[None].to(args.device) if model.use_zeta_dot else None
                 )[0].cpu().numpy().astype(np.float64)
             y = y.numpy().astype(np.float64)
+            if args.pred_filter == 'ylp75':
+                ty = ylp75_taper(y)
+                tt_num += float(((y - ty) ** 2).sum())
+                tt_den += float((y ** 2).sum())
+                pred = ylp75_taper(pred)
             err = pred - y
             for key, sel in (('all', r.valid), ('near', near_m),
                              ('far', far_m), ('wake', wake_m)):
@@ -169,6 +199,10 @@ def main():
                                  for fi in frames])
             small[key] = float((tv < 1.0e-3 * rms_y).mean())
 
+        if args.pred_filter == 'ylp75':
+            print(f'[filter] {r.name}: global ylp75 taper removes '
+                  f'{tt_num / max(tt_den, 1e-300):.3e} of TRUTH energy '
+                  f'(must be <<1 for a clean comparison; pred was tapered)')
         stamp = _stamp(r, siblings)
         mdir = outdir / _dirname(r, siblings)
         mdir.mkdir(parents=True, exist_ok=True)
@@ -230,7 +264,8 @@ def main():
         ax.set_xlabel(r'$\log_{10}\,|\hat\Pi-\Pi|/|\Pi|$')
         ax.legend(fontsize=8); ax.grid(alpha=0.3)
         ax.set_title('per-pixel relative error', fontsize=9)
-        fig.suptitle(f'{stamp}   t={t:.2f}   {run_name}', fontsize=11)
+        note = '' if args.pred_filter == 'none' else '   [pred ylp75-tapered]'
+        fig.suptitle(f'{stamp}   t={t:.2f}   {run_name}{note}', fontsize=11)
         fig.tight_layout()
         fig.savefig(mdir / f'fields_t{t:.1f}.png', dpi=140)
         plt.close(fig)
