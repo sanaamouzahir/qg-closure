@@ -455,9 +455,20 @@ def jnn_window_penalty(rc, one_step, omega_stack, vn_lambda, device,
     Au = torch.cat([ju[None], u_probe[:-1]], 0)   # companion apply -> (S,Ny,Nx)
     unorm = u_probe.norm().clamp_min(1e-30)
     Aunorm = Au.norm().clamp_min(1e-30)
-    rho = (Aunorm / unorm).clamp_max(50.0)        # Rayleigh (amplitude), differentiable; cap = safety vs blow-up-regime states
+    rho = Aunorm / unorm                          # Rayleigh (amplitude), differentiable (reported unclamped)
     u_new = (Au / Aunorm).detach()                # amortized power-iter update
-    loss = vn_lambda * torch.relu(rho - (1.0 - eps)) ** 2
+    # LOG-SPACE penalty (Lyapunov-exponent form): relu(log rho - log(1-eps))^2.
+    # Bounded loss even for pathological rho (log grows slowly) AND nonzero gradient
+    # for ALL rho>target -- unlike a hard clamp, which zeroes the gradient on exactly
+    # the most-unstable windows. rho clamped only as an inf-safety, far above physical.
+    import math
+    _lrho = torch.log(rho.clamp(1e-30, 1e30))
+    # VALIDITY MASK (mirrors the analytic cert's |dt*sigma|<=0.5): windows whose
+    # amplification is past the frozen-linearization convergence radius are the
+    # unlearnable past-DeltaT* states -- exclude them (detached mask -> zero
+    # gradient) so the penalty targets the LEARNABLE regime, not futile windows.
+    _valid = (rho <= 50.0).to(rho.dtype).detach()
+    loss = vn_lambda * _valid * torch.relu(_lrho - math.log(1.0 - eps)) ** 2
     return loss, float(rho.detach()), u_new
 
 
