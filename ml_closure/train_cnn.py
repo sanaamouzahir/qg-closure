@@ -135,7 +135,7 @@ def main():
     ap.add_argument('--amp-weight-alpha', type=float, default=0.0,
                     help='amplitude-importance loss weighting (Sanaa 2026-07-22): '
                          'w = eps + |truth_std|^alpha, loss = sum(w*r^2)/sum(w). '
-                         'Weights from the TRUTH only (frozen data — no '
+                         'Weights from the TRUTH only (frozen data - no '
                          'prediction-shrinking channel); 0 = exact legacy loss. '
                          'Val metric and best.pt selection stay UNWEIGHTED so '
                          'arms remain comparable.')
