@@ -25,7 +25,7 @@ from pathlib import Path
 REP = Path('/gdata/projects/ml_scope/Closure_modeling/QG-closure/reporting/pending_mail')
 EP_RE = re.compile(
     r'\[ep (\d+)\] .*val NLL ([\d.eE+-]+|nan|inf) RMSE ([\d.eE+-]+|nan|inf) '
-    r'R2 ([\d.eE+-]+|nan|-?inf) .*zeta_ls ([\d.eE+-]+)')
+    r'R2 ([\d.eE+-]+|nan|-?inf) .*zeta_ls ([\d.eE+-]+|nan|inf)')
 
 
 def spool(subject, body):

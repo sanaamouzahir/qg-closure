@@ -2,6 +2,28 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
+## 2026-07-22 — CNN-ONLY MODEL AUTHORED + GATED (Sanaa order, global supervisor Fable, day mode)
+- ORDER (chat): drop the GP head entirely first — FiLM-CNN + 1x1 conv head only; lock a
+  good conditioned-CNN training, then re-add the GP. Reporting rule (STANDING, all future
+  results): NEVER pooled/median — per-member tables; per-pixel error = err_pixel/truth_pixel.
+- LANDED: model_cnn.py (PiffCNN: FiLMCNN + 1x1 head; frozen sigma_loc = train rms(Pi*)
+  binned by sdf/D, 24 bins, piecewise-linear at bin centers, recorded buffers, inverted
+  exactly at prediction), train_cnn.py (loss = plain MSE in sigma_loc-standardized space —
+  NOTHING learnable in the weighting, arm C/D/E lessons; per-region val R2; monitor-grammar
+  stdout; 2-strike NaN abort exit 9), eval_cnn.py (PER-MEMBER full-frame eval, per-pixel
+  |err|/|truth_pixel| maps + finite-filtered stats + near/far split at 1.25D, CSV+mail),
+  conf_piff_fpc_cnn.yaml (lap-recipe data/sampling verbatim, GP fields removed),
+  cnn_train_job.sh + submit_cnn.sh (monitors AUTO-WIRED at fire time + held eval),
+  baseline card SGS_piff_cnn.json (NLL slot = standardized val MSE; zeta_ls slot = FiLM |dg|).
+- Gates: AST/yaml/bash/json PASS; sigma_loc interp unit-checked (exact at centers, clamped,
+  monotone, finite; bucketize==searchsorted-left emulation); monitor EP_RE match verified
+  finite/nan/negative-R2 (+ zeta_ls group widened to nan|inf in monitor_piff.py, G4 LOW).
+  G4 closure-reviewer PASS-with-fixes — MEDIUM fixed (rel stats now finite-filtered +
+  frac_rel_nonfinite column), 2 LOW hardenings applied (eval --config sdf_clip_D/bins
+  guard). G5 sge-checker PASS all rules. NEXT: I21c submit piff_fpc_cnn_v1, watch loss.
+- Parallel: liaison porting the FR-dataset save onto the fork closure branch + student
+  instructions (Sanaa order; DNS_FR.npz writer exists only in the package-stable tree).
+
 ## 2026-07-17 (later) â€” RAMP-WIDTH SWEEP AUTHORED, PROPOSE-GATED (Sanaa ruling; Fable, day mode)
 - Ruling: penalty axis exhausted (0.5/0.6 NaN, 1.0+ weak: inlet v_rms ~7.5e-2,
   38-71% St leak at T=35); campaign moves to sponge RAMP WIDTH.

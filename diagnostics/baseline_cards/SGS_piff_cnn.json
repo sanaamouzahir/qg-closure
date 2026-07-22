@@ -1,0 +1,18 @@
+{
+  "card": "SGS_piff_cnn",
+  "seeded_from": "FIRST CNN-only run (piff_fpc_cnn_v1, Sanaa order 2026-07-22) — exploratory card: thresholds are pathology floors, NOT science gates",
+  "note": "train_cnn.py stdout reuses the piff grammar with two documented substitutions: the 'val NLL' slot carries the STANDARDIZED VAL MSE (the selection scalar, healthy range O(1) falling toward ~0.1), and the 'zeta_ls' slot carries FiLM |dgamma| (conditioning ACTIVITY, starts 0.000 by identity init — the conditioning_inert trigger reading 0.6931 can never fire; |dgamma| rising off 0 is the healthy signal).",
+  "milestones": [
+    {"epoch": 5,   "min_r2": 0.05, "max_nll": 2.0},
+    {"epoch": 20,  "min_r2": 0.30, "max_nll": 1.0},
+    {"epoch": 40,  "min_r2": 0.50, "max_nll": 0.8},
+    {"epoch": 100, "min_r2": 0.65, "max_nll": 0.7, "gate": "exploratory floor; the science read is the per-member eval_cnn table, not this number"}
+  ],
+  "triggers": {
+    "explode": "any non-finite val loss/RMSE/R2 in the log line (trainer also self-aborts, exit 9, after 2 consecutive)",
+    "collapse": "val R2 < 0.02 for 10 consecutive epochs after ep 5 (constant-mean prediction)",
+    "planb": "n/a for the CNN-only model (no GP feature space)",
+    "nll_runaway": "val loss > running_min + 0.5 for 10 consecutive epochs"
+  },
+  "kill_policy": "monitor NEVER qdels; it emails verdicts. I14 qdel remains a supervisor action on evidence."
+}
