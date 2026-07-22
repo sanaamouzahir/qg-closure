@@ -104,10 +104,12 @@ def main():
                          'The truth is untouched; the taper-removed truth '
                          'energy fraction is measured and printed per member '
                          'to confirm the truth already lacks that band.')
-    ap.add_argument('--rel-floor', type=float, default=1.0e-3,
+    ap.add_argument('--rel-floor', type=float, default=1.0e-2,
                     help='|truth| below this (Pi* units): the error-%% map '
                          'shows 0 there (no divide-by-tiny blow-ups; Sanaa '
-                         '2026-07-22). Table stats unaffected.')
+                         '2026-07-22; default 1e-2 per her ruling — mutes '
+                         'nodal-line + weak-column ratio artifacts). '
+                         'Table stats unaffected.')
     ap.add_argument('--rel-map-vmax', type=float, default=200.0,
                     help='linear color cap of the error-%% map, in percent')
     ap.add_argument('--no-mail', action='store_true')
