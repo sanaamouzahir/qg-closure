@@ -1,0 +1,114 @@
+% amplification_factors.tex
+% von Neumann amplification factors of the bare, analytic-closure, and NN-closure
+% AB2CN2 schemes. Reference note for the manuscript (QG-closure, Wiener track).
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\newcommand{\ii}{\mathrm{i}}
+\newcommand{\dt}{\Delta t}
+\newcommand{\Lhat}{\hat{L}}
+\newcommand{\wh}{\hat{\omega}}
+\begin{document}
+
+\section*{Amplification factors of the AB2CN2 closure schemes}
+
+\paragraph{Setup.} Work per Fourier mode $\bm{k}$ of $\partial_t\bar\omega = L\bar\omega + N$,
+$N=-J(\bar\psi,\bar\omega)+F$, with the linear symbol
+$\Lhat(k) = -\nu|k|^2 - \mu + \ii\beta k_x/|k|^2$. The nonlinear term is frozen at a
+state through its linearised advection frequency $\sigma(k)$ (the analogue of
+$u_{\rm rms}$ in a linear-stability plot): $\widehat{\delta N}\approx \ii\sigma(k)\,\wh$.
+Because $\sigma$ is read off the state, the amplification is state-dependent through
+$\dt\,\sigma$ (validity of the frozen-coefficient model requires $|\dt\sigma|\lesssim 0.5$).
+
+\paragraph{Common companion.} AB2CN2 treats $L$ with Crank--Nicolson (implicit) and
+$N$ with Adams--Bashforth-2 (explicit):
+\begin{equation}
+  \Big(1-\tfrac{\dt}{2}\Lhat\Big)\wh_{n+1}
+   = \Big(1+\tfrac{\dt}{2}\Lhat\Big)\wh_n
+   + \dt\Big(\tfrac{3}{2}\widehat{N}_n-\tfrac{1}{2}\widehat{N}_{n-1}\Big).
+  \label{eq:ab2cn2}
+\end{equation}
+Every scheme below reduces to the two-step recurrence
+$\wh_{n+1} = (a+b)\,\wh_n + c\,\wh_{n-1}$, i.e. the companion
+\begin{equation}
+  A(k)=\begin{bmatrix} a+b & c \\ 1 & 0\end{bmatrix},\qquad
+  g(k)=\rho\big(A(k)\big)=\max_{\pm}\left|\frac{(a+b)\pm\sqrt{(a+b)^2+4c}}{2}\right|,
+  \label{eq:companion}
+\end{equation}
+and the scheme is (von Neumann) stable at $k$ iff $g(k)\le 1$.
+
+\subsection*{1. Bare AB2CN2}
+Advection only, $\widehat N\approx\ii\sigma\wh$. With $R_0(k)=1-\tfrac{\dt}{2}\Lhat$,
+\begin{equation}
+  a=\frac{1+\tfrac{\dt}{2}\Lhat}{R_0},\qquad
+  b=\frac{3}{2}\,\frac{\dt\,\ii\sigma}{R_0},\qquad
+  c=-\frac{1}{2}\,\frac{\dt\,\ii\sigma}{R_0},
+  \qquad\boxed{\,g_{\rm bare}(k)=\rho(A)\,}.
+  \label{eq:bare}
+\end{equation}
+
+\subsection*{2. AB2CN2 + analytic closure}
+The closure adds the non-iterative defect $\delta R=\tfrac{\dt^{2}}{12}\big[L^{3}\bar\omega
++L^{2}N+L\dot N-5\ddot N\big]$ (it cancels the leading $h^3$ truncation). In the
+scheme it folds as: the $L^3$ term enters the \emph{implicit} denominator, and
+$L^2N+L\dot N-5\ddot N$ enters the \emph{explicit} extrapolant. With
+$R(k)=1-\tfrac{\dt}{2}\Lhat+\tfrac{\dt^{3}}{12}\Lhat^{3}$ and $c_{12}=\tfrac{\dt^{2}}{12}$,
+\begin{align}
+  a &= \frac{1+\tfrac{\dt}{2}\Lhat}{R},\qquad
+  E \;=\; \underbrace{\ii\sigma\big(1+c_{12}\Lhat^{2}\big)}_{\text{advection }+\;L^2N\text{ fold}}
+      \;+\; c_{12}\big(\Lhat\,T_{\dot N}-5\,T_{\ddot N}\big),\\
+  b &= \frac{\dt}{R}\Big(\tfrac{3}{2}\,\ii\sigma + E_{\rm clo}\Big),\quad
+  c = -\frac{1}{2}\,\frac{\dt\,\ii\sigma}{R},
+  \qquad\boxed{\,g_{\rm ana}(k)=\rho(A)\,},
+  \label{eq:ana}
+\end{align}
+where $E_{\rm clo}=E-\ii\sigma$ is the closure part and $T_{\dot N},T_{\ddot N}$ are the
+linearised transfers of $\dot N,\ddot N$. \textbf{Analytic transfer:} $T_{\dot N},T_{\ddot N}$
+come from the \emph{exact chain rule} at the state (\S\ref{sec:chain}), linearised in
+the Wiener freeze --- time orders $\wh^{(j)}=D^{j}\wh$ with $D(k)=\Lhat+\ii\sigma$,
+every Jacobian product $\to\ii\sigma$, exact spatial derivatives $\partial_x\to\ii k_x$:
+\begin{equation}
+  T^{\rm ana}_{c}(k)=\sum_{i,j}\binom{}{}_{c,ij}\,(\ii\sigma)\,D(k)^{\,i+j}.
+\end{equation}
+
+\subsection*{3. AB2CN2 + NN closure}
+Identical fold \eqref{eq:ana}, but the closure supplies $\dot N,\ddot N$ from the
+network heads rather than the chain rule. Two amplification factors arise, and
+\emph{they disagree}:
+\begin{itemize}
+\item \textbf{Frozen certificate} $g^{\rm frozen}_{\rm NN}$: same $T_c$ form as
+\eqref{eq:ana} but with the network's learned mixing weights and stencil symbols
+$\rho_\theta(k)$ (the trainable $\partial_x$ approximation) in place of the exact ones,
+\[
+  T^{\rm NN}_{c}(k)=\sum_{i,j}(\text{mix}_\theta)_{c,ij}\,(\ii\sigma)\,\rho_\theta(k)\,D(k)^{\,i+j}.
+\]
+This is what the training penalty minimised. \emph{It is blind}: it freezes the
+network's time-differencing to the $\wh^{(j)}=D^{j}\wh$ relation and reads
+$g\lesssim1$ even when the scheme blows up.
+\item \textbf{Network Jacobian} $g^{\rm J_{NN}}_{\rm NN}=\rho(A_\theta)$, where the
+companion row is the \emph{true} Jacobian of the augmented one-step map,
+$J_{\rm NN}=\partial\,\mathrm{step}_\theta/\partial(\text{history})$, obtained by
+automatic differentiation with \emph{nothing} frozen (the network's actual response
+to its own $S$-deep self-generated history). This is the honest amplification.
+\end{itemize}
+\textbf{Empirical resolution (this work):} at a truth state, $g^{\rm frozen}_{\rm NN}\approx1.0$
+while $g^{\rm J_{NN}}_{\rm NN}\approx1.81$, and the \emph{measured} rollout error growth
+is $1.77$ per step (amplitude; $3.13$ in enstrophy). The network Jacobian reproduces the
+measured blow-up; the frozen certificate does not. The instability lives in the
+$S$-deep history subspace the frozen freeze assumes away, so the stability objective
+must penalise $g^{\rm J_{NN}}_{\rm NN}$, not $g^{\rm frozen}_{\rm NN}$.
+
+\subsection*{Chain rule for $\dot N,\ddot N$ (analytic reference)}
+\label{sec:chain}
+Computed exactly from the instantaneous field via $L$, $J$, $\nabla^{-2}$
+(not finite-differenced from history); $F$ enters through $N$ hence $\dot\omega$:
+\begin{align}
+  \dot{\bar\omega} &= L\bar\omega+N, & \dot{\bar\psi} &= \nabla^{-2}\dot{\bar\omega}, &
+  \dot N &= -J(\dot{\bar\psi},\bar\omega)-J(\bar\psi,\dot{\bar\omega}),\\
+  \ddot{\bar\omega} &= L\dot{\bar\omega}+\dot N, & \ddot{\bar\psi} &= \nabla^{-2}\ddot{\bar\omega}, &
+  \ddot N &= -J(\ddot{\bar\psi},\bar\omega)-2J(\dot{\bar\psi},\dot{\bar\omega})-J(\bar\psi,\ddot{\bar\omega}).
+\end{align}
+The analytic explicit closure is then $f_{\rm ana}=\tfrac{1}{12}\big(L\dot N-5\ddot N\big)$;
+the NN reads $\dot N,\ddot N$ from its trained $[\dot N,\ddot N,\dddot N]$ heads.
+
+\end{document}
