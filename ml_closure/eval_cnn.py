@@ -111,15 +111,11 @@ def main():
                          'nodal-line + weak-column ratio artifacts). '
                          'Table stats unaffected.')
     ap.add_argument('--rel-floor-frac', type=float, default=0.25,
-                    help='member-RELATIVE map floor (Sanaa ruling 2026-07-22b):
-'
-                         'show error-%% only where |truth| >= frac * wake rms
-'
-                         '(the signal-carrying ~8%% of pixels; the energy-
-'
-                         'weighted analysis showed the rest carries ~1-2%% of
-'
-                         'Pi^2). 0 disables -> absolute --rel-floor only.')
+                    help='member-RELATIVE map floor (Sanaa ruling 2026-07-22b): '
+                         'show error-%% only where |truth| >= frac * wake rms '
+                         '(the signal-carrying pixels; the energy-weighted '
+                         'analysis showed the rest carries ~1-2%% of Pi^2). '
+                         '0 disables -> absolute --rel-floor only.')
     ap.add_argument('--rel-map-vmax', type=float, default=200.0,
                     help='linear color cap of the error-%% map, in percent')
     ap.add_argument('--no-mail', action='store_true')
