@@ -132,6 +132,12 @@ def main():
     ap.add_argument('--weight-decay', type=float, default=None)
     ap.add_argument('--epochs', type=int, default=None)
     ap.add_argument('--seed', type=int, default=None)
+    ap.add_argument('--init-ckpt', default=None,
+                    help='warm start: load a PiffCNN checkpoint (strict). The '
+                         'recorded sigma_loc/zdot_sd buffers are recomputed '
+                         'from the same pool then overwritten by the ckpt '
+                         'values — identical by construction; a conf mismatch '
+                         'fails loudly on state_dict shapes')
     ap.add_argument('--freeze-film', action='store_true',
                     help='Re-blind ablation (spec S2.1)')
     ap.add_argument('--device', default=None)
@@ -172,6 +178,13 @@ def main():
                                     int(model.sig_rms.numel()))
     consts.update(model.set_sigma_profile(rms))
     consts['sigma_loc_bin_counts'] = [int(c) for c in cnt]
+    if args.init_ckpt:
+        wck = torch.load(args.init_ckpt, map_location='cpu', weights_only=False)
+        model.load_state_dict(wck['model'])   # strict: any conf drift fails loudly
+        info['init_ckpt'] = str(args.init_ckpt)
+        info['init_ckpt_epoch'] = int(wck.get('epoch', -1))
+        print(f"[train] warm start from {args.init_ckpt} "
+              f"(epoch={wck.get('epoch')}, val={wck.get('val', {})})")
     info['recorded_constants'] = consts
     nparams = sum(p.numel() for p in model.parameters())
     info['n_params'] = int(nparams)
