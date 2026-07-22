@@ -154,17 +154,19 @@ def main():
         mdir.mkdir(parents=True, exist_ok=True)
         for key, _ in regions:
             a = acc[key]
-            var_t = a['sy2'] / a['n'] - (a['sy'] / a['n']) ** 2
+            n = max(a['n'], 1)               # G4 LOW: empty-region guard
+            var_t = a['sy2'] / n - (a['sy'] / n) ** 2
             row = {'member': r.name, 'region': key, 'n_pixels': a['n'],
-                   'rmse': float(np.sqrt(a['sse'] / a['n'])),
-                   'r2': float(1.0 - (a['sse'] / a['n']) / max(var_t, 1e-30)),
-                   'cov68': a['c68'] / a['n'], 'cov95': a['c95'] / a['n'],
-                   'mean_sigma': a['sig'] / a['n']}
+                   'rmse': float(np.sqrt(a['sse'] / n)),
+                   'r2': float(1.0 - (a['sse'] / n) / max(var_t, 1e-30)),
+                   'cov68': a['c68'] / n, 'cov95': a['c95'] / n,
+                   'mean_sigma': a['sig'] / n}
             if key in rel:
-                rv = np.concatenate(rel[key])
+                rv = np.concatenate(rel[key]) if rel[key] else np.array([])
                 fin = np.isfinite(rv)
-                row.update(rel_median=float(np.median(rv[fin])),
-                           rel_p90=float(np.percentile(rv[fin], 90)))
+                if fin.any():
+                    row.update(rel_median=float(np.median(rv[fin])),
+                               rel_p90=float(np.percentile(rv[fin], 90)))
             rows.append(row)
 
         t, pred, err, sig, tt = panel

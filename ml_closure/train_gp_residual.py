@@ -184,7 +184,10 @@ def main():
     nf = args.init_noise_frac
     gp.mean_module.constant.data.fill_(r_mean)
     gp.covar_module.outputscale = (1.0 - nf) * r_var
-    lik.noise = nf * r_var
+    # G4 LOW-MEDIUM 2026-07-22: GaussianLikelihood noise_constraint floor is
+    # 1e-4; a very low CNN plateau (r_var <= 1e-3 at nf=0.1) would NaN the
+    # raw_noise inverse-transform and burn the submission. Floor it.
+    lik.noise = max(nf * r_var, 2.0e-4)
     info['residual_stats'] = {'mean': r_mean, 'var': r_var,
                               'n_sample': int(rs.numel())}
     print('[gp-res]', json.dumps(info, indent=2))
@@ -233,6 +236,7 @@ def main():
         print(f"[ep {ep:03d}] elbo {tr:+.4e}  val NLL {vm['nll']:.4e} "
               f"RMSE {np.sqrt(max(vm['val_loss'], 0.0)):.4e} "
               f"R2 {1.0 - vm['val_loss'] / max(r_var, 1e-30):.4f} "
+              f"(vs train-sampled r_var) "
               f"sigma {vm['mean_sigma_std']:.3e}  zeta_ls {zls:.3f}  "
               f"cov68 {vm['cov68']:.3f} cov95 {vm['cov95']:.3f}  "
               f"({time.time() - t0:.0f}s)", flush=True)
