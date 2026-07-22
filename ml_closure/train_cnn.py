@@ -132,6 +132,17 @@ def main():
     ap.add_argument('--weight-decay', type=float, default=None)
     ap.add_argument('--epochs', type=int, default=None)
     ap.add_argument('--seed', type=int, default=None)
+    ap.add_argument('--amp-weight-alpha', type=float, default=0.0,
+                    help='amplitude-importance loss weighting (Sanaa 2026-07-22): '
+                         'w = eps + |truth_std|^alpha, loss = sum(w*r^2)/sum(w). '
+                         'Weights from the TRUTH only (frozen data — no '
+                         'prediction-shrinking channel); 0 = exact legacy loss. '
+                         'Val metric and best.pt selection stay UNWEIGHTED so '
+                         'arms remain comparable.')
+    ap.add_argument('--amp-weight-eps', type=float, default=0.2,
+                    help='weight floor: quiet-truth pixels keep this weight or '
+                         'the prediction there is unconstrained (hallucination '
+                         'guard). Only used when alpha > 0.')
     ap.add_argument('--init-ckpt', default=None,
                     help='warm start: load a PiffCNN checkpoint (strict). The '
                          'recorded sigma_loc/zdot_sd buffers are recomputed '
@@ -167,6 +178,8 @@ def main():
     info.update({'lr': lr, 'weight_decay': wd, 'epochs': epochs,
                  'film': bool(conf['model']['film']), 'device': device,
                  'head': 'cnn_1x1', 'eval_split_D': eval_split_D,
+                 'amp_weight_alpha': float(args.amp_weight_alpha),
+                 'amp_weight_eps': float(args.amp_weight_eps),
                  'N_train_pixels': count_masked_pixels(runs, 'train', conf)})
 
     model = PiffCNN(conf).to(device)
@@ -215,10 +228,15 @@ def main():
             mask, zeta = b['mask'].to(device), b['zeta'].to(device)
             zd = b['zeta_dot'].to(device) if model.use_zeta_dot else None
             yhat_std = model(x, zeta, zd)
-            r = (yhat_std - y / model.sigma_loc(x))[mask]
+            yst = y / model.sigma_loc(x)
+            r = (yhat_std - yst)[mask]
             if r.numel() == 0:
                 continue
-            loss = (r * r).mean()
+            if args.amp_weight_alpha > 0.0:
+                w = args.amp_weight_eps + yst[mask].abs() ** args.amp_weight_alpha
+                loss = (w * r * r).sum() / w.sum()
+            else:
+                loss = (r * r).mean()
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()
