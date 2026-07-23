@@ -2,13 +2,40 @@
 
 Running record. Supervisor updates this at the end of every session. Newest entry on top.
 
-## 2026-07-22 — CNN-ONLY MODEL AUTHORED + GATED (Sanaa order, global supervisor Fable, day mode)
-- ORDER (chat): drop the GP head entirely first — FiLM-CNN + 1x1 conv head only; lock a
+## 2026-07-22/23 - CNN-FIRST CAMPAIGN: v1 PLATEAU + RESIDUAL-GP LANDED; v2 (capacity+lap) + SUBMARINE FIRED (global supervisor Fable, overnight autonomy)
+- FPC v1 CNN: block loop 0.643->0.389->0.326->0.288->0.266->0.249->0.237 (~1900 ep), plateau
+  at ext1800 (4.75%<5%). Per-member R2-all 0.88-0.92; wake energy within 15/25% err: 44-62%/68-78%.
+  Shape-vs-amp: ~97% shape, amp ratio 0.92-0.95, bias 0; registration diag: shifts <1/3 px,
+  ~0% recoverable by local displacement - in-place content differences, not phase.
+- Residual-GP (piff_fpc_gpres_v1, 20-dim ARD SVGP on (Pi-Pi_CNN)/sigma_loc, frozen CNN):
+  wake/energy metrics unchanged (mean ceiling CONFIRMED at structures) BUT per-pixel rel medians
+  cut near 1.77->1.52 wake 3.32->2.00 far 19.4->3.0 (background bias removed). sigma over-wide
+  (cov68 0.95-0.99, heavy-tail residual vs Gaussian NLL); ARD: sdf 0.59 dominant, zdot 7.27 pruned.
+  Student-t residual likelihood identified as the sigma fix, NOT fired (Sanaa priority order).
+- Cape v1 CNN: 0.202->0.147->0.122->0.110->0.101, block-6 in flight; GP handoff staged at plateau.
+- Conventions locked: ylp75 pred-taper standard; LINEAR error-% map with member-relative floor
+  |truth|>=0.25*wake-rms; energy-CDF tables 5/10/15/20/25%; per-member always, three-lens verdicts.
+- SANAA NIGHT ORDER (a-priori first; no online until it is good): v2 = capacity [64,64,32] +
+  |lap| 5th input channel (log1p/lap_scale), NOTHING else changed, full framework both geometries
+  - FIRED (piff_fpc_cnn_v2 1844771, piff_cape_cnn_v2 1844775, monitors+evals chained). THIRD
+  GEOMETRY submarine: ellipse hull 2b=1.2566 (= cylinder D -> Re_D=3900 exact), aspect 4:1,
+  mid-water; mask fn + scenario added (additive) to package-stable; phaseSub_job (NaN-guard
+  retained); DNS FPSub-const 2048^2 dt 2.5e-4 T120 FIRED (1844779, native constant inflow,
+  no table). Online decision: tomorrow on these results.
+- Incidents (honest record): cp1252 byte from Windows-side patch killed 2 eval jobs (SyntaxError;
+  fixed; remote-AST gate now mandatory pre-qsub); one mis-pathed ext300 submission qdel'd
+  pre-start; one force-push fixing a same-minute commit sweep (mtgp files re-committed separately
+  as [sanaa-approved 2026-07-21]); mseas has NO github route (DNS) - deploys via scp only.
+- Wiener (parallel): jnn_ft_l5 rho table mailed ([QG][REPORT][wiener]); rho_mean ~1.334 plateau
+  vs 0.98 target at ep10/20, anchor healthy, ETA midday 07-23.
+
+## 2026-07-22 - CNN-ONLY MODEL AUTHORED + GATED (Sanaa order, global supervisor Fable, day mode)
+- ORDER (chat): drop the GP head entirely first - FiLM-CNN + 1x1 conv head only; lock a
   good conditioned-CNN training, then re-add the GP. Reporting rule (STANDING, all future
-  results): NEVER pooled/median — per-member tables; per-pixel error = err_pixel/truth_pixel.
+  results): NEVER pooled/median - per-member tables; per-pixel error = err_pixel/truth_pixel.
 - LANDED: model_cnn.py (PiffCNN: FiLMCNN + 1x1 head; frozen sigma_loc = train rms(Pi*)
   binned by sdf/D, 24 bins, piecewise-linear at bin centers, recorded buffers, inverted
-  exactly at prediction), train_cnn.py (loss = plain MSE in sigma_loc-standardized space —
+  exactly at prediction), train_cnn.py (loss = plain MSE in sigma_loc-standardized space -
   NOTHING learnable in the weighting, arm C/D/E lessons; per-region val R2; monitor-grammar
   stdout; 2-strike NaN abort exit 9), eval_cnn.py (PER-MEMBER full-frame eval, per-pixel
   |err|/|truth_pixel| maps + finite-filtered stats + near/far split at 1.25D, CSV+mail),
@@ -18,7 +45,7 @@ Running record. Supervisor updates this at the end of every session. Newest entr
 - Gates: AST/yaml/bash/json PASS; sigma_loc interp unit-checked (exact at centers, clamped,
   monotone, finite; bucketize==searchsorted-left emulation); monitor EP_RE match verified
   finite/nan/negative-R2 (+ zeta_ls group widened to nan|inf in monitor_piff.py, G4 LOW).
-  G4 closure-reviewer PASS-with-fixes — MEDIUM fixed (rel stats now finite-filtered +
+  G4 closure-reviewer PASS-with-fixes - MEDIUM fixed (rel stats now finite-filtered +
   frac_rel_nonfinite column), 2 LOW hardenings applied (eval --config sdf_clip_D/bins
   guard). G5 sge-checker PASS all rules. NEXT: I21c submit piff_fpc_cnn_v1, watch loss.
 - Parallel: liaison porting the FR-dataset save onto the fork closure branch + student
