@@ -120,11 +120,13 @@ def main():
         res = {b: [] for b in BANDS}          # (c0, cb, dx, dy, w) tuples
         shift_map = {}                        # (ty,tx) -> (dx,dy,|d|) full band
         for fi in frames:
-            x, y, m, zeta, zeta_dot, _, _ = r.full_frame(fi)
+            x, y, m, zeta, zeta_dot, _, lap_pl, psi_pl = r.full_frame(fi)
             with torch.no_grad():
                 pred = model.predict_physical(
                     x[None].to(args.device), zeta[None].to(args.device),
-                    zeta_dot[None].to(args.device) if model.use_zeta_dot else None
+                    zeta_dot[None].to(args.device) if model.use_zeta_dot else None,
+                    lap_pl[None].to(args.device) if getattr(model, 'use_lap_input', False) else None,
+                    psi_pl[None].to(args.device) if getattr(model, 'use_psi_input', False) else None
                 )[0].cpu().numpy().astype(np.float64)
             t_full = y.numpy().astype(np.float64)
             for band, kk in BANDS.items():

@@ -179,6 +179,24 @@ class RunData:
         # with the frame's U (one extra D vs the grad feature's D^2/U: the
         # laplacian of omega* in x/D coordinates).
         self.need_lap = bool(conf.get('model', {}).get('use_lap_feature', False))
+        # v3 (Sanaa 2026-07-23): psi_bar = inverse-Laplacian of omega_bar as a
+        # NONLOCAL input plane (Guan et al. 2022 use {psi,omega}; our RF-13
+        # CNN cannot synthesize large scales locally). Spectral solve once per
+        # frame at load; psi* = psi/(U*D) at crop time. k=0 mode set to 0.
+        self.need_psi = bool(conf.get('model', {}).get('use_psi_input', False))
+        if self.need_psi:
+            ky = 2.0 * np.pi * np.fft.fftfreq(self.Ny, d=self.dy)
+            kx = 2.0 * np.pi * np.fft.fftfreq(self.Nx, d=self.dx)
+            k2 = ky[:, None] ** 2 + kx[None, :] ** 2
+            invlap = np.zeros_like(k2)
+            nz = k2 > 0
+            invlap[nz] = -1.0 / k2[nz]
+            ps = np.empty_like(self.omega)
+            for k in range(self.T):
+                ps[k] = np.fft.ifft2(
+                    np.fft.fft2(self.omega[k].astype(np.float64)) * invlap
+                ).real.astype(np.float32)
+            self.psi = ps
         # wallv2 wall gate (Sanaa GO 2026-07-18): multiply the RAW g and lap
         # planes by exp(-max(sdf,0)/D) — the diagnose_feature_candidates.py
         # winner features grad_om_wall / lap_om_wall promoted into the model
@@ -385,12 +403,16 @@ class RunData:
             if self.upstream_blend is not None:
                 ls = ls * self.upstream_blend[ix][None, :]
             lap = torch.from_numpy(ls.astype(np.float32))
+        psi = None
+        if self.need_psi:
+            pv = self.psi[frame][sl].astype(np.float64) / (_f(U) * self.D)
+            psi = torch.from_numpy(pv.astype(np.float32))
         return (torch.from_numpy(x),
                 torch.from_numpy(pi.astype(np.float32)),
                 torch.from_numpy(self.valid[sl]),
                 torch.tensor(self.zeta_snap[frame], dtype=torch.float32),
                 torch.tensor(self.zeta_dot_snap[frame], dtype=torch.float32),
-                g, lap)
+                g, lap, psi)
 
     def full_frame(self, frame):
         """Whole-domain channels/target/mask for a priori eval (model is
@@ -775,13 +797,15 @@ class PiffCropDataset(Dataset):
     def __getitem__(self, i):
         ri, fi, cy, cx = self.table[i]
         r = self.runs[ri]
-        x, y, m, zeta, zeta_dot, g, lap = r.crop(fi, cy, cx, self.size)
+        x, y, m, zeta, zeta_dot, g, lap, psi = r.crop(fi, cy, cx, self.size)
         out = {'x': x, 'y': y, 'mask': m, 'zeta': zeta, 'zeta_dot': zeta_dot,
                'run': int(ri), 'frame': int(fi)}
         if g is not None:
             out['g'] = g
         if lap is not None:
             out['lap'] = lap
+        if psi is not None:
+            out['psi'] = psi
         return out
 
     def epoch_hash(self):
@@ -790,7 +814,7 @@ class PiffCropDataset(Dataset):
         h.update(self.table.tobytes())
         for i in range(len(self)):
             s = self[i]
-            for k in ('x', 'y', 'mask', 'zeta', 'zeta_dot', 'g', 'lap'):
+            for k in ('x', 'y', 'mask', 'zeta', 'zeta_dot', 'g', 'lap', 'psi'):
                 if k in s:
                     h.update(s[k].numpy().tobytes())
         return h.hexdigest()

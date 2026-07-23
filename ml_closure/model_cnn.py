@@ -36,6 +36,8 @@ class PiffCNN(nn.Module):
         # 2026-07-16 heavy-tail lesson; raw range 0..332 -> ~[0, 5.9]).
         # Default OFF -> v1 checkpoints byte-identical (buffer non-persistent).
         self.use_lap_input = bool(mc.get('use_lap_input', False))
+        # v3: psi* = (inv-lap omega)/(U D) as a NONLOCAL input channel
+        self.use_psi_input = bool(mc.get('use_psi_input', False))
         cond_dim = 1 + int(self.use_zeta_dot)
         self.cnn = FiLMCNN(in_channels=int(mc['in_channels']),
                            channels=mc['channels'], kernel=int(mc['kernel']),
@@ -98,20 +100,24 @@ class PiffCNN(nn.Module):
             return torch.stack([zeta, zeta_dot / self.zdot_sd], dim=-1)  # (B,2)
         return zeta
 
-    def features_in(self, x, lap=None):
-        """CNN input tensor: the 4 canonical channels, +log1p(|lap|/scale)
-        as channel 4 when use_lap_input (sdf stays channel 3 — sigma_loc and
-        the task/region logic keep reading x[:, 3] unchanged)."""
-        if not self.use_lap_input:
-            return x
-        if lap is None:
-            raise ValueError("use_lap_input=true but lap not supplied")
-        return torch.cat(
-            [x, torch.log1p(lap / self.lap_scale).unsqueeze(1)], dim=1)
+    def features_in(self, x, lap=None, psi=None):
+        """CNN input tensor: 4 canonical channels, +log1p(|lap|/scale) as
+        channel 4 (use_lap_input), +psi* as channel 5 (use_psi_input). sdf
+        stays channel 3 — sigma_loc/region logic read x[:, 3] unchanged."""
+        cols = [x]
+        if self.use_lap_input:
+            if lap is None:
+                raise ValueError("use_lap_input=true but lap not supplied")
+            cols.append(torch.log1p(lap / self.lap_scale).unsqueeze(1))
+        if self.use_psi_input:
+            if psi is None:
+                raise ValueError("use_psi_input=true but psi not supplied")
+            cols.append(psi.unsqueeze(1))
+        return x if len(cols) == 1 else torch.cat(cols, dim=1)
 
-    def forward(self, x, zeta, zeta_dot=None, lap=None):
-        """(B,4,H,W),(B,)[,(B,)][,(B,H,W)] -> standardized prediction."""
-        f = self.cnn(self.features_in(x, lap), self._cond(zeta, zeta_dot))
+    def forward(self, x, zeta, zeta_dot=None, lap=None, psi=None):
+        """(B,4,H,W),(B,)[,...] -> standardized prediction."""
+        f = self.cnn(self.features_in(x, lap, psi), self._cond(zeta, zeta_dot))
         return self.head(f).squeeze(1)
 
     def sigma_loc(self, x):
@@ -128,10 +134,10 @@ class PiffCNN(nn.Module):
         w = (s - c[lo]) / (c[hi] - c[lo])
         return (1.0 - w) * self.sig_rms[lo] + w * self.sig_rms[hi]
 
-    def predict_physical(self, x, zeta, zeta_dot=None, lap=None):
+    def predict_physical(self, x, zeta, zeta_dot=None, lap=None, psi=None):
         """Physical-units prediction Pi_hat* (B,H,W): standardization inverted
         exactly by the recorded profile."""
-        return self.forward(x, zeta, zeta_dot, lap) * self.sigma_loc(x)
+        return self.forward(x, zeta, zeta_dot, lap, psi) * self.sigma_loc(x)
 
     # ---- logging ----------------------------------------------------------- #
     def film_norms(self):

@@ -65,7 +65,10 @@ def main():
     cnn.load_state_dict(ck['cnn'])
     cnn.eval()
     M = int(ck['n_inducing'])
-    gp = ResidualSVGP(torch.zeros(M, int(ck['gp_dim']))).to(args.device)
+    # dim from the SAVED inducing points, not the recorded scalar (the early
+    # v1-era trainer recorded a hardcoded 20 even for wider CNNs)
+    gp_dim = int(ck['gp']['variational_strategy.inducing_points'].shape[-1])
+    gp = ResidualSVGP(torch.zeros(M, gp_dim)).to(args.device)
     gp.load_state_dict(ck['gp'])
     lik = gpytorch.likelihoods.GaussianLikelihood().to(args.device)
     lik.load_state_dict(ck['lik'])
@@ -103,11 +106,13 @@ def main():
         panel = None
         mid_fi = frames[len(frames) // 2]
         for fi in frames:
-            x, y, m, zeta, zeta_dot, _, lap_pl = r.full_frame(fi)
+            x, y, m, zeta, zeta_dot, _, lap_pl, psi_pl = r.full_frame(fi)
             b = {'x': x[None], 'y': y[None], 'mask': m[None],
                  'zeta': zeta[None], 'zeta_dot': zeta_dot[None]}
             if lap_pl is not None:
                 b['lap'] = lap_pl[None]
+            if psi_pl is not None:
+                b['psi'] = psi_pl[None]
             with torch.no_grad():
                 z, _, pred_std_m = gp_inputs_and_residual(cnn, b, args.device)
                 mu = torch.empty(z.shape[0], device=args.device)
@@ -123,7 +128,9 @@ def main():
                 pred_t = cnn.predict_physical(
                     xg, zeta[None].to(args.device),
                     zeta_dot[None].to(args.device) if cnn.use_zeta_dot else None,
-                    lap_pl[None].to(args.device) if cnn.use_lap_input else None
+                    lap_pl[None].to(args.device) if cnn.use_lap_input else None,
+                    psi_pl[None].to(args.device)
+                    if getattr(cnn, 'use_psi_input', False) else None
                 )[0]
                 sig_t = torch.zeros_like(sig_full)
                 mk = m[None].to(args.device)[0]

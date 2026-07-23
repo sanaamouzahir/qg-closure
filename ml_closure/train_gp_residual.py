@@ -43,7 +43,8 @@ from model_cnn import PiffCNN
 from model_piff import _kmeans
 
 HERE = Path(__file__).resolve().parent
-GP_DIM = 20            # 16 features + pred_std + zeta + zdot_n + sdf/D
+# gp input dim is DYNAMIC: cnn.out_dim features + [pred_std, zeta, zdot, sdf/D]
+GP_EXTRA = 4
 
 
 class ResidualSVGP(gpytorch.models.ApproximateGP):
@@ -67,7 +68,7 @@ def batches(ds, batch_crops):
     for i0 in range(0, len(idx), batch_crops):
         sel = idx[i0:i0 + batch_crops]
         items = [ds[int(i)] for i in sel]
-        keys = [k for k in ('x', 'y', 'mask', 'zeta', 'zeta_dot', 'lap') if k in items[0]]
+        keys = [k for k in ('x', 'y', 'mask', 'zeta', 'zeta_dot', 'lap', 'psi') if k in items[0]]
         yield {k: torch.stack([it[k] for it in items]) for k in keys}
 
 
@@ -79,7 +80,8 @@ def gp_inputs_and_residual(cnn, b, device):
     mask, zeta = b['mask'].to(device), b['zeta'].to(device)
     zd = b['zeta_dot'].to(device) if cnn.use_zeta_dot else None
     lp = b['lap'].to(device) if cnn.use_lap_input else None
-    f = cnn.cnn(cnn.features_in(x, lp), cnn._cond(zeta, zd))   # (B,F,H,W)
+    ps = b['psi'].to(device) if getattr(cnn, 'use_psi_input', False) else None
+    f = cnn.cnn(cnn.features_in(x, lp, ps), cnn._cond(zeta, zd))  # (B,F,H,W)
     pred_std = cnn.head(f).squeeze(1)                # (B,H,W)
     fh = f.permute(0, 2, 3, 1)                       # (B,H,W,16)
     B, H, W, _ = fh.shape
@@ -155,9 +157,11 @@ def main():
     outdir = Path(args.outdir or (HERE / conf['train']['outdir'])) / args.run_name
     outdir.mkdir(parents=True, exist_ok=True)
     info = describe(runs, conf, args.seed)
+    F_dim = int(cnn.cnn.out_dim)
+    gp_dim = F_dim + GP_EXTRA
     info.update({'cnn_ckpt': str(args.cnn_ckpt),
                  'cnn_ckpt_epoch': int(wck.get('epoch', -1)),
-                 'gp_dim': GP_DIM, 'n_inducing': args.n_inducing,
+                 'gp_dim': gp_dim, 'n_inducing': args.n_inducing,
                  'ELBO_num_data': N, 'lr': args.lr, 'epochs': args.epochs})
 
     # ---- k-means inducing init + residual stats (sampled, f64) ------------ #
@@ -207,7 +211,7 @@ def main():
                             'cov95', 'mean_sigma_std', 'zeta_ls', 'lr')}
     best_nll = np.inf
     nan_streak = 0
-    zeta_dim = 17            # 0-based index of the zeta column in z
+    zeta_dim = F_dim + 1     # z layout: [f0..f(F-1), pred_std, zeta, zdot, sdf]
 
     for ep in range(args.epochs):
         t0 = time.time()
@@ -258,7 +262,7 @@ def main():
         state = {'gp': gp.state_dict(), 'lik': lik.state_dict(),
                  'cnn': cnn.state_dict(), 'conf': conf,
                  'cnn_ckpt': str(args.cnn_ckpt), 'epoch': ep, 'val': vm,
-                 'gp_dim': GP_DIM, 'n_inducing': args.n_inducing,
+                 'gp_dim': gp_dim, 'n_inducing': args.n_inducing,
                  'residual_stats': info['residual_stats'], 'seed': args.seed}
         torch.save(state, outdir / 'last.pt')
         if vm['nll'] < best_nll:
@@ -281,16 +285,16 @@ def main():
     plt.close(fig)
     ard = gp.covar_module.base_kernel.lengthscale.detach().cpu().reshape(-1)
     final = {'best_val_nll': float(best_nll),
-             'ard_lengthscales': {'features_0_15': [float(v) for v in ard[:16]],
-                                  'pred_std': float(ard[16]),
-                                  'zeta': float(ard[17]),
-                                  'zeta_dot': float(ard[18]),
-                                  'sdf_D': float(ard[19])}}
+             'ard_lengthscales': {'features': [float(v) for v in ard[:F_dim]],
+                                  'pred_std': float(ard[F_dim]),
+                                  'zeta': float(ard[F_dim + 1]),
+                                  'zeta_dot': float(ard[F_dim + 2]),
+                                  'sdf_D': float(ard[F_dim + 3])}}
     with open(outdir / 'final.yaml', 'w') as f:
         yaml.safe_dump(final, f, sort_keys=False)
-    print(f"[gp-res] done; best val NLL {best_nll:.4e}; ARD verdict on the "
-          f"redundant coords: pred_std {ard[16]:.2f} zeta {ard[17]:.2f} "
-          f"zdot {ard[18]:.2f} sdf {ard[19]:.2f}")
+    print(f"[gp-res] done; best val NLL {best_nll:.4e}; ARD verdict: "
+          f"pred_std {ard[F_dim]:.2f} zeta {ard[F_dim + 1]:.2f} "
+          f"zdot {ard[F_dim + 2]:.2f} sdf {ard[F_dim + 3]:.2f}")
 
 
 def batches_one(ds, i):

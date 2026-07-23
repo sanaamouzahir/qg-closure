@@ -49,7 +49,7 @@ def batches(ds, batch_crops):
     for i0 in range(0, len(idx), batch_crops):
         sel = idx[i0:i0 + batch_crops]
         items = [ds[int(i)] for i in sel]
-        keys = [k for k in ('x', 'y', 'mask', 'zeta', 'zeta_dot', 'lap') if k in items[0]]
+        keys = [k for k in ('x', 'y', 'mask', 'zeta', 'zeta_dot', 'lap', 'psi') if k in items[0]]
         yield {k: torch.stack([it[k] for it in items]) for k in keys}
 
 
@@ -99,7 +99,8 @@ def evaluate(model, ds, device, batch_crops, eval_split_D):
         mask, zeta = b['mask'].to(device), b['zeta'].to(device)
         zd = b['zeta_dot'].to(device) if model.use_zeta_dot else None
         lp = b['lap'].to(device) if model.use_lap_input else None
-        yhat_std = model(x, zeta, zd, lp)
+        ps = b['psi'].to(device) if model.use_psi_input else None
+        yhat_std = model(x, zeta, zd, lp, ps)
         sig = model.sigma_loc(x)
         r_std = (yhat_std - y / sig)[mask]
         sse_std += float((r_std.double() ** 2).sum())
@@ -144,6 +145,15 @@ def main():
                     help='weight floor: quiet-truth pixels keep this weight or '
                          'the prediction there is unconstrained (hallucination '
                          'guard). Only used when alpha > 0.')
+    ap.add_argument('--enscon-beta', type=float, default=0.0,
+                    help='EnsCon (Guan et al. 2022): loss = (1-beta)*MSE + '
+                         'beta*mean_crops[(<om* Pi_hat*> - <om* Pi*>)^2] - '
+                         'global SGS enstrophy-transfer conservation, frozen '
+                         'physics target (no learnable weighting). 0 = off.')
+    ap.add_argument('--init-ckpt-grow', default=None,
+                    help='warm start from a ckpt with FEWER input channels: '
+                         'the first conv is zero-padded for the new channels '
+                         '(exact function preservation at init); rest strict.')
     ap.add_argument('--init-ckpt', default=None,
                     help='warm start: load a PiffCNN checkpoint (strict). The '
                          'recorded sigma_loc/zdot_sd buffers are recomputed '
@@ -202,6 +212,24 @@ def main():
         info['init_ckpt_epoch'] = int(wck.get('epoch', -1))
         print(f"[train] warm start from {args.init_ckpt} "
               f"(epoch={wck.get('epoch')}, val={wck.get('val', {})})")
+    if args.init_ckpt_grow:
+        wck = torch.load(args.init_ckpt_grow, map_location='cpu',
+                         weights_only=False)
+        sd = wck['model']
+        w = sd['cnn.convs.0.weight']
+        want = model.cnn.convs[0].weight.shape[1]
+        have = w.shape[1]
+        if have < want:
+            pad = torch.zeros(w.shape[0], want - have, w.shape[2], w.shape[3],
+                              dtype=w.dtype)
+            sd['cnn.convs.0.weight'] = torch.cat([w, pad], dim=1)
+            print(f"[train] channel-grow warm start: conv0 {have}->{want} "
+                  f"in-ch (new channels ZERO = function preserved at init)")
+        model.load_state_dict(sd)
+        info['init_ckpt_grow'] = str(args.init_ckpt_grow)
+        info['init_ckpt_epoch'] = int(wck.get('epoch', -1))
+        print(f"[train] grown warm start from {args.init_ckpt_grow} "
+              f"(epoch={wck.get('epoch')}, val={wck.get('val', {})})")
     info['recorded_constants'] = consts
     nparams = sum(p.numel() for p in model.parameters())
     info['n_params'] = int(nparams)
@@ -227,13 +255,16 @@ def main():
         train_ds.set_epoch(ep)
         model.train()
         losses = []
+        ens_log = []
         for b in batches(train_ds, bc):
             x, y = b['x'].to(device), b['y'].to(device)
             mask, zeta = b['mask'].to(device), b['zeta'].to(device)
             zd = b['zeta_dot'].to(device) if model.use_zeta_dot else None
             lp = b['lap'].to(device) if model.use_lap_input else None
-            yhat_std = model(x, zeta, zd, lp)
-            yst = y / model.sigma_loc(x)
+            ps = b['psi'].to(device) if model.use_psi_input else None
+            yhat_std = model(x, zeta, zd, lp, ps)
+            sig = model.sigma_loc(x)
+            yst = y / sig
             r = (yhat_std - yst)[mask]
             if r.numel() == 0:
                 continue
@@ -242,6 +273,16 @@ def main():
                 loss = (w * r * r).sum() / w.sum()
             else:
                 loss = (r * r).mean()
+            if args.enscon_beta > 0.0:
+                # per-crop global SGS enstrophy transfer <om* Pi*> over valid
+                # pixels; frozen physics target (Guan et al. 2022 EnsCon)
+                mk = mask.float()
+                npx = mk.sum(dim=(1, 2)).clamp_min(1.0)
+                that = (x[:, 0] * yhat_std * sig * mk).sum(dim=(1, 2)) / npx
+                ttru = (x[:, 0] * y * mk).sum(dim=(1, 2)) / npx
+                ens = ((that - ttru) ** 2).mean()
+                loss = (1.0 - args.enscon_beta) * loss + args.enscon_beta * ens
+                ens_log.append(float(ens))
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()
@@ -265,7 +306,9 @@ def main():
               f"sigma 0.000e+00  zeta_ls {dg:.3f}  "
               f"r2near {vm['r2_near']:.4f} r2far {vm['r2_far']:.4f} "
               f"rmse_near {vm['rmse_near']:.3e} rmse_far {vm['rmse_far']:.3e} "
-              f"film |dg|={dg:.3e} |b|={bnorm:.3e}  ({time.time() - t0:.0f}s)",
+              f"film |dg|={dg:.3e} |b|={bnorm:.3e}"
+              + (f"  ens {np.mean(ens_log):.3e}" if ens_log else "")
+              + f"  ({time.time() - t0:.0f}s)",
               flush=True)
 
         # HARD NaN GUARD (Sanaa mandate 2026-07-19): in-process, unforgettable
