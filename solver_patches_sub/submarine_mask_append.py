@@ -28,3 +28,7 @@ def submarine(grid, derivative,  # add state as first argument if time-dependent
     mask[rho < 1.0] = 1
     mask[torch.abs(rho - 1.0) < tolerance] = 0.5
     return mask[None, :, :]
+
+
+# registry entry for the appended submarine mask (2026-07-23)
+mask_library["submarine"] = submarine
