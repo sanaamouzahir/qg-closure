@@ -20,7 +20,20 @@ ap.add_argument('--levels', type=float, nargs='+',
 args = ap.parse_args()
 ck = torch.load(args.ckpt, map_location='cpu', weights_only=False)
 conf = ck['conf']; dc = conf['data']
-model = PiffCNN(conf).to(args.device); model.load_state_dict(ck['model']); model.eval()
+IS_GP = 'gp' in ck            # CNN+residual-GP checkpoint (train_gp_residual)
+model = PiffCNN(conf).to(args.device)
+model.load_state_dict(ck['cnn'] if IS_GP else ck['model'])
+model.eval()
+if IS_GP:
+    import gpytorch
+    from train_gp_residual import ResidualSVGP, gp_inputs_and_residual
+    gp = ResidualSVGP(torch.zeros(int(ck['n_inducing']),
+                                  int(ck['gp_dim']))).to(args.device)
+    gp.load_state_dict(ck['gp'])
+    lik = gpytorch.likelihoods.GaussianLikelihood().to(args.device)
+    lik.load_state_dict(ck['lik'])
+    gp.eval(); lik.eval()
+    print(f'[diag] CNN+GP checkpoint detected (mean correction applied)')
 runs = build_runs(conf)
 fbr = {}
 for ri, fi in split_frames(runs, 'val', conf):
@@ -37,8 +50,19 @@ for ri, frames in sorted(fbr.items()):
     for fi in frames[::args.frame_stride]:
         x, y, m, zeta, zeta_dot, _, _ = r.full_frame(fi)
         with torch.no_grad():
-            pred = model.predict_physical(x[None].to(args.device), zeta[None].to(args.device),
-                zeta_dot[None].to(args.device) if model.use_zeta_dot else None)[0].cpu().numpy()
+            xg = x[None].to(args.device)
+            pred_t = model.predict_physical(xg, zeta[None].to(args.device),
+                zeta_dot[None].to(args.device) if model.use_zeta_dot else None)[0]
+            if IS_GP:
+                b = {'x': x[None], 'y': y[None], 'mask': m[None],
+                     'zeta': zeta[None], 'zeta_dot': zeta_dot[None]}
+                z, _, _ = gp_inputs_and_residual(model, b, args.device)
+                mu = torch.empty(z.shape[0], device=args.device)
+                for i0 in range(0, z.shape[0], 65536):
+                    mu[i0:i0 + 65536] = gp(z[i0:i0 + 65536]).mean
+                mk = m[None].to(args.device)[0]
+                pred_t[mk] = pred_t[mk] + mu * model.sigma_loc(xg)[0][mk]
+            pred = pred_t.cpu().numpy()
         pred = ylp75_taper(pred.astype(np.float64))
         t = y.numpy().astype(np.float64)
         tw, pw = t[wake], pred[wake]
