@@ -179,3 +179,21 @@ Startup checks: `params=3,700` (not 1,571 — else old un-clipped model), `MULTI
 - **LOGS (I23):** raw SGE .o/.e → `<branch>/logs/` (git-ignored, cluster-only, never pasted into a context). Every monitored job pushes a digest to `reports/<run-name>/` (progress.csv + status.md ≤ 20 lines + summary.md on completion) via `diagnostics/digest_writer.py`.
 - **REFLEXES (I24):** monitors carry the X1–X6 ladder (`diagnostics/monitor_training.py` v3, canonical on main — adopt on this branch's NEXT submission and confirm adoption in the next digest). X1 explode / X2 inversion×3 / X3 stall ⇒ qdel + X4 auto-diagnose; X5 whitelist-only auto-resubmit, once; X6 heartbeat. Scientific failures wait for a session.
 - **SESSION OPEN (I25):** `git pull` → read `reports/*/status.md` → `ssh mseas "qstat -u sanaamz"` → reconcile — BEFORE anything Sanaa asks for.
+
+## Tri-objective + trust-anchor law (Sanaa, 2026-07-23 - BINDING for every supervisor)
+- Cost, STABILITY and ACCURACY are ONE objective. A stable scheme with garbage accuracy is
+  exactly as pointless as an accurate scheme that is unstable. Never report or celebrate one
+  axis without the others.
+- Any stability/penalty escalation (vn-lambda or analog) REQUIRES a proportional trust-anchor
+  escalation in the same change (2026-07-23 calibration: anchor 0.4 at vn 10; 0.03 was right
+  for vn 0.1 and got outweighed ~300:1 when vn grew).
+- Stability fine-tunes warm-start from the ACCURACY CHAMPION checkpoint, never from the
+  previous fine-tune generation (soft anchors hold a model near its warm PARENT - chained
+  warm starts ratchet accuracy away silently; measured: kf4 Nddot 0.02 -> 0.43 over 7
+  generations).
+- Acceptance: Nddot rel error stays single-digit-% across members AND dTs, or the model is
+  rejected regardless of stability.
+- The per-(member, dt, order) table is produced BY THE SUPERVISOR on every checkpoint,
+  unprompted, and any accuracy collapse is flagged proactively - Sanaa must never be the one
+  to catch it. Monitor rho (mean AND range) and Ndot/Nddot rel error together, plus
+  post-rollout error.
