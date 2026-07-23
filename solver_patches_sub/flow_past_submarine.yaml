@@ -1,0 +1,45 @@
+# @package _global_
+# Flow past submarine (mid-water ellipse hull) - Sanaa order 2026-07-22 night.
+# Clone of flow_past_cylinder_sponge with the mask swapped to the submarine
+# ellipse (hull height 2b = 1.2566 = cylinder D -> Re_D = 3900 at production
+# commons U=2, nu=6.4443e-4; aspect 4:1). Constant inflow via inlet_velocity
+# (no table). Grid/dt/T/nu here are the scenario's small defaults; production
+# values are overridden by phaseSub_job.sh commons + submitter args.
+
+qg:
+  grid:
+    Nx: 1024
+    Ny: 1024
+    Lx: 25.132741228718345  # 8*pi
+    Ly: 25.132741228718345  # 8*pi
+
+  time:
+    dt: 0.0001
+    T: 70
+    save_rate: 30000
+
+  pde:
+    nu: 5.0e-3
+    penalty: 1.25  # 1.25 * dt (Brinkman penalty, cylinder convention)
+
+  ic:
+    function: randn
+    energy: 0
+
+  bc:
+    function: const-outlet-vorticity-rtd
+    inlet_velocity: 2.0
+    width: 0.025
+    _min: 0.0
+    _max: 1.0
+    sponge: 1.25
+
+  mask:
+    function: submarine
+    x_center: 0.2
+    y_center: 0.5
+    a: 2.5133
+    b: 0.6283
+    tolerance: 1.0e-3
+
+  forcing: null
