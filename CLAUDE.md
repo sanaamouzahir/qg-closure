@@ -135,6 +135,7 @@ fixD (bilinear, predicts f_NN_target)             model_fixD.py + train_v2_annea
 15. **Spin-up is β-dependent — never use one t-start for all members.** The zonal/quiescent phase (J(ψ,ω)≈0, tiny N-derivative targets) lasts longer at higher β (observed: combo 9% of windows still zonal at t-start=15, FRC-256 16%, b2 27%, b25 33%). For NEW deep builds (incl. the upcoming decaying-turbulence members): set t-start per member — either from a developed-flow criterion (e.g. start when the window-median ‖N⃛‖ reaches ~its long-run median, equivalently when stack roughness ‖Δ²ω‖/‖ω‖ ≳ 1e-4) or conservatively t-start ∝ (1+β)·t₀. Regardless, ALWAYS run `filter_quiescent_windows.py` after slicing — it is the safety net (drops windows with target-norm < 1e-2× member median or frozen stacks), and it must precede any training.
 16. **Never train or report on unfiltered per-sample relative metrics.** Relative errors explode on near-zero-denominator (quiescent) samples and poison the optimizer (prediction-shrinking collapse: destroyed physics-init mix, trained medians worse than init). Report MEDIANS alongside means; if trained-worse-than-init appears, suspect the pool, not the model, and run `diagnostics/diagnose_error_distribution.py` first.
 17. Communication: short sentences. No long walls of prose. Terse, math-forward, corrective.
+18. **Never report pooled/averaged/median results to Sanaa (order 2026-07-22).** Every result in its own personal format: temporal track = rel val error per (ensemble member × dt × N^(m)) — the full table; spatial track = per-pixel error/truth_pixel (never error/averaged-truth), near-wall and far-field separately. Aggregates hide the verdict (e.g. only the (member,dt) cells past ΔT★ are bad; the pool says "mediocre everywhere"). An aggregate may appear only after the full table, as a footnote. Medians in rule 16 are for DIAGNOSING pools, not for reporting results.
 
 ## Main pipelines
 
@@ -170,3 +171,21 @@ Startup checks: `params=3,700` (not 1,571 — else old un-clipped model), `MULTI
 - **Flux-vs-advective Jacobian form** in the model: deferred to the conditioned/recursion model design (it is the same decision as the FFT/D⁻¹ question).
 - Port `solver_patches/` onto the fork's `closure` branch per `solver_patches/PORTING.md` (diff, don't overwrite — upstream 0.2.3 refactored BCs/integrator/operator splitting).
 - Manuscript style: Charous & Lermusiaux (2023, SIAM) — run-in bold headings, notation table, Derivation/Analysis/Illustration pattern, Prop/Cor/Remark environments. Key refs: Suresh Babu, Sadam & Lermusiaux (2025, arXiv 2508.06678); Gupta & Lermusiaux (2021); Ascher–Ruuth–Wetton (1995); Frank–Hundsdorfer–Verwer (1997). δR positioning: modified-equation analysis / non-iterative defect correction / "amortized parareal" (strongest framing); δR vs DC: DC upgrades the scheme at fixed h, δR emulates the SAME scheme at h/K — gain bounded by K (settable), not by reference order.
+
+## Tri-objective + trust-anchor law (Sanaa, 2026-07-23 - BINDING for every supervisor)
+- Cost, STABILITY and ACCURACY are ONE objective. A stable scheme with garbage accuracy is
+  exactly as pointless as an accurate scheme that is unstable. Never report or celebrate one
+  axis without the others.
+- Any stability/penalty escalation (vn-lambda or analog) REQUIRES a proportional trust-anchor
+  escalation in the same change (2026-07-23 calibration: anchor 0.4 at vn 10; 0.03 was right
+  for vn 0.1 and got outweighed ~300:1 when vn grew).
+- Stability fine-tunes warm-start from the ACCURACY CHAMPION checkpoint, never from the
+  previous fine-tune generation (soft anchors hold a model near its warm PARENT - chained
+  warm starts ratchet accuracy away silently; measured: kf4 Nddot 0.02 -> 0.43 over 7
+  generations).
+- Acceptance: Nddot rel error stays single-digit-% across members AND dTs, or the model is
+  rejected regardless of stability.
+- The per-(member, dt, order) table is produced BY THE SUPERVISOR on every checkpoint,
+  unprompted, and any accuracy collapse is flagged proactively - Sanaa must never be the one
+  to catch it. Monitor rho (mean AND range) and Ndot/Nddot rel error together, plus
+  post-rollout error.
