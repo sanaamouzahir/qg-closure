@@ -66,7 +66,7 @@ def _dirname(r, siblings):
 def _imshow(ax, fld, title, vmin, vmax, cmap='seismic', norm=None):
     im = ax.imshow(fld, origin='lower', cmap=cmap, norm=norm,
                    **({} if norm else {'vmin': vmin, 'vmax': vmax}),
-                   aspect='equal', interpolation='nearest')
+                   aspect='equal', interpolation='gaussian')
     ax.set_title(title, fontsize=9)
     ax.set_xticks([]); ax.set_yticks([])
     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.02)
