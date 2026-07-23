@@ -103,9 +103,11 @@ def main():
         panel = None
         mid_fi = frames[len(frames) // 2]
         for fi in frames:
-            x, y, m, zeta, zeta_dot, _, _ = r.full_frame(fi)
+            x, y, m, zeta, zeta_dot, _, lap_pl = r.full_frame(fi)
             b = {'x': x[None], 'y': y[None], 'mask': m[None],
                  'zeta': zeta[None], 'zeta_dot': zeta_dot[None]}
+            if lap_pl is not None:
+                b['lap'] = lap_pl[None]
             with torch.no_grad():
                 z, _, pred_std_m = gp_inputs_and_residual(cnn, b, args.device)
                 mu = torch.empty(z.shape[0], device=args.device)
@@ -120,7 +122,8 @@ def main():
                 # residual correction on valid pixels only
                 pred_t = cnn.predict_physical(
                     xg, zeta[None].to(args.device),
-                    zeta_dot[None].to(args.device) if cnn.use_zeta_dot else None
+                    zeta_dot[None].to(args.device) if cnn.use_zeta_dot else None,
+                    lap_pl[None].to(args.device) if cnn.use_lap_input else None
                 )[0]
                 sig_t = torch.zeros_like(sig_full)
                 mk = m[None].to(args.device)[0]

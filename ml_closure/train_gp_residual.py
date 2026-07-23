@@ -67,7 +67,7 @@ def batches(ds, batch_crops):
     for i0 in range(0, len(idx), batch_crops):
         sel = idx[i0:i0 + batch_crops]
         items = [ds[int(i)] for i in sel]
-        keys = [k for k in ('x', 'y', 'mask', 'zeta', 'zeta_dot') if k in items[0]]
+        keys = [k for k in ('x', 'y', 'mask', 'zeta', 'zeta_dot', 'lap') if k in items[0]]
         yield {k: torch.stack([it[k] for it in items]) for k in keys}
 
 
@@ -78,7 +78,8 @@ def gp_inputs_and_residual(cnn, b, device):
     x, y = b['x'].to(device), b['y'].to(device)
     mask, zeta = b['mask'].to(device), b['zeta'].to(device)
     zd = b['zeta_dot'].to(device) if cnn.use_zeta_dot else None
-    f = cnn.cnn(x, cnn._cond(zeta, zd))              # (B,16,H,W)
+    lp = b['lap'].to(device) if cnn.use_lap_input else None
+    f = cnn.cnn(cnn.features_in(x, lp), cnn._cond(zeta, zd))   # (B,F,H,W)
     pred_std = cnn.head(f).squeeze(1)                # (B,H,W)
     fh = f.permute(0, 2, 3, 1)                       # (B,H,W,16)
     B, H, W, _ = fh.shape
@@ -295,7 +296,7 @@ def main():
 def batches_one(ds, i):
     s = ds[i]
     return {k: s[k].unsqueeze(0) for k in
-            ('x', 'y', 'mask', 'zeta', 'zeta_dot') if k in s}
+            ('x', 'y', 'mask', 'zeta', 'zeta_dot', 'lap') if k in s}
 
 
 if __name__ == '__main__':

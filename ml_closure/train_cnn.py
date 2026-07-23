@@ -49,7 +49,7 @@ def batches(ds, batch_crops):
     for i0 in range(0, len(idx), batch_crops):
         sel = idx[i0:i0 + batch_crops]
         items = [ds[int(i)] for i in sel]
-        keys = [k for k in ('x', 'y', 'mask', 'zeta', 'zeta_dot') if k in items[0]]
+        keys = [k for k in ('x', 'y', 'mask', 'zeta', 'zeta_dot', 'lap') if k in items[0]]
         yield {k: torch.stack([it[k] for it in items]) for k in keys}
 
 
@@ -98,7 +98,8 @@ def evaluate(model, ds, device, batch_crops, eval_split_D):
         x, y = b['x'].to(device), b['y'].to(device)
         mask, zeta = b['mask'].to(device), b['zeta'].to(device)
         zd = b['zeta_dot'].to(device) if model.use_zeta_dot else None
-        yhat_std = model(x, zeta, zd)
+        lp = b['lap'].to(device) if model.use_lap_input else None
+        yhat_std = model(x, zeta, zd, lp)
         sig = model.sigma_loc(x)
         r_std = (yhat_std - y / sig)[mask]
         sse_std += float((r_std.double() ** 2).sum())
@@ -184,9 +185,12 @@ def main():
 
     model = PiffCNN(conf).to(device)
     consts = {}
-    if model.use_zeta_dot:
+    if model.use_zeta_dot or model.use_lap_input:
         cstats = conditioning_stats(runs, 'train', conf)
-        consts.update(model.set_zdot_sd(cstats['zdot_sd']))
+        if model.use_zeta_dot:
+            consts.update(model.set_zdot_sd(cstats['zdot_sd']))
+        if model.use_lap_input:
+            consts.update(model.set_lap_scale(cstats['lap_scale']))
     rms, cnt, edges = sigma_profile(runs, 'train', conf,
                                     int(model.sig_rms.numel()))
     consts.update(model.set_sigma_profile(rms))
@@ -227,7 +231,8 @@ def main():
             x, y = b['x'].to(device), b['y'].to(device)
             mask, zeta = b['mask'].to(device), b['zeta'].to(device)
             zd = b['zeta_dot'].to(device) if model.use_zeta_dot else None
-            yhat_std = model(x, zeta, zd)
+            lp = b['lap'].to(device) if model.use_lap_input else None
+            yhat_std = model(x, zeta, zd, lp)
             yst = y / model.sigma_loc(x)
             r = (yhat_std - yst)[mask]
             if r.numel() == 0:

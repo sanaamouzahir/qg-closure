@@ -48,14 +48,17 @@ for ri, frames in sorted(fbr.items()):
             & (np.abs(ys[:,None]-r.y_c) <= _f(dc['wake_y_half_D'])*r.D))
     npix = np.zeros(len(LEV)); epix = np.zeros(len(LEV)); ntot = 0; etot = 0.0
     for fi in frames[::args.frame_stride]:
-        x, y, m, zeta, zeta_dot, _, _ = r.full_frame(fi)
+        x, y, m, zeta, zeta_dot, _, lap_pl = r.full_frame(fi)
         with torch.no_grad():
             xg = x[None].to(args.device)
             pred_t = model.predict_physical(xg, zeta[None].to(args.device),
-                zeta_dot[None].to(args.device) if model.use_zeta_dot else None)[0]
+                zeta_dot[None].to(args.device) if model.use_zeta_dot else None,
+                lap_pl[None].to(args.device) if model.use_lap_input else None)[0]
             if IS_GP:
                 b = {'x': x[None], 'y': y[None], 'mask': m[None],
                      'zeta': zeta[None], 'zeta_dot': zeta_dot[None]}
+                if lap_pl is not None:
+                    b['lap'] = lap_pl[None]
                 z, _, _ = gp_inputs_and_residual(model, b, args.device)
                 mu = torch.empty(z.shape[0], device=args.device)
                 for i0 in range(0, z.shape[0], 65536):

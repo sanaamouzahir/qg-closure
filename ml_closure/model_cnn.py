@@ -31,6 +31,11 @@ class PiffCNN(nn.Module):
         mc = conf['model']
         dc = conf.get('data', {}) or {}
         self.use_zeta_dot = bool(mc.get('use_zeta_dot', False))
+        # v2 (Sanaa order 2026-07-22 night): |lap(omega_bar)|* as a 5th CNN
+        # INPUT channel, log1p-compressed by the recorded lap_scale (the
+        # 2026-07-16 heavy-tail lesson; raw range 0..332 -> ~[0, 5.9]).
+        # Default OFF -> v1 checkpoints byte-identical (buffer non-persistent).
+        self.use_lap_input = bool(mc.get('use_lap_input', False))
         cond_dim = 1 + int(self.use_zeta_dot)
         self.cnn = FiLMCNN(in_channels=int(mc['in_channels']),
                            channels=mc['channels'], kernel=int(mc['kernel']),
@@ -50,6 +55,8 @@ class PiffCNN(nn.Module):
         self.register_buffer('sig_set', torch.zeros(()))
         self.register_buffer('zdot_sd', torch.ones(()),
                              persistent=self.use_zeta_dot)
+        self.register_buffer('lap_scale', torch.ones(()),
+                             persistent=self.use_lap_input)
 
     # ---- recorded constants ---------------------------------------------- #
     def set_sigma_profile(self, rms):
@@ -76,6 +83,13 @@ class PiffCNN(nn.Module):
         self.zdot_sd.fill_(zdot_sd)
         return {'zdot_sd': zdot_sd}
 
+    def set_lap_scale(self, lap_scale):
+        lap_scale = float(lap_scale)
+        if not lap_scale > 0.0:
+            raise ValueError(f"bad lap_scale={lap_scale}")
+        self.lap_scale.fill_(lap_scale)
+        return {'lap_scale': lap_scale}
+
     # ---- forward ----------------------------------------------------------- #
     def _cond(self, zeta, zeta_dot):
         if self.use_zeta_dot:
@@ -84,9 +98,20 @@ class PiffCNN(nn.Module):
             return torch.stack([zeta, zeta_dot / self.zdot_sd], dim=-1)  # (B,2)
         return zeta
 
-    def forward(self, x, zeta, zeta_dot=None):
-        """(B,4,H,W),(B,)[,(B,)] -> standardized prediction (B,H,W)."""
-        f = self.cnn(x, self._cond(zeta, zeta_dot))
+    def features_in(self, x, lap=None):
+        """CNN input tensor: the 4 canonical channels, +log1p(|lap|/scale)
+        as channel 4 when use_lap_input (sdf stays channel 3 — sigma_loc and
+        the task/region logic keep reading x[:, 3] unchanged)."""
+        if not self.use_lap_input:
+            return x
+        if lap is None:
+            raise ValueError("use_lap_input=true but lap not supplied")
+        return torch.cat(
+            [x, torch.log1p(lap / self.lap_scale).unsqueeze(1)], dim=1)
+
+    def forward(self, x, zeta, zeta_dot=None, lap=None):
+        """(B,4,H,W),(B,)[,(B,)][,(B,H,W)] -> standardized prediction."""
+        f = self.cnn(self.features_in(x, lap), self._cond(zeta, zeta_dot))
         return self.head(f).squeeze(1)
 
     def sigma_loc(self, x):
@@ -103,10 +128,10 @@ class PiffCNN(nn.Module):
         w = (s - c[lo]) / (c[hi] - c[lo])
         return (1.0 - w) * self.sig_rms[lo] + w * self.sig_rms[hi]
 
-    def predict_physical(self, x, zeta, zeta_dot=None):
+    def predict_physical(self, x, zeta, zeta_dot=None, lap=None):
         """Physical-units prediction Pi_hat* (B,H,W): standardization inverted
         exactly by the recorded profile."""
-        return self.forward(x, zeta, zeta_dot) * self.sigma_loc(x)
+        return self.forward(x, zeta, zeta_dot, lap) * self.sigma_loc(x)
 
     # ---- logging ----------------------------------------------------------- #
     def film_norms(self):
