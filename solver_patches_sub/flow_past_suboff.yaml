@@ -1,0 +1,34 @@
+# @package _global_
+# DARPA SUBOFF AFF-1 silhouette, constant inflow Re_D 3900 (Sanaa 2026-07-23).
+# Same commons/BCs as flow_past_submarine; only the mask differs.
+
+qg:
+  grid:
+    Nx: 1024
+    Ny: 1024
+    Lx: 25.132741228718345
+    Ly: 25.132741228718345
+  time:
+    dt: 0.0001
+    T: 70
+    save_rate: 30000
+  pde:
+    nu: 0.005
+    penalty: 1.25
+  ic:
+    function: randn
+    energy: 0
+  bc:
+    function: const-outlet-vorticity-rtd
+    inlet_velocity: 2.0
+    width: 0.025
+    _min: 0.0
+    _max: 1.0
+    sponge: 1.25
+  mask:
+    function: suboff2d
+    x_nose: 0.1
+    y_center: 0.5
+    hull_height: 1.2566
+    tolerance: 0.001
+  forcing: null
