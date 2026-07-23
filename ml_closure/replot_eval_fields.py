@@ -66,6 +66,12 @@ def predict_frame_full(model, run, frame, device, gp_chunk, recal=None):
     gm = (g[None].to(device)[mask[None].to(device)] if structural else None)
     if recal is not None and not structural:
         raise SystemExit('--recal requires a structural-noise model')
+    if recal is not None and getattr(model, 'multitask', False):
+        # the recal branch reaches into scalar model.y_sd/model.y_mu; multitask
+        # carries PER-TASK arrays, so the physical inversion is per-pixel via
+        # predict_physical instead. No mtgp run produces a recal sidecar.
+        raise SystemExit('--recal is not defined for the multitask head '
+                         '(per-task standardization); use predict_physical path')
     mus, vars_ = [], []
     for i0 in range(0, gpin.shape[0], gp_chunk):
         if recal is not None:

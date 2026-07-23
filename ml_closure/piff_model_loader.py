@@ -57,6 +57,17 @@ def is_blended(obj):
     return isinstance(obj, dict) and ('blended' in obj or 'near_ckpt' in obj)
 
 
+def is_multitask(ck):
+    """True for a plain checkpoint dict whose conf turns on the coregionalized
+    2-task head (Sanaa GO 2026-07-21). A multitask ckpt is an ORDINARY
+    single-state-dict PiffModel checkpoint -- it is NOT a blended handle -- so
+    it already flows through the plain-path `PiffModel(ck['conf'])` construction
+    below unchanged; this predicate only lets the loader LOG the head so a
+    diagnostic's stdout names what it built."""
+    return (isinstance(ck, dict) and not is_blended(ck)
+            and bool(ck.get('conf', {}).get('model', {}).get('multitask', False)))
+
+
 def load_blended_manifest(path):
     """Read blended_manifest.yaml (or a blended.pt handle) -> manifest dict
     with near_ckpt/far_ckpt resolved to absolute paths."""
@@ -179,4 +190,14 @@ def load_piff_model(ck, device='cpu', conf=None):
         m = build_from_manifest(man, device=device)
         check_eval_conf(m, conf)
         return m
+    if is_multitask(ck):
+        # coregionalized 2-task head: still an ORDINARY plain PiffModel ckpt, so
+        # the construction is identical to the plain return below (the caller
+        # then load_state_dict/eval() as usual). Branch exists only to name the
+        # head on stdout; plain non-multitask ckpts skip it and stay byte-
+        # identical, blended handles were dispatched above.
+        print("[loader] MULTITASK (coregionalized 2-task) PiffModel: task 0 "
+              "near / task 1 far, per-pixel task from input channel 3; scored "
+              "on the whole field", flush=True)
+        return PiffModel(ck['conf']).to(device)
     return PiffModel(ck['conf']).to(device)

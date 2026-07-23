@@ -42,7 +42,7 @@ import matplotlib.pyplot as plt
 
 from dataset_piff import (load_conf, build_runs, PiffCropDataset,
                           count_masked_pixels, target_stats, describe, _f,
-                          conditioning_stats)
+                          conditioning_stats, target_stats_multitask)
 from model_piff import PiffModel, gpytorch
 
 HERE = Path(__file__).resolve().parent
@@ -264,7 +264,11 @@ def residual_kurtosis(model, ds, device, n_batches=64):
                                       b['mask'].to(device),
                                       **cond_kwargs(model, b, device))
         mu_t = model.gp(gpin).mean
-        mu = (mu_t * model.y_sd + model.y_mu).cpu().numpy()   # physical units
+        if getattr(model, 'multitask', False):
+            t = gpin[..., -1].long()
+            mu = (mu_t * model.y_sd[t] + model.y_mu[t]).cpu().numpy()  # per-task
+        else:
+            mu = (mu_t * model.y_sd + model.y_mu).cpu().numpy()   # physical units
         res.append(b['y'].numpy()[b['mask'].numpy()] - mu)
     r = np.concatenate(res)
     r = r - r.mean()
@@ -328,6 +332,11 @@ def main():
     model = PiffModel(conf).to(device)
     cstats = None
     lap_info = None
+    if getattr(model, 'multitask', False) and args.init_ckpt:
+        raise SystemExit(
+            "multitask (coregionalized) head is COLD-START only: warm-starting "
+            "from a single-task checkpoint is undefined (the GP head, inducing "
+            "shape and per-task standardization all differ). Drop --init-ckpt.")
     if args.init_ckpt:
         wck = torch.load(args.init_ckpt, map_location='cpu', weights_only=False)
         sd = wck['model']
@@ -446,12 +455,32 @@ def main():
         # invertible y-standardization (buffers, in every ckpt) + data-informed
         # hyperparameter init in the standardized space (var=1 -> conditioned K_zz;
         # the raw-space variant NaN'd on the float32 Cholesky, job 1830733)
-        ystats = target_stats(runs, 'train', conf)
-        std_const = model.set_y_standardization(ystats['mean'], ystats['var'])
-        hyper0 = model.init_hyperparams_from_stats(
-            0.0, 1.0, noise_frac=_f(tc['init_noise_frac']))
-        hyper0.update(std_const)
-        hyper0['stats_n_pixels'] = ystats['n']
+        if getattr(model, 'multitask', False):
+            # PER-TASK y-standardization: near stats from near pixels, far from
+            # far, split at the near/far midpoint (Sanaa GO 2026-07-21). The
+            # data kernel is initialized in the (now per-task) std space (var=1).
+            ystats = target_stats_multitask(runs, 'train', conf)
+            std_const = model.set_y_standardization(ystats['mean'], ystats['var'])
+            hyper0 = model.init_hyperparams_from_stats(
+                0.0, 1.0, noise_frac=_f(tc['init_noise_frac']))
+            hyper0.update(std_const)
+            hyper0['stats_n_pixels'] = ystats['n']
+            hyper0['multitask_target_stats'] = ystats
+            print(f"[train] MULTITASK per-task y-standardization: "
+                  f"task0(near) mean={ystats['mean'][0]:.4e} "
+                  f"std={ystats['var'][0] ** 0.5:.4e} n={ystats['n_task'][0]}  "
+                  f"task1(far) mean={ystats['mean'][1]:.4e} "
+                  f"std={ystats['var'][1] ** 0.5:.4e} n={ystats['n_task'][1]}  "
+                  f"split={ystats['split_D']} D "
+                  f"(near/far rms ratio "
+                  f"{(ystats['var'][0] / max(ystats['var'][1], 1e-30)) ** 0.5:.1f}x)")
+        else:
+            ystats = target_stats(runs, 'train', conf)
+            std_const = model.set_y_standardization(ystats['mean'], ystats['var'])
+            hyper0 = model.init_hyperparams_from_stats(
+                0.0, 1.0, noise_frac=_f(tc['init_noise_frac']))
+            hyper0.update(std_const)
+            hyper0['stats_n_pixels'] = ystats['n']
         if model.use_zeta_dot or model.use_grad_feature or model.use_lap_feature:
             hyper0.update(cond_const)
             hyper0['conditioning_stats'] = cstats
@@ -500,11 +529,14 @@ def main():
             if yt.numel() == 0:
                 continue
             opt.zero_grad(set_to_none=True)
+            # multitask: the pixel's task is the last GP-input column; standardize
+            # each target in its OWN task's units (None single-task -> unchanged)
+            task = gpin[..., -1] if getattr(model, 'multitask', False) else None
             if model.noise_prior == 'structural':
-                loss = -mll(model.gp(gpin), model.standardize_y(yt),
+                loss = -mll(model.gp(gpin), model.standardize_y(yt, task),
                             noise=model.het_noise(b['g'].to(device)[mask]))
             else:
-                loss = -mll(model.gp(gpin), model.standardize_y(yt))  # per-datum (num_data=N), GP space
+                loss = -mll(model.gp(gpin), model.standardize_y(yt, task))  # per-datum (num_data=N), GP space
             loss.backward()
             opt.step()
             elbos.append(-float(loss))
@@ -568,6 +600,10 @@ def main():
         if model.is_student_t():
             extra_ls += (f" nu {vm['nu']:.3f} cov68 {vm['coverage68']:.4f}"
                          f" pv/nv {vm['pv_ratio']:.3e}")
+        if getattr(model, 'multitask', False):
+            cr = model.coreg_report()
+            extra_ls += (f" B[0,0] {cr['task_var'][0]:.3e} B[1,1] "
+                         f"{cr['task_var'][1]:.3e} corr {cr['cross_corr']:+.3f}")
         print(f"[ep {ep:03d}] elbo/datum {hist['train_elbo'][-1]:+.4e}  "
               f"val NLL {vm['nll']:.4e} RMSE {vm['rmse']:.4e} R2 {vm['r2']:.4f} "
               f"sigma {vm['mean_sigma']:.3e}  zeta_ls {zls:.3f}{extra_ls}  "
@@ -604,12 +640,18 @@ def main():
     fig.savefig(outdir / 'curves.png', dpi=130)
     plt.close(fig)
 
+    final = {'best_val_nll': float(best_nll), 'kurtosis': kurt,
+             'epochs': epochs, 'seed': seed,
+             'training_path': 'joint (Plan A); Plan-B symptoms logged per epoch',
+             'zeta_ard_lengthscale': hist['zeta_ls'][-1],
+             'ard_lengthscales_final': model.ard_lengthscales()}
+    if getattr(model, 'multitask', False):
+        final['multitask_coregionalization'] = model.coreg_report()
+        final['y_standardization_per_task'] = {
+            'mean': model.y_mu.detach().cpu().tolist(),
+            'std': model.y_sd.detach().cpu().tolist()}
     with open(outdir / 'final.yaml', 'w') as f:
-        yaml.safe_dump({'best_val_nll': float(best_nll), 'kurtosis': kurt,
-                        'epochs': epochs, 'seed': seed,
-                        'training_path': 'joint (Plan A); Plan-B symptoms logged per epoch',
-                        'zeta_ard_lengthscale': hist['zeta_ls'][-1],
-                        'ard_lengthscales_final': model.ard_lengthscales()}, f, sort_keys=False)
+        yaml.safe_dump(final, f, sort_keys=False)
     print(f"[train] done; best val NLL {best_nll:.4e}; artifacts in {outdir}")
 
 

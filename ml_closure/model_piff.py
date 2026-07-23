@@ -153,6 +153,68 @@ if gpytorch is not None:
             return torch.distributions.StudentT(
                 df=nu, loc=function_samples, scale=scale)
 
+    class PiffMultitaskSVGP(gpytorch.models.ApproximateGP):
+        """Coregionalized 2-task SVGP -- ICM / Hadamard multitask head (Sanaa GO
+        2026-07-21). Kernel
+
+            K((x,t),(x',t')) = k_RBF-ARD(x, x') * B[t, t']
+
+        with B the learned coregionalization matrix supplied by gpytorch
+        IndexKernel (rank r): B = W W^T + diag(v), W of shape (n_tasks, r). Read
+        B two ways -- its DIAGONAL is each task's own OUTPUT SCALE (on top of the
+        per-task y-standardization), its OFF-DIAGONAL is the LEARNED cross-task
+        correlation, so a far-field prediction borrows strength from near-wall
+        data through B[0,1] instead of being band-isolated (the two-band
+        specialists' regression that motivated this model).
+
+        WHY IndexKernel AND NOT LMCVariationalStrategy. Every pixel is a SINGLE
+        task (near OR far), i.e. one scalar observation per input -- the textbook
+        Hadamard-multitask case. IndexKernel keeps the target SCALAR and the
+        predictive per-point scalar, so the whole ELBO / predict_physical /
+        every diagnostic stays SHAPE-IDENTICAL to the single-task PiffSVGP.
+        LMCVariationalStrategy instead emits ALL task outputs per point and needs
+        a full (N, n_tasks) target matrix + MultitaskGaussianLikelihood, which
+        would fork evaluate(), predict_physical() and every consumer. The task
+        index is the LAST input column (integer 0/1); the first `feat_dim`
+        columns are the shared GP features. Inducing points live in the shared
+        FEATURE space (feature k-means); each carries a task label so K_zz keeps
+        the same product form (VariationalStrategy calls forward on them)."""
+
+        def __init__(self, inducing_points, feat_dim, n_tasks=2, coreg_rank=1):
+            m = inducing_points.shape[0]
+            var_dist = gpytorch.variational.CholeskyVariationalDistribution(m)
+            strategy = gpytorch.variational.VariationalStrategy(
+                self, inducing_points, var_dist, learn_inducing_locations=True)
+            super().__init__(strategy)
+            self.feat_dim = int(feat_dim)
+            self.n_tasks = int(n_tasks)
+            self.mean_module = gpytorch.means.ConstantMean()
+            self.data_covar = gpytorch.kernels.ScaleKernel(
+                gpytorch.kernels.RBFKernel(ard_num_dims=self.feat_dim))
+            self.task_covar = gpytorch.kernels.IndexKernel(
+                num_tasks=self.n_tasks, rank=int(coreg_rank))
+
+        def forward(self, x):
+            xf = x[..., :self.feat_dim]
+            # task index column. round()+clamp keeps the IndexKernel indices in
+            # [0, n_tasks-1] and INTEGER even though the inducing points' task
+            # column is a learnable location (learn_inducing_locations=True): a
+            # no-op on the exact-integer DATA indices, and round() has zero
+            # gradient so the inducing task labels stay frozen at their half/half
+            # init (no drift out of range, no spurious learning of the label).
+            ti = x[..., self.feat_dim:].round().clamp(0.0, float(self.n_tasks - 1))
+            mean_x = self.mean_module(xf)
+            # canonical gpytorch Hadamard product-kernel: evaluate the data and
+            # task kernels and multiply (linear_operator 0.6.1 .mul)
+            covar = self.data_covar(xf).mul(self.task_covar(ti))
+            return gpytorch.distributions.MultivariateNormal(mean_x, covar)
+
+        def coreg_matrix(self):
+            """Learned n_tasks x n_tasks coregionalization matrix B (detached)."""
+            tk = self.task_covar
+            cf = tk.covar_factor
+            return (cf @ cf.transpose(-1, -2) + torch.diag_embed(tk.var)).detach()
+
 else:
     class PiffSVGP:  # placeholder that fails loudly (spec S2.2: no hand-rolled SVGP)
         def __init__(self, *a, **k):
@@ -160,6 +222,10 @@ else:
                 f"gpytorch unavailable ({_GPYTORCH_ERR}); install gpytorch==1.13 into "
                 f"qg-env-piff — do NOT hand-roll an SVGP (ML SPEC 01 S2.2). FLAG if "
                 f"the cluster install fails.")
+
+    class PiffMultitaskSVGP:  # same loud-failure placeholder as PiffSVGP
+        def __init__(self, *a, **k):
+            raise ImportError(str(_GPYTORCH_ERR))
 
 
 class PiffModel(nn.Module):
@@ -220,6 +286,36 @@ class PiffModel(nn.Module):
         if self.likelihood_type == 'student_t' and self.noise_prior != 'structural':
             raise ValueError("model.likelihood=student_t requires "
                              "noise_prior=structural (scale^2 = het_noise)")
+        # MULTITASK / coregionalized 2-task head (Sanaa GO 2026-07-21). Default
+        # OFF -> the single-task PiffSVGP path below is BYTE-IDENTICAL (this
+        # block does not execute, the extra buffers keep their scalar shape, no
+        # task column is appended). ON -> task 0 = near-wall closure, task 1 =
+        # far-field closure; the per-pixel task is DERIVED from input channel 3
+        # (sdf_star) at forward time exactly like BlendedPiffModel, so nothing
+        # threads a task tensor through the dataset / crop / diagnostics. The
+        # single-assignment split is the MIDPOINT of the two specialist bands
+        # (near sdf<=1.5D, far sdf>=1.0D -> split 1.25D): cleaner than
+        # duplicating overlap pixels into both tasks (keeps the ELBO num_data a
+        # clean pixel count) and the correlation is learned from the JOINT
+        # objective + shared inducing/data-kernel, not from shared pixels.
+        self.multitask = bool(mc.get('multitask', False))
+        if self.multitask:
+            if self.likelihood_type == 'student_t':
+                raise ValueError("model.multitask + student_t not supported "
+                                 "(per-task scale not defined); use gaussian")
+            self.n_tasks = 2
+            dc = conf.get('data', {}) or {}
+            self.sdf_clip_D = float(dc.get('sdf_clip_D', 2.0))
+            mtb = dc.get('multitask_bands', {}) or {}
+            self.near_sdf_hi = float(mtb.get('near_sdf_hi', 1.5))
+            self.far_sdf_lo = float(mtb.get('far_sdf_lo', 1.0))
+            self.task_split_D = 0.5 * (self.near_sdf_hi + self.far_sdf_lo)
+            if self.sdf_clip_D < self.task_split_D:
+                raise ValueError(
+                    f"multitask: data.sdf_clip_D={self.sdf_clip_D} < task split "
+                    f"{self.task_split_D} D -- channel 3 saturates before the "
+                    f"near/far boundary, so the per-pixel task would be wrong")
+            self.coreg_rank = int(mc.get('coreg_rank', 1))
         cond_dim = 1 + int(self.use_zeta_dot)
         self.cnn = FiLMCNN(in_channels=int(mc['in_channels']),
                            channels=mc['channels'], kernel=int(mc['kernel']),
@@ -229,8 +325,22 @@ class PiffModel(nn.Module):
         self.gp_input_dim = (self.cnn.out_dim + 1 + int(self.use_zeta_dot)
                              + int(self.use_grad_feature)
                              + int(self.use_lap_feature))
-        init_z = torch.randn(int(mc['n_inducing']), self.gp_input_dim)
-        self.gp = PiffSVGP(init_z)
+        if self.multitask:
+            # inducing points: shared FEATURE space + a task label column. Half
+            # the M points are labelled task 0, half task 1, so both tasks are
+            # represented in K_zz at init; init_inducing_kmeans overwrites the
+            # feature columns with a feature k-means and keeps these labels.
+            M = int(mc['n_inducing'])
+            init_feat = torch.randn(M, self.gp_input_dim)
+            tcol = torch.zeros(M, 1)
+            tcol[M // 2:] = 1.0
+            init_z = torch.cat([init_feat, tcol], dim=-1)
+            self.gp = PiffMultitaskSVGP(init_z, feat_dim=self.gp_input_dim,
+                                        n_tasks=self.n_tasks,
+                                        coreg_rank=self.coreg_rank)
+        else:
+            init_z = torch.randn(int(mc['n_inducing']), self.gp_input_dim)
+            self.gp = PiffSVGP(init_z)
         if gpytorch is None:
             raise ImportError(str(_GPYTORCH_ERR))
         if self.noise_prior == 'structural':
@@ -253,8 +363,16 @@ class PiffModel(nn.Module):
         # untouched — this is an affine reparameterization for GP conditioning
         # (a large raw outputscale ~var(y) makes the float32 K_zz Cholesky
         # numerically singular: absolute jitter 1e-6 is ~1e-10 relative).
-        self.register_buffer('y_mu', torch.zeros(()))
-        self.register_buffer('y_sd', torch.ones(()))
+        # multitask: PER-TASK (mean, var) buffers (near stats from near pixels,
+        # far from far) so the ~40x near/far amplitude gap is carried by the
+        # task structure, not one shared scale. Single-task keeps the scalar
+        # buffers verbatim -> pre-multitask ckpts round-trip byte-identically.
+        if self.multitask:
+            self.register_buffer('y_mu', torch.zeros(self.n_tasks))
+            self.register_buffer('y_sd', torch.ones(self.n_tasks))
+        else:
+            self.register_buffer('y_mu', torch.zeros(()))
+            self.register_buffer('y_sd', torch.ones(()))
         # recorded conditioning normalizations (same contract as y_mu/y_sd:
         # buffers -> in every ckpt; defaults = identity). persistent only when
         # the flag is on, so pre-ORDER-3 ckpts still load strict=True.
@@ -340,7 +458,21 @@ class PiffModel(nn.Module):
 
     def set_y_standardization(self, y_mean, y_var):
         """Set the recorded standardization constants from exact train-target
-        stats. Returns them for the run/checkpoint manifest."""
+        stats. Multitask: y_mean / y_var are length-n_tasks (per-task) and fill
+        the per-task buffers; single-task takes scalars -> byte-identical.
+        Returns them for the run/checkpoint manifest."""
+        if getattr(self, 'multitask', False):
+            ym = np.asarray(y_mean, dtype=np.float64).reshape(-1)
+            yv = np.asarray(y_var, dtype=np.float64).reshape(-1)
+            if ym.shape != (self.n_tasks,) or yv.shape != (self.n_tasks,):
+                raise ValueError(f"multitask y-standardization needs "
+                                 f"{self.n_tasks} per-task stats, got "
+                                 f"means {ym.shape} vars {yv.shape}")
+            if not np.all(yv > 0.0):
+                raise ValueError(f"bad per-task target var: {yv.tolist()}")
+            self.y_mu.copy_(torch.as_tensor(ym, dtype=self.y_mu.dtype))
+            self.y_sd.copy_(torch.as_tensor(np.sqrt(yv), dtype=self.y_sd.dtype))
+            return {'y_mean': ym.tolist(), 'y_std': np.sqrt(yv).tolist()}
         y_mean, y_var = float(y_mean), float(y_var)
         if not y_var > 0.0:
             raise ValueError(f"bad target stats: var={y_var}")
@@ -348,7 +480,15 @@ class PiffModel(nn.Module):
         self.y_sd.fill_(y_var ** 0.5)
         return {'y_mean': y_mean, 'y_std': y_var ** 0.5}
 
-    def standardize_y(self, y):
+    def standardize_y(self, y, task=None):
+        """Standardize targets. Multitask: PER-PIXEL by the pixel's own task
+        (task = the last column of the pixel's GP inputs, an integer 0/1);
+        single-task ignores `task` -> byte-identical."""
+        if getattr(self, 'multitask', False):
+            if task is None:
+                raise ValueError("multitask standardize_y needs the per-pixel task")
+            t = task.long()
+            return (y - self.y_mu[t]) / self.y_sd[t]
         return (y - self.y_mu) / self.y_sd
 
     def predict_physical(self, gpin, g_masked=None):
@@ -370,6 +510,11 @@ class PiffModel(nn.Module):
         if mu.dim() > 1:
             var = var.mean(dim=0) + mu.var(dim=0)
             mu = mu.mean(dim=0)
+        if getattr(self, 'multitask', False):
+            # invert each pixel's OWN task standardization (task = last gpin col)
+            t = gpin[..., -1].long()
+            sd = self.y_sd[t]
+            return mu * sd + self.y_mu[t], var * sd * sd
         return mu * self.y_sd + self.y_mu, var * self.y_sd * self.y_sd
 
     def features(self, x, zeta, zeta_dot=None, g=None, lap=None):
@@ -412,7 +557,26 @@ class PiffModel(nn.Module):
             # to typical data and defeats the near-inert warm init. log1p maps
             # the range to ~[0, 5.9] so lengthscale-20 is inert for ALL pixels.
             cols.append(torch.log1p(lap / self.lap_scale).unsqueeze(-1))
+        if getattr(self, 'multitask', False):
+            # append the per-pixel task index as the LAST GP-input column,
+            # derived from input channel 3 (sdf_star) -- see _pixel_task
+            cols.append(self._pixel_task(x).unsqueeze(-1))
         return torch.cat(cols, dim=-1)
+
+    def _pixel_task(self, x):
+        """Per-pixel task index (0 near / 1 far) recovered EXACTLY from input
+        channel 3 (sdf_star = clip(sdf, +/-clipD)/clipD): s = sdf/D = sdf_star *
+        sdf_clip_D. near = s <= task_split_D (task 0), far = s > task_split_D
+        (task 1). Exact at the split because task_split_D < sdf_clip_D
+        (asserted in __init__). Mirrors BlendedPiffModel._sdf_over_D."""
+        s = x[:, 3] * self.sdf_clip_D                    # (B,H,W)
+        return (s > self.task_split_D).to(x.dtype)       # 0.0 near / 1.0 far
+
+    def _base_kernel(self):
+        """RBF-ARD base kernel of the GP -- data_covar in multitask, covar_module
+        otherwise (the two heads differ)."""
+        return (self.gp.data_covar.base_kernel if getattr(self, 'multitask', False)
+                else self.gp.covar_module.base_kernel)
 
     def masked_gp_inputs(self, x, zeta, mask, zeta_dot=None, g=None, lap=None):
         """Flatten to masked pixels: returns (P, gp_input_dim). Loss/eval
@@ -423,13 +587,13 @@ class PiffModel(nn.Module):
         """Learned ARD lengthscale of the zeta input dim — reported in every
         eval summary (spec S2.2). Indexed by position (zeta is no longer the
         last dim when the ORDER-3 conditioning flags are on)."""
-        return float(self.gp.covar_module.base_kernel.lengthscale[0, self.zeta_idx])
+        return float(self._base_kernel().lengthscale[0, self.zeta_idx])
 
     def ard_lengthscales(self):
         """Named ARD lengthscales of the conditioning dims (acceptance
         predictions, ORDER 3d): zeta always; zeta_dot / grad / lap when
         enabled."""
-        ls = self.gp.covar_module.base_kernel.lengthscale[0]
+        ls = self._base_kernel().lengthscale[0]
         out = {'zeta': float(ls[self.zeta_idx])}
         i = self.zeta_idx + 1
         if self.use_zeta_dot:
@@ -439,6 +603,17 @@ class PiffModel(nn.Module):
         if self.use_lap_feature:
             out['lap'] = float(ls[i])
         return out
+
+    def coreg_report(self):
+        """Learned coregionalization summary (multitask only, for logging):
+        per-task output variance B[t,t] and the cross-task correlation
+        B[0,1]/sqrt(B[0,0]B[1,1]). None single-task."""
+        if not getattr(self, 'multitask', False):
+            return None
+        B = self.gp.coreg_matrix().cpu()
+        d = torch.diagonal(B).clamp_min(1e-30)
+        corr = float(B[0, 1] / (d[0] * d[1]).sqrt())
+        return {'task_var': [float(d[0]), float(d[1])], 'cross_corr': corr}
 
     @torch.no_grad()
     def init_inducing_kmeans(self, dataset, n_pixels, iters, seed, device='cpu'):
@@ -464,10 +639,20 @@ class PiffModel(nn.Module):
             if sum(x.shape[0] for x in feats) >= need:
                 break
         pts = torch.cat(feats)[:need].to(torch.float32)
-        if pts.shape[0] < self.gp.variational_strategy.inducing_points.shape[0]:
+        M = self.gp.variational_strategy.inducing_points.shape[0]
+        if getattr(self, 'multitask', False):
+            # k-means over the SHARED FEATURE columns only (drop the appended
+            # task-index column), then re-attach half/half task labels so both
+            # tasks are covered in the inducing set (the ARD kernel sees the
+            # coordinate values; the task column is handled by IndexKernel).
+            pts = pts[:, :self.gp.feat_dim]
+        if pts.shape[0] < M:
             raise ValueError(f"only {pts.shape[0]} pixels for k-means < M inducing")
-        centers = _kmeans(pts, self.gp.variational_strategy.inducing_points.shape[0],
-                          iters=iters, seed=seed)
+        centers = _kmeans(pts, M, iters=iters, seed=seed)
+        if getattr(self, 'multitask', False):
+            tcol = torch.zeros(centers.shape[0], 1, dtype=centers.dtype)
+            tcol[centers.shape[0] // 2:] = 1.0
+            centers = torch.cat([centers, tcol], dim=-1)
         self.gp.variational_strategy.inducing_points.data.copy_(centers.to(device))
         return pts.shape[0]
 
@@ -486,7 +671,12 @@ class PiffModel(nn.Module):
         if not (y_var > 0.0 and 0.0 < nf < 1.0):
             raise ValueError(f"bad init stats: var={y_var}, noise_frac={nf}")
         self.gp.mean_module.constant.data.fill_(y_mean)
-        self.gp.covar_module.outputscale = (1.0 - nf) * y_var
+        if getattr(self, 'multitask', False):
+            # data kernel outputscale; the IndexKernel coregionalization matrix
+            # carries the residual per-task scale + cross-task correlation
+            self.gp.data_covar.outputscale = (1.0 - nf) * y_var
+        else:
+            self.gp.covar_module.outputscale = (1.0 - nf) * y_var
         if not self.is_student_t():          # StudentT carries no scalar .noise
             self.likelihood.noise = nf * y_var
         return {'gp_mean_init': y_mean, 'gp_space_var': y_var, 'noise_frac': nf,

@@ -451,6 +451,51 @@ def target_stats(runs, split, conf):
     return {'n': int(n), 'mean': float(mean), 'var': float(var)}
 
 
+def multitask_split_D(conf):
+    """Single-assignment near/far task boundary (in units of D) = the MIDPOINT
+    of the two specialist bands (near sdf<=near_sdf_hi, far sdf>=far_sdf_lo).
+    Same number the model recomputes from data.multitask_bands (Sanaa GO
+    2026-07-21). Defaults mirror the two-band recipe (near 1.5, far 1.0 ->
+    split 1.25)."""
+    dc = conf.get('data', {}) or {}
+    mtb = dc.get('multitask_bands', {}) or {}
+    return 0.5 * (_f(mtb.get('near_sdf_hi', 1.5)) + _f(mtb.get('far_sdf_lo', 1.0)))
+
+
+def target_stats_multitask(runs, split, conf):
+    """PER-TASK exact mean/var of the normalized target over the split's valid
+    pixels (float64, deterministic), split at multitask_split_D * D: task 0 =
+    near (sdf <= split), task 1 = far (sdf > split). Feeds the coregionalized
+    model's PER-TASK y-standardization (Sanaa GO 2026-07-21) -- each task gets
+    its OWN (mean, var) from its OWN pixels, so the ~40x near/far amplitude gap
+    is carried by the task structure, not one shared scale. Mirrors
+    target_stats: an INIT constant, never a per-sample normalization."""
+    split_D = multitask_split_D(conf)
+    n = [0, 0]; s1 = [0.0, 0.0]; s2 = [0.0, 0.0]
+    for ri, fi in split_frames(runs, split, conf):
+        r = runs[ri]
+        U = _f(r.U_snap[fi])
+        yfull = r.pi[fi].astype(np.float64) * (r.D * r.D / (U * U))
+        near = r.valid & (r.sdf <= split_D * r.D)
+        far = r.valid & (r.sdf > split_D * r.D)
+        for t, tm in enumerate((near, far)):
+            yv = yfull[tm]
+            n[t] += int(yv.size)
+            s1[t] += float(yv.sum())
+            s2[t] += float((yv * yv).sum())
+    means, vars_ = [], []
+    for t in range(2):
+        if n[t] == 0:
+            raise ValueError(f"multitask target_stats: task {t} "
+                             f"({'near' if t == 0 else 'far'}) has no valid "
+                             f"pixel in split {split!r} (split_D={split_D})")
+        m = s1[t] / n[t]
+        means.append(float(m))
+        vars_.append(float(max(s2[t] / n[t] - m * m, 0.0)))
+    return {'n': int(n[0] + n[1]), 'n_task': [int(n[0]), int(n[1])],
+            'mean': means, 'var': vars_, 'split_D': float(split_D)}
+
+
 def conditioning_stats(runs, split, conf):
     """Recorded normalization constants for the ORDER-3 conditioning inputs,
     exact over the split (float64): ensemble std of zeta_dot over frames
@@ -764,6 +809,7 @@ def describe(runs, conf, seed):
         'valid_per_frame': {r.name: r.n_valid for r in runs},
         'lomo_holdout': conf['data'].get('lomo_holdout'),
         'band': (runs[0].band if runs and runs[0].band else None),
+        'multitask': bool(conf.get('model', {}).get('multitask', False)),
     }
 
 
