@@ -54,6 +54,17 @@ Flag handling follows the decision tree in every branch brief.
 verbatim category code) are flagged in the next weekly `DIGEST` under "Convention violations",
 branch + subject quoted.
 
+**Hiring (amendment 2026-07-23, Sanaa):** the global supervisor may CREATE new subagents in
+`.claude/agents/` whenever a recurring need appears that the roster serves badly — especially
+recurring mechanical/non-research work that would otherwise consume supervisor attention. Rules:
+(a) hire first, notify Sanaa in the next report — no pre-approval needed for GREEN-zone agents;
+(b) model per the hierarchy (mechanical = Sonnet, judgment = Opus 4.8); (c) research TRIAGE may
+be delegated (liaison sweeps + shortlists papers into `docs/papers/`), research JUDGMENT may
+not — the supervisor personally reads and selects the papers that matter, and remains the most
+informed member of the team; (d) update the roster table above in the same change. Standing
+principle: the supervisor's attention is the scarce resource — spend it on judgment, delegate
+everything else, codify every lesson (LAB_DOCTRINE.md).
+
 ## How to direct a supervisor
 Talk in goals, not commands. Examples:
 - "Retrain with hidden=128 and a 4th time level. Have sge-checker audit the script, then submit
