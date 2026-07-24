@@ -10,6 +10,10 @@ a killed idea with a documented reason is a result.
 
 Every entry must answer, before launch:
 - **Claim**: one falsifiable sentence.
+- **Prior art**: has someone pursued this? One-sentence differentiation; closest
+  papers filed in `docs/papers/`. No PURSUE without this field (LAB_DOCTRINE §7.5).
+- **Tri-objective**: expected effect on cost, accuracy, AND stability — all
+  three, before launch (LAB_DOCTRINE §2).
 - **Expected evidence**: the named plot/metric/table that would confirm or kill it.
 - **Cost**: GPU-hours + wall-clock + my-attention estimate.
 - **Kill condition**: the observable that ends it (pre-registered, not post-hoc).
@@ -70,6 +74,44 @@ the 07:00 handoff. Every overnight pursuit appears in the morning digest under
   converts the horizon-limited gain into a per-step contraction property.
 - **Verdict**: **HOLD** — λ-sweep ran; the certificate section is under
   revision and the idea re-enters assessment with the new campaign.
+
+### IDEA-006 — Energy-budget loss term (−⟨ψ̄Π⟩) for the SGS closure
+- **Origin**: agent (from the Jakhar PRL/JAMES reading, 2026-07-23); demoted
+  by Sanaa's setting objection the same day.
+- **Claim**: matching the interscale ENERGY transfer per crop (alongside the
+  enstrophy EnsCon term) removes a stability-critical budget error the
+  enstrophy term cannot see.
+- **Prior art**: Jakhar et al. 2024/2026 — energy transfer is the
+  stability-critical budget in 2D FHIT; ours differs in setting (obstacle
+  wakes, per-crop), which is exactly the problem: in wakes the large-scale
+  energy budget is dominated by shedding/body/sponge terms, and per-crop
+  ⟨ψ̄Π⟩ is gauge-sensitive and crop-capped.
+- **Tri-objective**: cost negligible; accuracy neutral; stability plausible
+  but setting-unproven.
+- **Expected evidence**: budget-error diagnostic on existing v1/v2 residuals —
+  signed ⟨ω̄ε⟩ vs ⟨ψ̄′ε⟩ (crop-demeaned) per (member × near-wall/wake/far).
+- **Cost**: analysis-only, no GPU training.
+- **Kill condition**: energy-budget error small next to the enstrophy one in
+  the wake band.
+- **Verdict**: **HOLD** — blocked on the diagnostic; no design change on
+  imported FHIT priors (BUDGET_LOSS_DOCTRINE §5, INCIDENT_LOG 2026-07-23).
+
+### IDEA-007 — Sign-split EnsCon (diffusion/backscatter matched separately)
+- **Origin**: agent (from the PRL discovery-criterion structure).
+- **Claim**: replacing the net-transfer scalar with the pair (Σ(ω̄Π)₊, Σ(ω̄Π)₋)
+  matched independently kills the diffusion/backscatter cancellation channel
+  at negligible cost.
+- **Prior art**: Jakhar/Guan/Hassanzadeh PRL 2026 evaluate P>0 and P<0
+  separately in their equation-discovery criterion; ours embeds the split in
+  a CNN training loss per crop.
+- **Tri-objective**: cost negligible; accuracy neutral; stability ≥ net-only
+  by construction (strictly more constraint).
+- **Expected evidence**: signed transfer ratios → 1 per member with R²/per-pixel
+  medians unchanged.
+- **Cost**: one loss-term edit + one training run.
+- **Kill condition**: accuracy regression on the per-member table at matched β.
+- **Verdict**: **PURSUE** (staged) — after the V3 main run lands; the
+  fire-ready chain is not edited (BUDGET_LOSS_DOCTRINE §7).
 
 ---
 
