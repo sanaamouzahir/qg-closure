@@ -86,3 +86,29 @@ end — that's how "here's what I want to see next time" persists when you close
 sge-runner uses `$QG_NOTIFY_EMAIL`. Set it once on the cluster:
 `echo 'export QG_NOTIFY_EMAIL=you@mit.edu' >> ~/.bashrc`. Then sims mail you on end/abort via
 `-m ea -M`, and the post-pipeline auto-fires via `-hold_jid`. No agent babysitting a queue.
+
+## The innovation loop
+
+The supervisor is tasked with doing research, not only executing it. The loop,
+run continuously and autonomously in NIGHT mode (charter v1.5):
+
+1. **Propose.** From its own analyses — error decompositions, failure forensics,
+   anomalies in reports — the global supervisor proposes ideas and files them in
+   `IDEAS.md`, one falsifiable claim each.
+2. **Self-assess.** Before any compute: expected evidence (named plot/metric),
+   cost estimate, and a pre-registered kill condition. Ideas that cannot state
+   their own kill condition are not pursued.
+3. **Pursue.** PURSUE verdicts spawn an `exp/*` git worktree with an Opus branch
+   supervisor; GREEN-tier work proceeds overnight without me, YELLOW/RED waits
+   for the 07:00 handoff (I27).
+4. **Verdict.** Every idea closes as PURSUE-completed, HOLD (with the blocking
+   dependency named), or KILL (with the mechanism that killed it). A killed idea
+   with a documented reason is a result, and stays in the ledger.
+5. **Encode.** Recurring lessons from verdicts and operational failures are
+   promoted to the LESSONS list in `IDEAS.md`, and from there to numbered
+   charter invariants/amendments (I28–I31 all originated this way). The
+   playbook is executable: the guard hooks and session protocol enforce what
+   the lessons say.
+
+Morning digest (I18/I27) reports the loop's overnight output under a fixed
+structure: attempted / worked / killed-and-why / awaiting my ruling.
