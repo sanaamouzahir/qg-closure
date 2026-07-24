@@ -1,8 +1,9 @@
 # Incident log — error/problem -> action (all branches)
-*Mandated by LAB_DOCTRINE.md §8 (Sanaa order 2026-07-23). Every resolved
+*Mandated by LAB_DOCTRINE.md §9 (Sanaa order 2026-07-23). Every resolved
 error/problem gets an entry IN THE SAME SESSION: symptom -> root cause ->
-action -> standing rule (where codified). Append-only; newest at top.
-An unlogged fix is an unfinished fix.*
+action -> standing rule (where codified). FIXED or FLAGGED, never silent.
+Append-only; newest at top. An unlogged fix is an unfinished fix.
+2026-07-23: merged with the parallel-session ERRORLOG (entries marked E-nn).*
 
 Format:
 ```
@@ -38,6 +39,79 @@ Action:   confound declared at commit time; attribution ablation (psi on,
           until paid.
 Rule:     one change at a time; bundled changes must be declared + ablation
           scheduled in the same breath. (LAB_DOCTRINE.md §4)
+
+## 2026-07-23 [governance] (E-12) Session launched with wrong identity
+Symptom:  a bare `claude` launch put a direct Opus session in the
+          supervisor's seat, doing branch work solo.
+Cause:    launch discipline, not infrastructure — the topology exists only
+          through launch parameters.
+Action:   model pinned in settings per checkout; identity check at session
+          open; the agent's refusal to claim it was Fable is the behavior we
+          keep.
+Rule:     every session opens by stating model + role, refuses tasking on
+          mismatch. (LAB_DOCTRINE.md §11)
+
+## 2026-07 [paper] (E-13) Citation and math errors in the manuscript
+Symptom:  Pade remark sign error; "order-q RK costs q evaluations" (false
+          for q >= 5, Butcher barriers); B-series attributed to HNW §II.2
+          (it is §II.12); a name-dropped source with no bibliography entry.
+Cause:    claims written from memory, not verified in-session.
+Action:   systematic claims audit: symbolic verification (sympy) for math,
+          source verification (ToC/abstract level) for citations; all fixed;
+          CLAIMS_AUDIT.md instituted with per-claim confidence flags.
+Rule:     every citation ships with its verifying passage; memory-recalled
+          claims are flagged, never smoothed. (LAB_DOCTRINE.md §8)
+
+## 2026-07 [ops] (E-14) Attachment route silently delivering empty documents
+Symptom:  multiple uploads arrived with no content.
+Cause:    client-side attachment failure.
+Action:   receipt verified (size/hash or repo fetch) before acting; work
+          proceeded via repo fetch.
+Rule:     never reconstruct or guess missing content; verify receipt first.
+          (LAB_DOCTRINE.md §1)
+
+## 2026-07 [temporal] (E-06) A-priori/a-posteriori contradiction (deriv-7 triage)
+Symptom:  conditioned model looked worse a posteriori despite better
+          a-priori numbers.
+Cause:    unfloored-evaluation artifact, not a model regression — found by
+          running the full diagnostics ladder before touching the model.
+Action:   evaluation floored/fixed; numbers re-issued; model untouched.
+Rule:     run every diagnostic before concluding; eval code is a suspect
+          like any other. (LAB_DOCTRINE.md §3)
+
+## 2026-07 [temporal] (E-07) Rollout stabilizer idea killed by mechanism
+Symptom:  dissipative spectral projection proposed to stop rollout blow-ups.
+Cause:    field-level forensics showed the rollout error is within-shell
+          PHASE — invisible to an energy projection; the fix could not work.
+Action:   KILL verdict recorded (IDEAS.md IDEA-002); GPU-hours saved.
+Rule:     mechanism forensics before implementing any fix; ideas get ledger
+          verdicts. (LAB_DOCTRINE.md §3, §7.5)
+
+## 2026-07 [temporal] (E-04) NaNs in long rollouts — exposure-bias blow-up
+Symptom:  NaNs deep into closure rollouts.
+Cause:    triage protocol (first-NaN location/time; dt-halving: bug persists,
+          blow-up retreats; float32/float64 comparison; energy history before
+          the event) showed TRUE blow-ups at the envelope edge: loop gain
+          ~2x/step from ~step 12 — exposure bias, not a code bug.
+Action:   effort redirected from debugging to training-scheme design.
+Rule:     NaN = bug-vs-blowup determination by evidence before any action.
+          (LAB_DOCTRINE.md §5)
+
+## 2026-07 [sims] (E-09) Convergence sweeps corrupted by spin-up chaos
+Symptom:  cross-dt comparisons disagreed irreproducibly.
+Cause:    chaotic spin-up amplifies numerical differences.
+Action:   all sweeps restart from a shared DEVELOPED-flow snapshot;
+          obstacle-flow comparisons use centerline norms with sponge/Brinkman
+          fixed. Clean convergence orders recovered.
+Rule:     CLAUDE.md rule 5; LAB_DOCTRINE.md §5.
+
+## 2026-07 [infra] (E-02) Spectral grid tensors on CPU despite device arg
+Symptom:  GPU runs silently slowed/broken.
+Cause:    CartesianGrid's kx/ky/ksq buffers stay on CPU regardless of the
+          device argument; constructor does not move them.
+Action:   `grid.to(grid.device)` immediately after construction, all call
+          sites.
+Rule:     device placement is checked, never assumed. (LAB_DOCTRINE.md §5)
 
 ## 2026-07-22 [sgs-closure] GP eval crash-in-waiting: hardcoded feature dim
 Symptom:  v1-era GP trainer hardcoded 20 input dims; any v2+ eval would
@@ -90,18 +164,22 @@ Action:   CNN-first architecture (Sanaa order 07-22): CNN mean + frozen
 Rule:     model the mean with the mean model; GPs get residuals; nothing
           learnable in the loss weighting.
 
-## 2026-07 [sgs-closure/sims] Inlet reflection from the left boundary
-Symptom:  reflected signal entering from the left (inlet) side of the domain
-          in obstacle simulations.
-Cause:    numerics, not physics — inlet/sponge handling; the FIRST check is
-          whether v and omega are actually 0 at the inlet.
-Action:   boundary values checked directly; ramp analysis (does a longer
-          ramp fix it? analyze, then CONFIRM with a few ramp runs even if
-          analysis says no), then smoother ramp function; sponge analysis
-          written up (docs/sponge_analysis.tex/pdf).
+## 2026-07 [sgs-closure/sims] (E-03) Inlet reflection from the left boundary
+Symptom:  waves propagating upstream from the left (inlet) contaminated the
+          development region in cylinder runs.
+Cause:    numerics, not physics — the first check (are v and omega actually
+          zero at the inlet?) had not been run; the impulsive start excites
+          the domain.
+Action:   canonical sequence encoded: (1) verify inlet values; (2) if
+          nonzero, hypothesize the ramp — analyze whether a ramp increase
+          resolves it; (3) test a few ramps to confirm/exclude even if
+          analysis says no; (4) if insufficient, move to a smoother ramp
+          function. Sponge/Brinkman parameters held fixed across dt for
+          comparability. Sponge analysis written up
+          (docs/sponge_analysis.tex/pdf).
 Rule:     artifact triage before physics interpretation: boundary values
-          first, then systematic lever-by-lever escalation with analysis
-          preceding runs. (LAB_DOCTRINE.md §5)
+          first, then lever-by-lever escalation with analysis preceding
+          runs. (LAB_DOCTRINE.md §5)
 
 ## 2026-07 [sgs-closure] Cape near-wall stripes
 Symptom:  striped near-wall error pattern at the cape, suspected reflection
@@ -165,17 +243,22 @@ Action:   ORDER CLIP: emit only orders 0..out_orders; all S snapshots kept
 Rule:     never emit unused time-orders; never let gradients flow through
           1/dt^k-scaled features no output needs. (CLAUDE.md rule 14)
 
-## 2026-07 [temporal] Pooled S=7 val misread as model regression
+## 2026-07 [temporal] (E-08) Pooled S=7 val misread as model regression
 Symptom:  pooled sweep val O(0.1-1) vs the old single-(member,dt) 2.6-4%
-          reference read as a collapse.
+          reference read as a collapse; separately, pooled floors and
+          ensemble R^2 (0.800) looked healthy while Re25k (past its
+          convergence radius) and FPCape-sine (hysteresis outlier, R^2
+          0.740, kurtosis ~1400) were failing.
 Cause:    not comparable: the reference was dt=1e-3 (time-FD error
           invisible); the pool contains near/past-Delta-T* cells that are
           unlearnable by ANY network (stencil span 6dt exceeds Re25k's
-          Delta-T* at dt=1.5e-2).
+          Delta-T* at dt=1.5e-2). Pooling hides the dominating and the
+          failing member alike.
 Action:   eval_deriv_by_root.py per-(member,dt,order) made the standard
-          read; convergence-radius theory documented.
+          read; per-member breakdown + field plots made mandatory;
+          convergence-radius theory documented.
 Rule:     pooled numbers never carry a verdict; comparability requires same
-          (member, dt, filter) cell. (CLAUDE.md rule 18)
+          (member, dt, filter) cell. (CLAUDE.md rule 18, LAB_DOCTRINE.md §1)
 
 ## pre-2026-07 [infra] HDF5 dataset corruption/friction
 Symptom:  HDF5-based data pipeline unreliable for the closure datasets.
@@ -191,8 +274,25 @@ Cause:    under-resolution.
 Action:   1024^2 mandated for cylinder Re >= 600.
 Rule:     CLAUDE.md rule 12.
 
-## pre-2026-07 [infra] PyYAML parsed 5e-3 as a string
-Symptom:  config float silently a string; downstream type errors/wrong runs.
-Cause:    YAML 1.1 scientific-notation quirk.
-Action:   always 5.0e-3 form + explicit float() casts on read.
+## pre-2026-07 [cluster] (E-11) Jobs killed by wrong SGE flags
+Symptom:  members died or queued forever; six killed members at once.
+Cause:    wrong queue/resource flags (`ibamd.q`, `h_vmem`).
+Action:   inviolable rule: GPU jobs `-q ibgpu.q -l gpu=1` only; PreToolUse
+          guard hook blocks the forbidden flags before submission; the six
+          members resubmitted cleanly.
+Rule:     CLAUDE.md rule 1 + guard_bash.sh hook.
+
+## pre-2026-07 [infra] (E-10) float32 floor under the closure target
+Symptom:  training targets O(1e-9) sat below float32 epsilon.
+Cause:    precision mismatch — catastrophic cancellation.
+Action:   float64 end-to-end for closure math; float32 permitted only at
+          disk write (upcast at load).
+Rule:     CLAUDE.md rule 3.
+
+## pre-2026-07 [infra] (E-01) PyYAML parsed 5e-3 as a string
+Symptom:  config float silently a string; arithmetic crashed deep in the
+          pipeline.
+Cause:    YAML 1.1 resolver quirk.
+Action:   always 5.0e-3 form + explicit float() casts on all YAML numeric
+          lookups.
 Rule:     CLAUDE.md rule 4.
